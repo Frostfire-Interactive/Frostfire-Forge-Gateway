@@ -111,7 +111,8 @@ export default function sendEmail(email: string, subject: string, header: string
   });
 }
 
-const censorEmail = (email: string) => {
+export const censorEmail = (email: string) => {
+  if (!email || !email.includes("@")) return "***";
   const [local, domain] = email.split('@');
   const censoredLocal = local.length > 2
     ? `${local.slice(0, 2)}${'*'.repeat(local.length - 2)}`

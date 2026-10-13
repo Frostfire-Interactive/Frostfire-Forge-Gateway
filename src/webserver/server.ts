@@ -1,6 +1,6 @@
 const now = performance.now();
 import log from "../modules/logger";
-import sendEmail, { buildEmailBody, buildLinkAction, buildCodeAction } from "../services/email";
+import sendEmail, { buildEmailBody, buildLinkAction, buildCodeAction, censorEmail } from "../services/email";
 import player from "../systems/player";
 import verify, { shuffle } from "../services/verification";
 import { hash, randomBytes, hashGuestPassword } from "../modules/hash";
@@ -828,7 +828,7 @@ async function resetPassword(req: Request, server: any) {
 
   const gameName = process.env.GAME_NAME || "Frostfire Forge";
   const subject = "Reset your password";
-  const url = `${process.env.DOMAIN}/manage-profile?email=${email}&code=${code}${twofaParam}`;
+  const url = `${process.env.DOMAIN}/manage-profile?email=${encodeURIComponent(email)}&code=${code}${twofaParam}`;
   const message = buildEmailBody(
     "Reset Your Password",
     "Click the button below to reset your password. This link will expire after use.",
@@ -871,13 +871,13 @@ async function updatePassword(req: Request, server: any) {
 
   const account = await query("SELECT * FROM accounts WHERE email = ? LIMIT 1", [body.email.toLowerCase()]) as any;
   if (account.length === 0) {
-    log.warn(`Attempt to update password for non-existent email: ${body.email.toLowerCase()}`);
+    log.warn(`Attempt to update password for non-existent email: ${censorEmail(body.email.toLowerCase())}`);
     return new Response(JSON.stringify({ message: "Failed to update password" }), { status: 500 });
   }
 
   const codeResult = await query("SELECT reset_password_code, username, totp_secret, totp_enabled FROM accounts WHERE email = ? AND reset_password_code = ? LIMIT 1", [body.email.toLowerCase(), body.code]) as any;
   if (codeResult.length === 0) {
-    log.warn(`Invalid reset password code for email: ${body.email.toLowerCase()}`);
+    log.warn(`Invalid reset password code for email: ${censorEmail(body.email.toLowerCase())}`);
     return new Response(JSON.stringify({ message: "Invalid reset password code" }), { status: 403 });
   }
 
@@ -893,15 +893,14 @@ async function updatePassword(req: Request, server: any) {
   const hashedPassword = await hash(body.password);
   const updateResult = await query("UPDATE accounts SET password_hash = ?, reset_password_code = NULL, verified = 0, verification_code = NULL WHERE email = ?", [hashedPassword, body.email.toLowerCase()]);
   if (!updateResult) {
-    log.error(`Failed to update password for email: ${body.email.toLowerCase()}`);
+    log.error(`Failed to update password for email: ${censorEmail(body.email.toLowerCase())}`);
     return new Response(JSON.stringify({ message: "Failed to update password" }), { status: 500 });
   }
 
-  log.debug(`Password updated successfully for email: ${body.email.toLowerCase()}`);
+  log.debug(`Password updated successfully for email: ${censorEmail(body.email.toLowerCase())}`);
 
-  if (account.session_id) {
-
-    player.logout(account.session_id);
+  if (account[0]?.session_id) {
+    await player.logout(account[0].session_id);
   }
 
   return new Response(JSON.stringify({ message: "Password updated successfully" }), { status: 200 });
