@@ -12,6 +12,7 @@ import { getInternalServerOptions, serverFetch, getInternalBaseUrl } from "../mo
 import { getDocsManifest, getDocsPage, getDocsSearchIndex } from "../services/docs";
 import { DOCS_ENABLED, docsNotFound } from "../modules/docs_switch";
 import { startSubscriptions, getSubscriptionInfo, createCheckout, createPortal, processStripeWebhook, type Reply } from "../systems/subscription";
+import { RateLimit, tooMany } from "../modules/ratelimit";
 
 const settings = {
   guest_mode: {
@@ -99,6 +100,32 @@ function codesMatch(stored: unknown, supplied: unknown): boolean {
 function getClientIP(req: Request): string | undefined {
   return req.headers.get("X-Real-Client-IP") || undefined;
 }
+
+// The key the limits below count by. The proxy always sets the address; without it (a request
+// straight to the internal port) every such request shares one key instead of going unlimited.
+function limitKey(req: Request): string {
+  return getClientIP(req) || "no-address";
+}
+
+const MINUTE = 60_000;
+const limits = {
+  // /login: every attempt from an address, and the wrong passwords for one name from one address. A
+  // name's failures from other addresses never block it, so nobody can lock an account from elsewhere.
+  login: new RateLimit(10, 10 * MINUTE),
+  loginFailures: new RateLimit(5, 15 * MINUTE),
+  register: new RateLimit(5, 60 * MINUTE),
+  guest: new RateLimit(5, 60 * MINUTE),
+  // All guest accounts made, whatever the address.
+  guestTotal: new RateLimit(200, 60 * MINUTE),
+  resetPassword: new RateLimit(5, 60 * MINUTE),
+  updatePassword: new RateLimit(10, 15 * MINUTE),
+  // /verify: the code from a verification email.
+  emailCode: new RateLimit(10, 15 * MINUTE),
+  // /api/2fa/send-email: a new login code by email.
+  sendCode: new RateLimit(5, 15 * MINUTE),
+  // /api/2fa/verify-totp, /api/2fa/verify-email and /api/2fa/verify-webauthn, counted together.
+  twoFactor: new RateLimit(10, 15 * MINUTE),
+};
 
 function getRequestOrigin(req: Request): { rpId: string; origin: string } {
   const host = req.headers.get("host") || new URL(process.env.DOMAIN || "http://localhost").hostname;
@@ -464,6 +491,17 @@ const routes = {
 // The subscription columns and tables must exist before a request reads them. Never fails the start.
 await startSubscriptions();
 
+// Otherwise guests are removed only when the engine starts. Once an hour, the ones a day old that
+// nobody is playing (player.purgeOldGuests). A failure is logged and tried again the next hour.
+setInterval(async () => {
+  try {
+    const removed = await player.purgeOldGuests();
+    if (removed > 0) log.info(`Removed ${removed} old guest account${removed === 1 ? "" : "s"}`);
+  } catch (error) {
+    log.warn(`Old guest accounts could not be removed: ${error}`);
+  }
+}, 60 * MINUTE);
+
 const serverPort = parseInt(process.env.WEBSRV_INTERNAL_PORT || "") || 8080;
 
 Bun.serve({
@@ -557,6 +595,9 @@ Bun.serve({
 });
 
 async function authenticate(req: Request) {
+  const wait = limits.emailCode.take(limitKey(req));
+  if (wait) return tooMany(wait);
+
   const url = tryParseURL(req.url);
   if (!url) {
     return new Response(JSON.stringify({ message: "Invalid request" }), { status: 400 });
@@ -607,6 +648,15 @@ async function createGuestAccount(req: Request) {
       return new Response(JSON.stringify({ message: "Guest mode is disabled" }), { status: 403 });
     }
     const ip = getClientIP(req);
+
+    // Both are checked before either counts, so a refusal by one uses nothing of the other.
+    const key = limitKey(req);
+    const wait = limits.guest.wait(key);
+    if (wait) return tooMany(wait);
+    const busy = limits.guestTotal.wait("all");
+    if (busy) return tooMany(busy, "Guest play is busy");
+    limits.guest.add(key);
+    limits.guestTotal.add("all");
 
     const guest_username = `guest_${randomBytes(12)}`;
     const domain = process.env.DOMAIN?.replace(/^https?:\/\//, "");
@@ -705,6 +755,10 @@ async function register(req: Request, server: any) {
       return new Response(JSON.stringify({ message: "Invalid email format" }), { status: 400 });
     }
 
+    // Counted once the form is valid: a typo costs nothing, an account made (or tried) does.
+    const wait = limits.register.take(limitKey(req));
+    if (wait) return tooMany(wait);
+
     const password_hash = await hash(password);
 
     const user = await player.register(username.toLowerCase(), password_hash, email.toLowerCase(), req, false) as any;
@@ -750,10 +804,18 @@ async function login(req: Request, server: any) {
       return new Response(JSON.stringify({ message: "Password must be between 8 and 20 characters long" }), { status: 400 });
     }
 
+    // Both before the password is hashed and compared, the expensive part.
+    const key = limitKey(req);
+    const failureKey = `${key}|${username.toLowerCase()}`;
+    const wait = limits.loginFailures.wait(failureKey) || limits.login.take(key);
+    if (wait) return tooMany(wait);
+
     const token = await player.login(username.toLowerCase(), password);
     if (!token) {
+      limits.loginFailures.add(failureKey);
       return new Response(JSON.stringify({ message: "Invalid credentials" }), { status: 400 });
     }
+    limits.loginFailures.clear(failureKey);
 
     await query("UPDATE accounts SET ip_address = ? WHERE username = ?", [ip, username]);
 
@@ -815,6 +877,9 @@ async function resetPassword(req: Request, server: any) {
     return new Response(JSON.stringify({ message: "Invalid email" }), { status: 400 });
   }
 
+  const wait = limits.resetPassword.take(limitKey(req));
+  if (wait) return tooMany(wait);
+
   const result = await query("SELECT email, username FROM accounts WHERE email = ? LIMIT 1", [email]) as any;
 
   if (result.length === 0) {
@@ -850,6 +915,9 @@ async function updatePassword(req: Request, server: any) {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ message: "Invalid request" }), { status: 400 });
   }
+
+  const wait = limits.updatePassword.take(limitKey(req));
+  if (wait) return tooMany(wait);
 
   const body = await req.json();
 
@@ -1450,6 +1518,9 @@ async function handle2FAStatus(req: Request) {
 }
 
 async function handleVerifyTOTPLogin(req: Request) {
+  const wait = limits.twoFactor.take(limitKey(req));
+  if (wait) return tooMany(wait);
+
   const username = await getUsernameFromToken(req);
   if (!username) {
     return new Response(JSON.stringify({ message: "Unauthorized" }), { status: 401 });
@@ -1510,6 +1581,9 @@ async function handleAuthWebAuthn(req: Request) {
 }
 
 async function handleSend2FAEmail(req: Request) {
+  const wait = limits.sendCode.take(limitKey(req));
+  if (wait) return tooMany(wait);
+
   const username = await getUsernameFromToken(req);
   if (!username) {
     return new Response(JSON.stringify({ message: "Unauthorized" }), { status: 401 });
@@ -1537,6 +1611,9 @@ async function handleSend2FAEmail(req: Request) {
 }
 
 async function handleVerify2FAEmail(req: Request) {
+  const wait = limits.twoFactor.take(limitKey(req));
+  if (wait) return tooMany(wait);
+
   const username = await getUsernameFromToken(req);
   if (!username) {
     return new Response(JSON.stringify({ message: "Unauthorized" }), { status: 401 });
@@ -1597,6 +1674,9 @@ async function verifyWebAuthnAssertion(username: string, credentialId: string, c
 }
 
 async function handleVerifyWebAuthnLogin(req: Request) {
+  const wait = limits.twoFactor.take(limitKey(req));
+  if (wait) return tooMany(wait);
+
   const username = await getUsernameFromToken(req);
   if (!username) {
     return new Response(JSON.stringify({ message: "Unauthorized" }), { status: 401 });

@@ -52,6 +52,7 @@ The login page is `/`. It sends `POST /login` with `username` and `password`.
 | Server decision | Response | What the page does next |
 | --- | --- | --- |
 | Bad input, unknown user, wrong password or banned | `400` with a message | Shows the message |
+| Too many attempts | `429` with a message and `Retry-After` | Shows the message |
 | Email not verified yet | `200`, `code: "unverified"`, code emailed | Shows the code field, then calls `/verify` |
 | Email code required | `200`, code emailed | Shows the code field, then calls `/verify` |
 | TOTP or a security key required | `200`, `requires2FA: true` | Goes to `/2fa-challenge` |
@@ -90,6 +91,8 @@ With `GUEST_MODE_ENABLED=true` the "Continue as guest" link on the login page ca
 3. Logs it in and answers `301` with the `token` cookie.
 
 With guest mode off the route answers `403` with `Guest mode is disabled`.
+
+One address can create 5 guest accounts an hour, and the webserver creates at most 200 an hour in total. Once an hour it also deletes guest accounts that are offline, have no session, logged in more than 24 hours ago and are in no party or guild; the engine still deletes every guest account when it starts.
 
 `POST /guest-bulk` creates many guest accounts in one request for load tests. It needs guest mode on and the value of `GATEWAY_GAME_SERVER_SECRET` in an `X-Benchmark-Secret` header or as a bearer token. The body `{"count": 500}` asks for that many accounts (1 to 2000, default 100) and the response lists their tokens. See [Benchmarking](#/engine/benchmarking).
 
@@ -225,6 +228,19 @@ curl https://play.example.com/api/profile \
   -H "Authorization: Bearer <token from the cookie>"
 ```
 
-:::note No rate limiting in the webserver
-The login, registration and code routes have no attempt counter of their own. The only automatic blocking is the path based blacklist of the [Reverse Proxy](#/gateway/reverse-proxy). Put a rate limiter in front of the gateway if you expose it to the internet.
-:::
+## Rate limits
+
+The webserver counts requests per client address, the `X-Real-Client-IP` header set by the [Reverse Proxy](#/gateway/reverse-proxy). Over a limit a route answers `429` with a `message` saying how long to wait and a `Retry-After` header in seconds. The counts are kept in memory and start again when the webserver restarts.
+
+| Route | Limit |
+| --- | --- |
+| `POST /login` | 10 attempts per address per 10 minutes, and 5 wrong passwords per address and username per 15 minutes. Wrong passwords from other addresses never block a login. |
+| `POST /register` | 5 per address per hour, counted once the form is valid |
+| `POST /guest-login` | 5 per address per hour, and 200 per hour in total |
+| `POST /reset-password` | 5 per address per hour |
+| `POST /update-password` | 10 per address per 15 minutes |
+| `POST /verify` | 10 per address per 15 minutes |
+| `POST /api/2fa/send-email` | 5 per address per 15 minutes |
+| `POST /api/2fa/verify-totp`, `/api/2fa/verify-email`, `/api/2fa/verify-webauthn` | 10 per address per 15 minutes, counted together |
+
+`POST /guest-bulk` has no limit; it needs the game server secret.

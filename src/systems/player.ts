@@ -2,6 +2,9 @@ import query, { transaction, type TransactionStatement } from "../controllers/sq
 import { verify, randomBytes, verifyGuestPassword } from "../modules/hash";
 import log from "../modules/logger";
 
+// The tables the engine's guest purge empties of a guest's rows (engine src/systems/player.ts, clear).
+const GUEST_ROW_TABLES = ["inventory", "stats", "clientconfig", "quest_log", "currency", "collectables", "equipment", "learned_spells", "permissions", "friendslist"];
+
 const player = {
   clear: async () => {
 
@@ -30,6 +33,34 @@ const player = {
     await query("DELETE FROM learned_spells WHERE username IN (SELECT username FROM accounts WHERE guest_mode = 1)");
 
     await query("DELETE FROM accounts WHERE guest_mode = 1");
+  },
+  // The engine removes every guest when it starts (its player.clear). This removes, while it runs, the
+  // guests nobody can be playing: offline with no session, a day past their last login, and in no party
+  // or guild (the engine keeps those in memory). The rest wait for the engine's next start. Answers
+  // with the number removed.
+  purgeOldGuests: async () => {
+    const engine = process.env.DATABASE_ENGINE || "mysql";
+    const dayAgo = engine === "sqlite" ? "datetime('now', '-24 hours')" : engine === "postgres" ? "NOW() - INTERVAL '24 hours'" : "NOW() - INTERVAL 24 HOUR";
+    const idle = "guest_mode = 1 AND online = 0 AND session_id IS NULL AND party_id IS NULL AND guild_id IS NULL";
+    const found = (await query(
+      `SELECT username FROM accounts WHERE ${idle} AND last_login IS NOT NULL AND last_login < ${dayAgo}` +
+        " AND username NOT IN (SELECT leader FROM parties) AND username NOT IN (SELECT leader FROM guilds) LIMIT 500"
+    )) as { username: string }[];
+    if (found.length === 0) return 0;
+
+    const names = found.map((row) => row.username);
+    const marks = names.map(() => "?").join(", ");
+    // The account goes first and only while still idle, so a guest who came back in the meantime is
+    // kept; the other rows go only for the names whose account is gone.
+    const results = await transaction([
+      { sql: `DELETE FROM accounts WHERE ${idle} AND username IN (${marks})`, values: names },
+      ...GUEST_ROW_TABLES.map((table) => ({
+        sql: `DELETE FROM ${table} WHERE username IN (${marks}) AND username NOT IN (SELECT username FROM accounts)`,
+        values: names,
+      })),
+    ]);
+    const removed = results[0];
+    return typeof removed?.affectedRows === "number" ? removed.affectedRows : removed?.count ?? 0;
   },
   // Bulk-provision N guest accounts for load testing. A normal guest signup is
   // ~15 serialised SQL round-trips (2 dup-check SELECTs + 7 child INSERTs +

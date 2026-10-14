@@ -133,8 +133,7 @@ export default async function loadMap(metadata: any): Promise<boolean> {
       // Old format: [{ data: compressed }, mapName, spawnX, spawnY]
       const data = metadata;
       if (data[0] && typeof data[0] === 'object' && data[0].data) {
-        //@ts-expect-error - Imported via HTML
-        const inflated = pako.inflate(
+        const inflated = (pako as any).inflate(
           new Uint8Array(new Uint8Array(data[0].data)),
           { to: "string" }
         );
@@ -471,8 +470,7 @@ async function loadTilesets(tilesets: any[]): Promise<HTMLImageElement[]> {
       const compressedBase64 = tilesetData.data;
       const compressedBytes = base64ToUint8Array(compressedBase64);
 
-      //@ts-expect-error - Imported via HTML
-      const inflatedBytes = pako.inflate(compressedBytes);
+      const inflatedBytes = (pako as any).inflate(compressedBytes);
       const blob = new Blob([inflatedBytes], { type: "image/png" });
 
       const image = await new Promise<HTMLImageElement>((resolve, reject) => {

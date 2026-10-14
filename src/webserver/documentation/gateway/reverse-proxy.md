@@ -139,7 +139,7 @@ A request that passes the filter is sent to the webserver with these changes:
 | `X-Forwarded-Proto` | `https` when the proxy serves TLS, otherwise `http`. |
 | `Accept-Encoding` | `identity`, so the response is passed through uncompressed. |
 
-Redirects from the webserver are passed back to the browser unchanged. The webserver uses `X-Real-Client-IP` as the player's address when it records logins.
+Redirects from the webserver are passed back to the browser unchanged. The webserver uses `X-Real-Client-IP` as the player's address when it records logins, and counts its [rate limits](#/gateway/authentication/rate-limits) per that address. A request that reaches the webserver without it, straight on the internal port, shares one count with every other such request.
 
 The hop to the webserver uses HTTPS when the certificate files exist and plain HTTP when they do not. This depends only on the files, not on `HTTP_USE_SSL`.
 
