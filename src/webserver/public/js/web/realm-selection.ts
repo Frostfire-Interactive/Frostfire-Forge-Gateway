@@ -86,6 +86,8 @@ async function loadServers(): Promise<void> {
         serverPings.clear();
 
         renderServers();
+        // the realm last played, or the only one: its start area is likely the one wanted
+        preloadStartArea(localStorage.getItem('selectedServerId') ?? (servers.length === 1 ? servers[0]?.id : null));
         lastRefreshAt = Date.now();
         updateRefreshTimestamp();
 
@@ -167,6 +169,7 @@ function renderServers(): void {
             document.querySelectorAll('.realm-card').forEach(c => c.classList.remove('selected'));
             card.classList.add('selected');
             selectedServerId = (card as HTMLElement).dataset.serverId || null;
+            preloadStartArea(selectedServerId);
             const continueBtn = document.getElementById('continue-button') as HTMLButtonElement;
             if (continueBtn) continueBtn.disabled = false;
 
@@ -235,7 +238,29 @@ async function continueToGame(serverId: string | null): Promise<void> {
 
         localStorage.removeItem('selectedServerId');
     }
-    window.location.href = '/game';
+    window.location.href = await characterNeeded() ? '/character' : '/game';
+}
+
+// USER REQUEST 2026-10-14 ("At realm selection, we should pre-load the chunks"): for an account that makes its
+// character next, the realm's start area is read and drawn here (js/web/startarea.ts keeps the picture), so the
+// character page shows it at once. Once per realm; nothing is asked for an account that has its character.
+let characterNeededOnce: Promise<boolean> | null = null;
+function preloadStartArea(serverId: string | null | undefined): void {
+    const prepare = (window as any).startAreaPrepare as ((id: string) => Promise<unknown>) | undefined;
+    if (!serverId || !prepare) return;
+    characterNeededOnce ??= characterNeeded();
+    void characterNeededOnce.then((needed) => { if (needed) void prepare(serverId); });
+}
+
+// USER REQUEST 2026-10-14: an account with no character makes one first (/character, src/systems/characters.ts).
+// Not knowing is not a reason to keep a player out: the game asks again at login (CHARACTER_REQUIRED).
+async function characterNeeded(): Promise<boolean> {
+    try {
+        const response = await fetch('/api/character', { headers: { 'Authorization': `Bearer ${token}` }, cache: 'no-store' });
+        return response.ok && !!(await response.json())?.needed;
+    } catch {
+        return false;
+    }
 }
 
 document.getElementById('continue-button')?.addEventListener('click', () => {

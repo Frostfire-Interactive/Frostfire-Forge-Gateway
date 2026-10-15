@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+    <head>
+        <link rel="icon" type="image/ico" href="img/icons/favicon.ico">
+        <meta charset="utf-8">
+        <meta http-equiv="Cache-Control" content="no-cache">
+        <meta name="viewport" content="viewport-fit=cover, width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="black">
+        <meta name="theme-color" content="#05080f">
+        <title>Frostfire Forge - Create Your Character</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="css/frontend.css">
+        <link rel="stylesheet" href="css/character.css">
+        <script src="./js/web/notification.js"></script>
+    </head>
+    <body class="character-page">
+        <div class="cc-world" aria-hidden="true">
+            <img id="start-area" class="cc-world-picture" alt="">
+        </div>
+        <div class="cc-shade" aria-hidden="true"></div>
+
+        <div class="cc-screen">
+            <header class="cc-top">
+                <button class="cc-back" onclick="location.href='/realm-selection'" type="button" title="Back to realm selection">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m0 0 6-6m-6 6 6 6"/></svg>
+                    <span>Realms</span>
+                </button>
+                <div class="cc-heading">
+                    <h1 class="cc-title">Create Your Character</h1>
+                    <p id="character-subtitle" class="cc-subtitle">&nbsp;</p>
+                </div>
+                <div class="cc-top-end"></div>
+            </header>
+
+            <aside class="cc-panel cc-classes" aria-label="Classes">
+                <h2 class="cc-panel-title">Choose a class</h2>
+                <div id="class-list" class="cc-class-list">
+                    <div class="cc-loading">Loading classes...</div>
+                </div>
+            </aside>
+
+            <section class="cc-hero" aria-live="polite">
+                <div id="class-hero"></div>
+            </section>
+
+            <section class="cc-panel cc-details" aria-label="Class details">
+                <div id="class-details"></div>
+            </section>
+
+            <footer class="cc-bottom">
+                <div id="error-message" class="cc-error" role="alert"></div>
+                <div id="starts-over" class="cc-warning" hidden>
+                    <strong>Your current character starts over</strong>
+                    <span>It goes back to level 1 with the class's stats. Its items, equipment, bags, spells, quests, gold and home are gone. Friends, mounts and settings stay.</span>
+                    <label id="starts-over-confirm" class="cc-confirm" hidden>
+                        <input type="checkbox" id="starts-over-checkbox">
+                        <span>I understand</span>
+                    </label>
+                </div>
+                <button type="button" id="create-button" class="cc-create" disabled>Create Character</button>
+            </footer>
+        </div>
+
+        <script src="./js/web/character.js"></script>
+        <script src="./js/web/startarea.js"></script>
+    </body>
+</html>

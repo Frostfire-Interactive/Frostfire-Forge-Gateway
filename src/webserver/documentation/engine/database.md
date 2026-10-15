@@ -338,9 +338,9 @@ Created by `src/utility/database_setup.ts`. Column lists are shortened to the on
 
 | Table | Holds | Key columns |
 |-------|-------|-------------|
-| `accounts` | One row per account and character | `id`, `username`, `email`, `password_hash`, `role`, `banned`, `map`, `position`, `direction`, `session_id`, `party_id`, `guild_id`, `guest_mode`, `is_dead` |
+| `accounts` | One row per account and character | `id`, `username`, `email`, `password_hash`, `role`, `banned`, `map`, `position`, `direction`, `session_id`, `party_id`, `guild_id`, `guest_mode`, `is_dead`, `class_id` (the character's class, `NULL` while it has none; added at server start when missing) |
 | `stats` | Health, stamina, level and stat bonuses | `username`, `health`, `max_health`, `stamina`, `max_stamina`, `xp`, `max_xp`, `level` |
-| `clientconfig` | Per player client settings | `username`, `fps`, `music_volume`, `effects_volume`, `muted`, `hotbar_config`, `inventory_config` |
+| `clientconfig` | Per player client settings | `username`, `fps`, `music_volume`, `effects_volume`, `ambience_volume` (added at server start when missing), `muted`, `hotbar_config`, `inventory_config` |
 | `permissions` | Permissions of a user, comma separated | `username`, `permissions` |
 | `permission_types` | Every permission name that exists | `name` |
 | `whitelist` | Usernames allowed on a realm | `realm`, `username` |
@@ -370,6 +370,7 @@ Created by `src/utility/database_setup.ts`. Column lists are shortened to the on
 | `npcs` | NPCs, their position, dialog and sprites. `vendor_items` is what a vendor stocks, as JSON: a list of `{ item, price }` with the price in copper. `innkeeper` (0 or 1) lets players make the NPC's inn their home. | `id`, `name`, `map`, `position`, `dialog`, `quest_giver`, `vendor_items`, `innkeeper` |
 | `particles` | Particle definitions | `name` |
 | `weather` | Weathers. See [Weather](#/engine/weather). | `name`, `temperature`, `humidity`, `wind_speed`, `wind_direction`, `precipitation`, `ambience` |
+| `classes` | Character classes. See [Class Editor](#/tools/class-editor). Made at server start when missing. | `id`, `name`, `description`, `max_health`, `max_stamina`, `stat_damage`, `stat_armor`, `stat_critical_chance`, `stat_critical_damage`, `stat_avoidance`, `spells` (JSON: `[{"spell", "level"}]`) |
 | `worlds` | Each world and the weather it is set to | `name`, `weather` |
 
 ### Social

@@ -104,6 +104,7 @@ import {
   fpsSlider,
   musicSlider,
   effectsSlider,
+  ambienceSlider,
   mutedCheckbox,
   statUI,
   packetsSentReceived,
@@ -2485,6 +2486,22 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       import("./weathereditor.js").then((m) => m.default.onUpdated(data));
       break;
     }
+    case "TOGGLE_CLASS_EDITOR": {
+      import("./classeditor.js").then((m) => m.default.toggle());
+      break;
+    }
+    case "CLASS_EDITOR_DATA": {
+      import("./classeditor.js").then((m) => m.default.onData(data));
+      break;
+    }
+    case "CLASS_EDITOR_RESULT": {
+      import("./classeditor.js").then((m) => m.default.onResult(data));
+      break;
+    }
+    case "CLASS_EDITOR_UPDATED": {
+      import("./classeditor.js").then((m) => m.default.onUpdated(data));
+      break;
+    }
     case "PLAYER_EDITOR_OPEN": {
       if (typeof data?.target === "string") import("./playereditor.js").then((m) => m.default.open(data.target));
       break;
@@ -2994,6 +3011,12 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       {
         window.location.href = "/";
       }
+      break;
+    // USER REQUEST 2026-10-14: the account has no character yet. The server closes the connection after this; it is
+    // no loss to reconnect from (closeHandled), the character page is where the player goes.
+    case "CHARACTER_REQUIRED":
+      closeHandled = true;
+      window.location.href = "/character";
       break;
     case "SPELLS": {
       const slots = envelope?.["slots"];
@@ -4081,6 +4104,11 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       document.getElementById(
         "effects-volume-label"
       )!.innerText = `Effects: (${effectsSlider.value})`;
+      // (a server from before the Ambience slider sends no level: full)
+      ambienceSlider.value = String(config.ambience_volume ?? 100);
+      document.getElementById(
+        "ambience-volume-label"
+      )!.innerText = `Ambience: (${ambienceSlider.value})`;
       mutedCheckbox.checked = config.muted;
       document.getElementById(
         "muted-checkbox"

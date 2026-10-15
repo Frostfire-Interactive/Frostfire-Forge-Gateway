@@ -69,6 +69,9 @@ import creatureeditor_html from "./public/creatureeditor.html";
 import itemeditor_html from "./public/itemeditor.html";
 import spelleditor_html from "./public/spelleditor.html";
 import weathereditor_html from "./public/weathereditor.html";
+import classeditor_html from "./public/classeditor.html";
+import character_html from "./public/character.html";
+import characters from "../systems/characters";
 import playereditor_html from "./public/playereditor.html";
 import controlpanel_html from "./public/controlpanel.html";
 import questeditor_html from "./public/questeditor.html";
@@ -279,6 +282,8 @@ const routes = {
   "/item-editor": itemeditor_html,
   "/spell-editor": spelleditor_html,
   "/weather-editor": weathereditor_html,
+  "/class-editor": classeditor_html,
+  "/character": character_html,
   "/player-editor": playereditor_html,
   "/control-panel": controlpanel_html,
   "/quest-editor": questeditor_html,
@@ -459,6 +464,10 @@ const routes = {
   "/api/subscription": {
     GET: async (req: Request) => handleGetSubscription(req),
   },
+  "/api/character": {
+    GET: async (req: Request) => handleGetCharacter(req),
+    POST: async (req: Request) => handleCreateCharacter(req),
+  },
   "/api/subscription/checkout": {
     POST: async (req: Request) => handleSubscriptionCheckout(req),
   },
@@ -534,6 +543,8 @@ Bun.serve({
       "/item-editor": routes["/item-editor"],
       "/spell-editor": routes["/spell-editor"],
       "/weather-editor": routes["/weather-editor"],
+      "/class-editor": routes["/class-editor"],
+      "/character": routes["/character"],
       "/player-editor": routes["/player-editor"],
       "/control-panel": routes["/control-panel"],
       "/quest-editor": routes["/quest-editor"],
@@ -563,6 +574,7 @@ Bun.serve({
       "/api/profile/2fa-requirements": routes["/api/profile/2fa-requirements"],
       "/api/profile/auth-webauthn": routes["/api/profile/auth-webauthn"],
       "/api/subscription": routes["/api/subscription"],
+      "/api/character": routes["/api/character"],
       "/api/subscription/checkout": routes["/api/subscription/checkout"],
       "/api/subscription/portal": routes["/api/subscription/portal"],
       "/api/stripe/webhook": routes["/api/stripe/webhook"],
@@ -1039,6 +1051,23 @@ async function handleGetProfile(req: Request) {
 
 function subscriptionReply(reply: Reply): Response {
   return new Response(JSON.stringify(reply.body), { status: reply.status, headers: { "Content-Type": "application/json" } });
+}
+
+// The character page (/character): whether the account must make its character, and the classes to choose from.
+async function handleGetCharacter(req: Request) {
+  const auth = await requireAuth(req);
+  if (!('username' in auth)) return auth;
+  return new Response(JSON.stringify(await characters.status(auth.username)), { status: 200, headers: { "Content-Type": "application/json" } });
+}
+
+async function handleCreateCharacter(req: Request) {
+  const auth = await requireAuth(req);
+  if (!('username' in auth)) return auth;
+  const body = await req.json().catch(() => null) as { classId?: unknown } | null;
+  const made = await characters.create(auth.username, body?.classId);
+  return made.ok
+    ? new Response(JSON.stringify({ ok: true, className: made.className }), { status: 200, headers: { "Content-Type": "application/json" } })
+    : new Response(JSON.stringify({ ok: false, message: made.error }), { status: made.status, headers: { "Content-Type": "application/json" } });
 }
 
 async function handleGetSubscription(req: Request) {

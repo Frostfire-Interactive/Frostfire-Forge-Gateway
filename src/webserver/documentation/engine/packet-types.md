@@ -424,6 +424,14 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `WEATHER_EDITOR_DELETE` | To server | Weather editor | Delete a weather |
 | `WEATHER_EDITOR_RESULT` | To client | Weather editor | Whether a change worked |
 | `WEATHER_EDITOR_UPDATED` | To client | Weather editor | The weather list changed |
+| `CHARACTER_REQUIRED` | To client | Login | The account has no character yet: the client goes to the character page. See [Class Editor](#/tools/class-editor). |
+| `TOGGLE_CLASS_EDITOR` | To client | Class editor | Open or close the class editor |
+| `CLASS_EDITOR_LIST` | To server | Class editor | Ask for the editor's data |
+| `CLASS_EDITOR_DATA` | To client | Class editor | The editor's data |
+| `CLASS_EDITOR_SAVE` | To server | Class editor | Save a class |
+| `CLASS_EDITOR_DELETE` | To server | Class editor | Delete a class |
+| `CLASS_EDITOR_RESULT` | To client | Class editor | Whether a change worked |
+| `CLASS_EDITOR_UPDATED` | To client | Class editor | The class list changed |
 | `TOGGLE_LOOT_EDITOR` | To client | Loot editor | Open or close the loot table editor |
 | `LIST_LOOT_TABLES` | To server | Loot editor | Ask for every loot table |
 | `LOOT_TABLE_LIST` | To client | Loot editor | Every loot table |

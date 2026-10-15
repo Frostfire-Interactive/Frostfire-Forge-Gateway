@@ -4,6 +4,7 @@ import {
   calculateWindSpeed
 } from "./windphysics.ts";
 import { windStreaks } from "./windstreaks.ts";
+import { setAmbience } from "./audio.js";
 
 const isMobileDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 const buffer = 200;
@@ -556,6 +557,31 @@ function weather(type: string, weatherData?: any): void {
   windStreaks(weatherCtx, deltaMs, windSpeed, windDirection, cameraOffsetX, cameraOffsetY, width, height, buffer);
 }
 
+/**
+ * USER REQUEST 2026-10-14 ("Hard Rain.wav" and "Soft Rain.wav" ... "should play according to how much it's raining.
+ * Fade the sound in and out"): the sound of the rain, on the Ambience track (audio.ts setAmbience), from the same
+ * amount the rain is drawn by (fallShare: the weather's precipitation). Light rain is the soft loop alone, heavy rain
+ * the hard one, and between HARD_FROM and HARD_TO of the full amount the two are crossed (equal power, so the cross
+ * is not a dip); the whole is louder the harder it rains, from RAIN_QUIET of the slider up. No rain, snow, freezing
+ * weather or a map without weather (inside a house) is silence: each loop fades out and stops.
+ */
+const SOFT_RAIN = "soft rain", HARD_RAIN = "hard rain";
+const HARD_FROM = 0.35, HARD_TO = 0.75, RAIN_QUIET = 0.45;
+/** How much it rains, 0 (none) to 1 (the full amount). */
+function rainAmount(type: string | null, weatherData?: any): number {
+  if (type !== "rainy" && type !== "thunderstorm") return 0;
+  if (Number(weatherData?.temperature ?? NaN) < FREEZING) return 0;
+  return fallShare(weatherData);
+}
+/** Called every frame (renderer.ts updateCamera), with the map's weather or null. */
+function updateRainSound(type: string | null, weatherData?: any): void {
+  const amount = rainAmount(type, weatherData);
+  const level = amount > 0 ? RAIN_QUIET + (1 - RAIN_QUIET) * amount : 0;
+  const t = Math.min(1, Math.max(0, (amount - HARD_FROM) / (HARD_TO - HARD_FROM))), hard = t * t * (3 - 2 * t);
+  setAmbience(SOFT_RAIN, level * Math.cos((hard * Math.PI) / 2));
+  setAmbience(HARD_RAIN, level * Math.sin((hard * Math.PI) / 2));
+}
+
 function updateWeatherCanvas(cameraX: number, cameraY: number): void {
 
   const halfViewportWidth = (window.innerWidth / 2);
@@ -565,4 +591,4 @@ function updateWeatherCanvas(cameraX: number, cameraY: number): void {
   cameraOffsetY = cameraY - halfViewportHeight - buffer;
 }
 
-export { weather, updateWeatherCanvas, addLightningStrike };
+export { weather, updateWeatherCanvas, addLightningStrike, updateRainSound };

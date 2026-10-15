@@ -14,6 +14,7 @@ Frostfire Forge ships its content tools inside the game client. An admin logs in
 | [Map Editor](#/tools/map-editor) | `/te` or `/tileeditor` | `/map-editor` | `tools.tile_editor` or `tools.*`, plus the admin role |
 | [Spell Editor](#/tools/spell-editor) | `/se` or `/spelleditor` | `/spell-editor` | Admin role, `tools.spell_editor`, `tools.*`, `server.admin` or `server.*` |
 | [Weather Editor](#/tools/weather-editor) | `/we` or `/weathereditor` | `/weather-editor` | Admin role, `tools.weather_editor`, `tools.*`, `server.admin` or `server.*` |
+| [Class Editor](#/tools/class-editor) | `/cle` or `/classeditor` | `/class-editor` | Admin role, `tools.class_editor`, `tools.*`, `server.admin` or `server.*` |
 | [Player Editor](#/tools/player-editor) | `/player edit <username or id>` | `/player-editor` | `server.admin` or `server.*` |
 | [Quest Editor](#/tools/quest-editor) | `/qe` or `/questeditor` | `/quest-editor` | Admin role, `tools.quest_editor`, `tools.*` or `server.*` |
 | [NPC Editor](#/tools/npc-editor) | `/ne` or `/npceditor` | `/npc-editor` | `tools.npc_editor` or `tools.*` |
@@ -72,6 +73,7 @@ Tool access is decided by the game server from two things on your account:
 | `tools.item_editor` | Item Editor |
 | `tools.spell_editor` | Spell Editor |
 | `tools.weather_editor` | Weather Editor |
+| `tools.class_editor` | Class Editor |
 | `tools.quest_editor` | Quest Editor |
 | `tools.*` | All of the above |
 | `admin.loot` | Loot Editor, and the loot table controls of the Control Panel |

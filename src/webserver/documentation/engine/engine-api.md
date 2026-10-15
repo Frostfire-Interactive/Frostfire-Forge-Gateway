@@ -299,7 +299,7 @@ return new Response("Not found", { status: 404 });
 ```
 
 - The match is exact. There are no path parameters, wildcards or trailing-slash rules. Read variable parts from the query string with `new URL(req.url).searchParams`.
-- Built-in routes are checked first and cannot be replaced: `GET /status`, `GET /creature-stats`, `GET /ping`, `GET /wt-cert-hash`, and every `OPTIONS` request.
+- Built-in routes are checked first and cannot be replaced: `GET /status`, `GET /creature-stats`, `GET /ping`, `GET /wt-cert-hash`, `GET /start-area`, and every `OPTIONS` request.
 - Registering the same method and path again replaces the earlier handler.
 
 :::warning Routes are public and get no CORS headers

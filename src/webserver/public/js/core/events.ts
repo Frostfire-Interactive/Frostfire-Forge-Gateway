@@ -4,7 +4,7 @@ import { isSelfDead, isSelfActionLocked } from "./death.js";
 import Cache from "./cache.js";
 const cache = Cache.getInstance();
 import { getCameraX, getCameraY } from "./renderer.js";
-import { chatInput, pauseMenu, optionsMenu, fpsSlider, musicSlider, effectsSlider, mutedCheckbox, canvas, ctx, friendsList } from "./ui.js";
+import { chatInput, pauseMenu, optionsMenu, fpsSlider, musicSlider, effectsSlider, ambienceSlider, mutedCheckbox, canvas, ctx, friendsList } from "./ui.js";
 import { showItemTooltip, hideItemTooltip } from "./tooltip.js";
 import { getUserHasInteracted, setUserHasInteracted, setControllerConnected, getLastSentDirection, setLastSentDirection,
     getLastTypingPacket, setLastTypingPacket, getContextMenuKeyTriggered, setContextMenuKeyTriggered, blacklistedKeys, movementKeys,
@@ -648,7 +648,13 @@ effectsSlider.addEventListener("input", () => {
   )!.innerText = `Effects: (${effectsSlider.value})`;
 });
 
-[fpsSlider, musicSlider, effectsSlider, mutedCheckbox].forEach(element => {
+ambienceSlider.addEventListener("input", () => {
+  document.getElementById(
+    "ambience-volume-label"
+  )!.innerText = `Ambience: (${ambienceSlider.value})`;
+});
+
+[fpsSlider, musicSlider, effectsSlider, ambienceSlider, mutedCheckbox].forEach(element => {
   element.addEventListener("change", () => {
     sendRequest({
       type: "CLIENTCONFIG",
@@ -656,6 +662,7 @@ effectsSlider.addEventListener("input", () => {
             fps: parseInt(fpsSlider.value),
             music_volume: parseInt(musicSlider.value) || 0,
             effects_volume: parseInt(effectsSlider.value) || 0,
+            ambience_volume: parseInt(ambienceSlider.value) || 0,
             muted: mutedCheckbox.checked,
           } as ConfigData,
     });

@@ -118,6 +118,14 @@ const player = {
       ),
     ]);
 
+    // Benchmark clients go straight into the game, past the character page (systems/characters.ts): they are given
+    // a character with no class (0), which the game server lets in. A database without class_id needs none.
+    try {
+      await query(`UPDATE accounts SET class_id = 0 WHERE username IN (${rows.map(() => "?").join(", ")})`, rows.map((r) => r.username));
+    } catch {
+      // no class_id column: characters are off
+    }
+
     return rows.map((r) => r.token);
   },
   register: async (

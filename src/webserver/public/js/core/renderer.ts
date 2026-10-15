@@ -14,7 +14,7 @@ let weatherType = null as string | null;
 let currentWeatherData = null as any; // Store full weather object for wind speed
 const cache = Cache.getInstance();
 import { updateHealthBar, updateStaminaBar, updateAbsorptionBar } from "./ui.js";
-import { updateWeatherCanvas, weather } from './weather.ts';
+import { updateWeatherCanvas, weather, updateRainSound } from './weather.ts';
 import { getShadowParams, SHADOW_MAX_OFFSET } from './shadows.js';
 import { renderMapPass, setShadowMaxOffset } from './glmap/index.js';
 import {
@@ -171,6 +171,7 @@ function updateCamera(currentPlayer: any, deltaTime: number) {
     smoothMapX = cameraX;
     smoothMapY = cameraY;
 
+    updateRainSound(weatherType, currentWeatherData); // (every frame: no weather fades the rain out)
     if (weatherType) {
       updateWeatherCanvas(cameraX, cameraY);
       weather(weatherType, currentWeatherData);
@@ -210,6 +211,7 @@ function updateCamera(currentPlayer: any, deltaTime: number) {
     smoothMapX = cameraX;
     smoothMapY = cameraY;
 
+    updateRainSound(weatherType, currentWeatherData); // (every frame: no weather fades the rain out)
     if (weatherType) {
       updateWeatherCanvas(cameraX, cameraY);
       weather(weatherType, currentWeatherData);

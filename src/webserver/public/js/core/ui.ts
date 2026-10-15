@@ -33,6 +33,7 @@ if (absorptionOverlayCanvas) {
 const xpBar = document.getElementById("xp-bar") as HTMLDivElement;
 const musicSlider = document.getElementById("music-slider") as HTMLInputElement;
 const effectsSlider = document.getElementById("effects-slider") as HTMLInputElement;
+const ambienceSlider = document.getElementById("ambience-slider") as HTMLInputElement;
 const mutedCheckbox = document.getElementById("muted-checkbox") as HTMLInputElement;
 const overlay = document.getElementById("overlay") as HTMLDivElement;
 const packetsSentReceived = document.getElementById("packets-sent-received") as HTMLDivElement;
@@ -1827,7 +1828,7 @@ if (guildCreateButton) {
 export {
     toggleUI, toggleDebugContainer, handleStatsUI, createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, updatePartyMemberOnlineStatus, updatePartyMemberStats, updateHealthBar, updateStaminaBar, updateAbsorptionBar, updateBuffBar, startSpellCooldown, startPersistentSpellCooldown, startSpellLockout, castSpell, positionText,
     friendsListUI, inventoryUI, spellBookUI, questFrameUI, questLogUI, questTrackerUI, pauseMenu, menuElements, chatInput, canvas, ctx, fpsSlider, healthBar,
-    staminaBar, xpBar, musicSlider, effectsSlider, mutedCheckbox, statUI, overlay,
+    staminaBar, xpBar, musicSlider, effectsSlider, ambienceSlider, mutedCheckbox, statUI, overlay,
     packetsSentReceived, optionsMenu, friendsList, friendsListSearch, onlinecount, progressBar, progressBarContainer,
     inventoryGrid, chatMessages, loadingScreen, usernameLabel, levelLabel, healthLabel, manaLabel, damageLabel, armorLabel, critChanceLabel, critDamageLabel, avoidanceLabel,
     serverTime, ambience, ambienceCool, sunFlare, weatherCanvas, weatherCtx, lightCanvas, lightCtx, lightDodgeCanvas, lightDodgeCtx, ghostCanvas, ghostCtx, aboveCanvas, aboveCtx, guildContainer, guildName, guildRank, guildMembersList,

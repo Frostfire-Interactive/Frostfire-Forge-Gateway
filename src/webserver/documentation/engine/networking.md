@@ -322,6 +322,7 @@ The API is tiny. It is served by `Bun.serve` on `127.0.0.1:WEBSRV_INTERNAL_PORT`
 | `/status` | GET | `{"status":"ok"}` |
 | `/ping` | GET | `{"pong": <server time in ms>}` |
 | `/wt-cert-hash` | GET | The certificate hash, or `404` |
+| `/start-area` | GET | The default map's name, size, tile size and tilesets, the spawn, and the asset server URL, or `404` while the map is not loaded. The character page draws its backdrop from it. |
 | `/creature-stats` | GET | Creature system counters and tick timings. `?reset=1` starts a new measuring window. |
 | any | OPTIONS | `204` with CORS headers for an allowed origin, `403` otherwise |
 | Plugin routes | as registered | Whatever the plugin returns |
@@ -356,7 +357,7 @@ export function register(engine: EngineAPI) {
 | `Access-Control-Allow-Headers` | `Content-Type,Authorization` |
 | `Access-Control-Max-Age` | `3600` |
 
-CORS headers are added to `/ping`, `/wt-cert-hash` and `OPTIONS` answers. With an empty list no headers are sent, so browsers block every cross origin request, and the server logs a warning at startup.
+CORS headers are added to `/ping`, `/wt-cert-hash`, `/start-area` and `OPTIONS` answers. With an empty list no headers are sent, so browsers block every cross origin request, and the server logs a warning at startup.
 
 :::warning The origin list also guards WebTransport
 When `CORS_ALLOWED_ORIGINS` is not empty, the `origin` field of `AUTH_CONNECT` must be in the list (an exact match, `*` does not count here). Add the address players load the game from.

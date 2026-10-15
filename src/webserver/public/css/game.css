@@ -1792,7 +1792,7 @@ body.timelapse-active .ui-hidden-in-timelapse {
   flex-shrink: 0;
 }
 
-#fps-slider, #music-slider, #effects-slider {
+#fps-slider, #music-slider, #effects-slider, #ambience-slider {
   width: 180px;
   height: 3px;
   margin: 0;
@@ -1814,7 +1814,7 @@ body.timelapse-active .ui-hidden-in-timelapse {
   flex-shrink: 0;
 }
 
-#fps-slider::-webkit-slider-thumb, #music-slider::-webkit-slider-thumb, #effects-slider::-webkit-slider-thumb {
+#fps-slider::-webkit-slider-thumb, #music-slider::-webkit-slider-thumb, #effects-slider::-webkit-slider-thumb, #ambience-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 16px;
@@ -1827,7 +1827,7 @@ body.timelapse-active .ui-hidden-in-timelapse {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
 }
 
-#fps-slider::-moz-range-thumb, #music-slider::-moz-range-thumb, #effects-slider::-moz-range-thumb {
+#fps-slider::-moz-range-thumb, #music-slider::-moz-range-thumb, #effects-slider::-moz-range-thumb, #ambience-slider::-moz-range-thumb {
   width: 16px;
   height: 16px;
   border-radius: 50%;
