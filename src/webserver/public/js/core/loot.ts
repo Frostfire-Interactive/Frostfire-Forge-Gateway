@@ -1,4 +1,5 @@
 import Cache from "./cache.js";
+import { canvasDpr, worldToScreen } from "./worldzoom.js";
 
 const QUALITY_COLORS: Record<string, string> = {
   common: "#9d9d9d",
@@ -318,12 +319,11 @@ export function renderLootInteractionHint(
   ctx.globalAlpha = 1;
   ctx.lineWidth = 2;
 
-  const dpr = window.devicePixelRatio || 1;
-  // A map narrower than the screen is drawn centred sideways (renderer.ts): the hint moves with it.
-  const mapWidth = Number(window.mapData?.width) * Number(window.mapData?.tilewidth);
-  const mapCenterOffsetX = mapWidth < window.innerWidth ? (window.innerWidth - mapWidth) / 2 : 0;
-  const x = (nearestLoot.x - cameraX + mapCenterOffsetX + canvasWidth / (dpr * 2)) * dpr;
-  const y = (nearestLoot.y - 70 - cameraY + canvasHeight / (dpr * 2)) * dpr;
+  // where the world zoom puts the loot on the screen (worldzoom.ts), in the canvas's own pixels
+  const dpr = canvasDpr();
+  const at = worldToScreen(nearestLoot.x, nearestLoot.y - 70);
+  const x = at.x * dpr;
+  const y = at.y * dpr;
   const radius = 14 * dpr;
 
   ctx.save();
@@ -403,12 +403,11 @@ export function renderChestInteractionHint(
   }
   if (!nc) return;
   ctx.shadowBlur = 0; ctx.shadowColor = "transparent"; ctx.globalAlpha = 1; ctx.lineWidth = 2;
-  const dpr = window.devicePixelRatio || 1;
-  // A map narrower than the screen is drawn centred sideways (renderer.ts): the hint moves with it.
-  const mapWidth = Number(window.mapData?.width) * Number(window.mapData?.tilewidth);
-  const mapCenterOffsetX = mapWidth < window.innerWidth ? (window.innerWidth - mapWidth) / 2 : 0;
-  const rx = (nc.x - cameraX + mapCenterOffsetX + canvasWidth / (dpr * 2)) * dpr;
-  const ry = (nc.y - 72 - cameraY + canvasHeight / (dpr * 2)) * dpr;
+  // where the world zoom puts the chest on the screen (worldzoom.ts), in the canvas's own pixels
+  const dpr = canvasDpr();
+  const at = worldToScreen(nc.x, nc.y - 72);
+  const rx = at.x * dpr;
+  const ry = at.y * dpr;
   const rr = 15 * dpr;
   ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
   if (progress > 0) {

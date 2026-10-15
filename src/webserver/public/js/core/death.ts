@@ -1,6 +1,7 @@
 import { sendRequest, cachedPlayerId } from "./socket.js";
 import Cache from "./cache.js";
 import { SKELETON_TTL_MS, getScreenView, worldToScreenCss } from "./skeletons.js";
+import { worldToScreen } from "./worldzoom.js";
 
 // Whether this device uses the zoomed-out mobile viewport (mirrors map.ts).
 function isTouchViewport(): boolean {
@@ -639,8 +640,10 @@ export function tickDeathWisps(): void {
     const twinkle = 0.6 + 0.4 * Math.sin(nowSec * p.speed * 2 + p.phase);
     const a = Math.max(0, Math.min(1, p.alpha * twinkle));
     if (a <= 0.01) continue;
-    const sx = (p.x - camX + vw / 2) * dpr;
-    const sy = (p.y - camY + vh / 2) * dpr;
+    // where the world zoom puts the mote (worldzoom.ts)
+    const at = worldToScreen(p.x, p.y);
+    const sx = at.x * dpr;
+    const sy = at.y * dpr;
     if (sx < -60 || sy < -60 || sx > w + 60 || sy > h + 60) continue;
     ctx.fillStyle = `hsla(${p.hue}, 90%, 78%, ${a.toFixed(3)})`;
     ctx.beginPath();

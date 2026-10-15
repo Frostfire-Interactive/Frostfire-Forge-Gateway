@@ -2,8 +2,10 @@ import { sendRequest, getIsLoaded, getMovementAllowed, cachedPlayerId, itemsByNa
 import { teleportsHome } from "./consumables.js";
 import { isSelfDead, isSelfActionLocked } from "./death.js";
 import Cache from "./cache.js";
+// (no longer used here, but kept: the modules start in the order they are imported, and ui.ts is in a cycle that
+// breaks with any other order: "Cannot read properties of undefined (reading 'addEventListener')")
+import "./renderer.js";
 const cache = Cache.getInstance();
-import { getCameraX, getCameraY } from "./renderer.js";
 import { chatInput, pauseMenu, optionsMenu, fpsSlider, musicSlider, effectsSlider, ambienceSlider, mutedCheckbox, canvas, ctx, friendsList } from "./ui.js";
 import { showItemTooltip, hideItemTooltip } from "./tooltip.js";
 import { getUserHasInteracted, setUserHasInteracted, setControllerConnected, getLastSentDirection, setLastSentDirection,
@@ -26,7 +28,8 @@ import { isVendorOpen, sellItem } from "./vendor.js";
 import { playerAt } from "./playerpick.js";
 import { closeRadialMenu } from "./mobileui.js";
 import "./creatureinput.js";
-import { getScreenView, screenToWorldCss } from "./skeletons.js";
+import "./skeletons.js";
+import { applyWorldTransform, installWorldZoom, screenToWorld } from "./worldzoom.js";
 
 /** Extra world pixels around an NPC that still count as a tap on it (touch only). */
 const TOUCH_TARGET_SLOP = 24;
@@ -515,15 +518,8 @@ function resizeGameCanvas() {
       ctx.drawImage(snapshot, 0, 0, prevWidth, prevHeight, 0, 0, targetWidth, targetHeight);
     }
 
-    if (isTouchDevice) {
-      const mobileZoom = 0.85;
-      ctx.scale(dpr * mobileZoom, dpr * mobileZoom);
-
-      ctx.translate((displayWidth * (1 - mobileZoom)) / (2 * mobileZoom),
-                    (displayHeight * (1 - mobileZoom)) / (2 * mobileZoom));
-    } else {
-      ctx.scale(dpr, dpr);
-    }
+    // device pixels, the touch screens' 0.85 and the player's zoom (worldzoom.ts); set again every frame
+    applyWorldTransform(ctx);
 
   }
 }
@@ -772,18 +768,8 @@ document.addEventListener("contextmenu", (event) => {
   const screenX = event.clientX - rect.left;
   const screenY = event.clientY - rect.top;
 
-  // Account for map centering offset for small maps
-  let mapCenterOffsetX = 0;
-  const mapCenterOffsetY = 0;
-  if (window.mapData) {
-    const mapWidth = window.mapData.width * window.mapData.tilewidth;
-    if (mapWidth < window.innerWidth) {
-      mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
-    }
-  }
-
-  const worldX = screenX - window.innerWidth / 2 + getCameraX() - mapCenterOffsetX;
-  const worldY = screenY - window.innerHeight / 2 + getCameraY() - mapCenterOffsetY;
+  // the world under the cursor, at the world zoom (worldzoom.ts)
+  const { x: worldX, y: worldY } = screenToWorld(screenX, screenY);
 
   // Corpses cannot be targeted. Ghosts can be targeted and interacted with,
   // except while their graveyard teleport is still pending (not rendered).
@@ -825,8 +811,7 @@ canvas.addEventListener("touchstart", (e) => {
     const screenX = longPressStartX - rect.left;
     const screenY = longPressStartY - rect.top;
 
-    const worldX = screenX - rect.width / 2 + getCameraX();
-    const worldY = screenY - rect.height / 2 + getCameraY();
+    const { x: worldX, y: worldY } = screenToWorld(screenX, screenY);
 
     const clickedPlayer = playerAt(worldX, worldY, (player) => !player.isDead && !(player.isGhost && player.ghostTeleportPending));
 
@@ -887,20 +872,7 @@ canvas.addEventListener("touchend", (e) => {
   const rect = canvas.getBoundingClientRect();
   const screenX = touch.clientX - rect.left;
   const screenY = touch.clientY - rect.top;
-  const view = getScreenView();
-  let worldX: number;
-  let worldY: number;
-  if (view) {
-    ({ x: worldX, y: worldY } = screenToWorldCss(screenX, screenY, view));
-  } else {
-    let mapCenterOffsetX = 0;
-    if (window.mapData) {
-      const mapWidth = window.mapData.width * window.mapData.tilewidth;
-      if (mapWidth < window.innerWidth) mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
-    }
-    worldX = screenX - window.innerWidth / 2 + getCameraX() - mapCenterOffsetX;
-    worldY = screenY - window.innerHeight / 2 + getCameraY();
-  }
+  const { x: worldX, y: worldY } = screenToWorld(screenX, screenY);
   import("./quest.js").then((m) => m.tryTapInteractNpcAt(worldX, worldY));
 });
 
@@ -928,15 +900,7 @@ canvas.addEventListener("touchend", (e) => {
     const screenX = touch.clientX - rect.left;
     const screenY = touch.clientY - rect.top;
 
-    let mapCenterOffsetX = 0;
-    const mapCenterOffsetY = 0;
-    if (window.mapData) {
-      const mapWidth = window.mapData.width * window.mapData.tilewidth;
-      if (mapWidth < window.innerWidth) mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
-    }
-
-    const worldX = screenX - window.innerWidth / 2 + getCameraX() - mapCenterOffsetX;
-    const worldY = screenY - window.innerHeight / 2 + getCameraY() - mapCenterOffsetY;
+    const { x: worldX, y: worldY } = screenToWorld(screenX, screenY);
 
     sendRequest({
       type: "TELEPORTXY",
@@ -951,21 +915,40 @@ canvas.addEventListener("touchend", (e) => {
   }
 });
 
+// Ctrl + wheel zooms the world in, never the UI (worldzoom.ts).
+installWorldZoom();
+
+// Ctrl + W closes the tab. USER REQUEST 2026-10-15: "Prevent control + w because that closes the tab". The browser keeps
+// that key for itself (Chrome and Firefox close the tab before the page is told), so no key handler can stop it.
+// Instead, while Ctrl is held, leaving the page asks first ("Leave site?"): Ctrl + W, and Ctrl + R too, close or reload
+// nothing unless that is confirmed. The game's own moves to another page are never made with Ctrl held, so they are
+// not asked about. Where the browser does pass the key on, it is simply stopped.
+let ctrlHeld = false;
+const followCtrl = (event: KeyboardEvent | MouseEvent) => { ctrlHeld = event.ctrlKey; };
+window.addEventListener("keydown", (event) => {
+  ctrlHeld = event.ctrlKey || event.key === "Control";
+  if (event.ctrlKey && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "w") event.preventDefault();
+});
+window.addEventListener("keyup", (event) => { ctrlHeld = event.ctrlKey && event.key !== "Control"; });
+// a key let go while the question was up, or in another window, is not seen: the next key or mouse movement says
+window.addEventListener("mousemove", followCtrl, { passive: true });
+window.addEventListener("mousedown", followCtrl, { passive: true });
+window.addEventListener("blur", () => { ctrlHeld = false; });
+window.addEventListener("beforeunload", (event) => {
+  if (!ctrlHeld) return;
+  event.preventDefault();
+  // older browsers show the question only when this is set
+  event.returnValue = "";
+});
+
 canvas.addEventListener("mousemove", (event) => {
   const rect = canvas.getBoundingClientRect();
   const screenX = event.clientX - rect.left;
   const screenY = event.clientY - rect.top;
 
-  let mapCenterOffsetX = 0;
-  if (window.mapData) {
-    const mapWidth = window.mapData.width * window.mapData.tilewidth;
-    if (mapWidth < window.innerWidth) {
-      mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
-    }
-  }
-
-  (window as any).mouseWorldX = Math.floor(screenX - window.innerWidth / 2 + getCameraX() - mapCenterOffsetX);
-  (window as any).mouseWorldY = Math.floor(screenY - window.innerHeight / 2 + getCameraY());
+  const under = screenToWorld(screenX, screenY);
+  (window as any).mouseWorldX = Math.floor(under.x);
+  (window as any).mouseWorldY = Math.floor(under.y);
 
   const worldX = (window as any).mouseWorldX;
   const worldY = (window as any).mouseWorldY;
@@ -1011,24 +994,8 @@ document.addEventListener("click", (event) => {
   const screenX = event.clientX - rect.left;
   const screenY = event.clientY - rect.top;
 
-  // Shared projection: touch devices render at 0.85 zoom, which the plain
-  // formula below ignores (taps landed off target, worse further from centre).
-  const view = getScreenView();
-  let worldX: number;
-  let worldY: number;
-  if (view) {
-    ({ x: worldX, y: worldY } = screenToWorldCss(screenX, screenY, view));
-  } else {
-    let mapCenterOffsetX = 0;
-    if (window.mapData) {
-      const mapWidth = window.mapData.width * window.mapData.tilewidth;
-      if (mapWidth < window.innerWidth) {
-        mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
-      }
-    }
-    worldX = screenX - window.innerWidth / 2 + getCameraX() - mapCenterOffsetX;
-    worldY = screenY - window.innerHeight / 2 + getCameraY();
-  }
+  // Shared projection (worldzoom.ts): the touch screens' 0.85 and the player's zoom.
+  const { x: worldX, y: worldY } = screenToWorld(screenX, screenY);
 
   // A fingertip is far less precise than a cursor: widen the hit area on touch.
   const isTouch = window.matchMedia("(hover: none) and (pointer: coarse)").matches;

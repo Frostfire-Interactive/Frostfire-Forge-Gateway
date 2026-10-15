@@ -2,11 +2,13 @@
 // messages to the server, and provides the in-world tools (spawn placement,
 // patrol drawing, context menu, debug overlay).
 import { sendRequest, getIsLoaded } from "./socket.js";
-import { getCameraX, getCameraY } from "./renderer.js";
+// (kept for the order the modules start in: see events.ts)
+import "./renderer.js";
 import { canvas } from "./ui.js";
 import Cache from "./cache.js";
 import { creatureAt } from "./creature.js";
 import { config } from "../web/global.js";
+import { screenToWorld } from "./worldzoom.js";
 
 /**
  * The game server sends asset paths, not URLs: it reaches the asset server on an
@@ -198,15 +200,9 @@ class CreatureEditor {
 
   private worldFromEvent(event: MouseEvent): { x: number; y: number } {
     const rect = canvas.getBoundingClientRect();
-    let mapCenterOffsetX = 0;
-    if (window.mapData) {
-      const mapWidth = window.mapData.width * window.mapData.tilewidth;
-      if (mapWidth < window.innerWidth) mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
-    }
-    return {
-      x: Math.round(event.clientX - rect.left - window.innerWidth / 2 + getCameraX() - mapCenterOffsetX),
-      y: Math.round(event.clientY - rect.top - window.innerHeight / 2 + getCameraY()),
-    };
+    // the world zoom's projection (worldzoom.ts)
+    const at = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    return { x: Math.round(at.x), y: Math.round(at.y) };
   }
 
   private currentMap(): string {

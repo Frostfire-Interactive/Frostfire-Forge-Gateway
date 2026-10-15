@@ -5,6 +5,7 @@ import { config } from "../web/global.js";
 import { setMap } from "./glmap/index.js";
 import { setMap as setMapMobile } from "./glmap-mobile/index.js";
 import { MOBILE_RENDERER } from "./renderpath.js";
+import { applyWorldTransform } from "./worldzoom.js";
 
 const PLAYER_Z_INDEX = config?.PLAYER_Z_INDEX;
 declare global {
@@ -368,19 +369,8 @@ export default async function loadMap(metadata: any): Promise<boolean> {
 
     canvas.style.display = "block";
 
-    if (ctx) {
-
-      if (isTouchDevice) {
-        const mobileZoom = 0.85;
-        ctx.scale(dpr * mobileZoom, dpr * mobileZoom);
-
-        ctx.translate((displayWidth * (1 - mobileZoom)) / (2 * mobileZoom),
-                      (displayHeight * (1 - mobileZoom)) / (2 * mobileZoom));
-      } else {
-        ctx.scale(dpr, dpr);
-      }
-
-    }
+    // device pixels, the touch screens' 0.85 and the player's zoom (worldzoom.ts); set again every frame
+    if (ctx) applyWorldTransform(ctx);
 
     return true;
 }

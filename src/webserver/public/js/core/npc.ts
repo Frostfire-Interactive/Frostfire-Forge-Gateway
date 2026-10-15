@@ -1,3 +1,4 @@
+import { canvasDpr, worldToScreen } from "./worldzoom.js";
 import { getLines } from "./chat.js";
 import { npcImage, createCachedImage } from "./images.js";
 import Cache from "./cache.js";
@@ -790,14 +791,12 @@ export function renderNpcInteractBadge(
   const ny = Number(npc.position?.y);
   if (!Number.isFinite(nx) || !Number.isFinite(ny)) return;
 
-  const dpr = window.devicePixelRatio || 1;
-  // A map narrower than the screen is drawn centred sideways (renderer.ts): the badge moves with it.
-  const mapWidth = Number(window.mapData?.width) * Number(window.mapData?.tilewidth);
-  const mapCenterOffsetX = mapWidth < window.innerWidth ? (window.innerWidth - mapWidth) / 2 : 0;
   // Small badge on the NPC's lower body: sprite shows through the fill while
-  // a bright ring and letter keep it noticeable.
-  const x = (nx - cameraX + mapCenterOffsetX + canvasWidth / (dpr * 2)) * dpr;
-  const y = (ny + 12 - cameraY + canvasHeight / (dpr * 2)) * dpr;
+  // a bright ring and letter keep it noticeable. Where the world zoom puts it (worldzoom.ts), in the canvas's pixels.
+  const dpr = canvasDpr();
+  const at = worldToScreen(nx, ny + 12);
+  const x = at.x * dpr;
+  const y = at.y * dpr;
   const radius = 10 * dpr;
 
   ctx.save();

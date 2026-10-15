@@ -27,6 +27,7 @@ import { renderLoot, renderLootInteractionHint } from './loot.js';
 import { renderSkeletons } from './skeletons.js';
 import { isSelfDead, isReleaseHidden, tickDeathOffer, tickReleaseCinematic, tickCorpseMarker, tickDeathWisps, tickGraveyardOffer } from './death.js';
 import { renderLightMap } from './lightmap.js';
+import { applyWorldTransform, worldOffset, viewWidth, viewHeight, userZoom, worldToScreen } from './worldzoom.js';
 import { updateTileSounds } from './tilesounds.js';
 import { chatInput } from "./chat.js";
 import { friendsListSearch } from "./friends.js";
@@ -189,8 +190,9 @@ function updateCamera(currentPlayer: any, deltaTime: number) {
 
     const mapWidth = window.mapData.width * window.mapData.tilewidth;
     const mapHeight = window.mapData.height * window.mapData.tileheight;
-    const halfViewportWidth = window.innerWidth / 2;
-    const halfViewportHeight = window.innerHeight / 2;
+    // the world in view at the player's zoom (worldzoom.ts), so a map's edge still stops the camera when zoomed in
+    const halfViewportWidth = viewWidth() / 2;
+    const halfViewportHeight = viewHeight() / 2;
 
     cameraX = Math.max(halfViewportWidth, Math.min(mapWidth - halfViewportWidth, cameraX));
     // A map narrower than the screen is centred sideways by every draw and every click (mapCenterOffsetX), with the
@@ -203,7 +205,7 @@ function updateCamera(currentPlayer: any, deltaTime: number) {
     // hotbar there instead of at the bottom of the screen, and a map shorter than what is left is centred in what is
     // left. USER REPORT 2026-10-07: "on mobile when entering a small level, I can't see the bottom of the level due
     // to the hotbar being in the way".
-    const cover = coveredBottom();
+    const cover = coveredBottom() / userZoom();
     cameraY = mapHeight < halfViewportHeight * 2 - cover
       ? mapHeight / 2 + cover / 2
       : Math.max(halfViewportHeight, Math.min(mapHeight - halfViewportHeight + cover, cameraY));
@@ -797,23 +799,11 @@ function collectOccluders(): Array<[number, number, number, number, number]> {
 function renderMap(phase: 'below' | 'above' = 'below', targetCtx: CanvasRenderingContext2D | null = ctx) {
   if (!targetCtx || !window.mapData) return;
 
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-
   // Calculate map size in pixels
   const mapWidth = window.mapData.width * window.mapData.tilewidth;
   const mapHeight = window.mapData.height * window.mapData.tileheight;
 
-  // Calculate centering offset for small maps
-  let mapCenterOffsetX = 0;
-  const mapCenterOffsetY = 0;
-
-  if (mapWidth < viewportWidth) {
-    mapCenterOffsetX = (viewportWidth - mapWidth) / 2;
-  }
-
-  const offsetX = Math.round(viewportWidth / 2 - smoothMapX + mapCenterOffsetX);
-  const offsetY = Math.round(viewportHeight / 2 - smoothMapY + mapCenterOffsetY);
+  const { x: offsetX, y: offsetY } = worldOffset(smoothMapX, smoothMapY);
 
   const tileEditor = (window as any).tileEditor;
   const isEditorActive = !!tileEditor?.isActive;
@@ -1176,6 +1166,9 @@ function animationLoop() {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
   ctx.restore();
+  // the canvas's base transform for this frame: device pixels and the world zoom (worldzoom.ts). Everything drawn of
+  // the world below reads it, the WebGL map included.
+  applyWorldTransform(ctx, now);
   ctx.imageSmoothingEnabled = false;
 
   const viewportLeft = cameraX - window.innerWidth / 2;
@@ -1298,17 +1291,7 @@ function animationLoop() {
     renderMap('below');
   }
 
-  // Calculate map size in pixels and centering offset for small maps
-  const mapWidth = window.mapData.width * window.mapData.tilewidth;
-  let mapCenterOffsetX = 0;
-  const mapCenterOffsetY = 0;
-
-  if (mapWidth < window.innerWidth) {
-    mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
-  }
-
-  const offsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
-  const offsetY = Math.round(window.innerHeight / 2 - smoothMapY + mapCenterOffsetY);
+  const { x: offsetX, y: offsetY } = worldOffset(smoothMapX, smoothMapY);
   // the canvas's base transform (dpr, and on touch devices the 0.85 zoom: events.ts resizeGameCanvas), for the light map
   const baseTransform = ctx.getTransform();
   ctx.save();
@@ -1692,8 +1675,8 @@ function animationLoop() {
     // Render upper particles (zIndex >= 3) after upper map layers
     const upperCtx = aboveCtx || ctx;
     upperCtx.save();
-    const upperOffsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
-    const upperOffsetY = Math.round(window.innerHeight / 2 - smoothMapY + mapCenterOffsetY);
+    const upperOffsetX = worldOffset(smoothMapX, smoothMapY).x;
+    const upperOffsetY = worldOffset(smoothMapX, smoothMapY).y;
     upperCtx.translate(upperOffsetX, upperOffsetY);
 
     // Get all zIndex values >= 3 and sort them
@@ -1716,8 +1699,8 @@ function animationLoop() {
     const tileEditor = (window as any).tileEditor;
     if (tileEditor?.isActive) {
       ctx.save();
-      const graveyardWarpOffsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
-      const graveyardWarpOffsetY = Math.round(window.innerHeight / 2 - smoothMapY + mapCenterOffsetY);
+      const graveyardWarpOffsetX = worldOffset(smoothMapX, smoothMapY).x;
+      const graveyardWarpOffsetY = worldOffset(smoothMapX, smoothMapY).y;
       ctx.translate(graveyardWarpOffsetX, graveyardWarpOffsetY);
       renderGraveyardsAndWarps(ctx, graveyardWarpOffsetX, graveyardWarpOffsetY);
       ctx.restore();
@@ -1726,8 +1709,8 @@ function animationLoop() {
     // Draw outline for hidden NPCs when NPC editor is active (z-index 15 - after upper particles)
     if (npcEditor?.isActive) {
       ctx.save();
-      const npcOutlineOffsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
-      const npcOutlineOffsetY = Math.round(window.innerHeight / 2 - smoothMapY + mapCenterOffsetY);
+      const npcOutlineOffsetX = worldOffset(smoothMapX, smoothMapY).x;
+      const npcOutlineOffsetY = worldOffset(smoothMapX, smoothMapY).y;
       ctx.translate(npcOutlineOffsetX, npcOutlineOffsetY);
 
       for (const npc of visibleNpcs) {
@@ -1760,17 +1743,7 @@ function animationLoop() {
   } else {
 
     ctx.save();
-    // Calculate map size in pixels and centering offset for small maps
-    const mapWidth = window.mapData.width * window.mapData.tilewidth;
-    let mapCenterOffsetX = 0;
-    const mapCenterOffsetY = 0;
-
-    if (mapWidth < window.innerWidth) {
-      mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
-    }
-
-    const offsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
-    const offsetY = Math.round(window.innerHeight / 2 - smoothMapY + mapCenterOffsetY);
+    const { x: offsetX, y: offsetY } = worldOffset(smoothMapX, smoothMapY);
     ctx.translate(offsetX, offsetY);
 
     if (window.mapData) {
@@ -2169,17 +2142,7 @@ function animationLoop() {
 
   if ((window as any).tileEditor) {
     ctx.save();
-    // Calculate map size in pixels and centering offset for small maps
-    const mapWidth = window.mapData.width * window.mapData.tilewidth;
-    let mapCenterOffsetX = 0;
-    const mapCenterOffsetY = 0;
-
-    if (mapWidth < window.innerWidth) {
-      mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
-    }
-
-    const offsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
-    const offsetY = Math.round(window.innerHeight / 2 - smoothMapY + mapCenterOffsetY);
+    const { x: offsetX, y: offsetY } = worldOffset(smoothMapX, smoothMapY);
     ctx.translate(offsetX, offsetY);
     (window as any).tileEditor.renderPreview();
     ctx.restore();
@@ -2187,17 +2150,7 @@ function animationLoop() {
 
   if (!wireframeDebugCheckbox.checked) {
     ctx.save();
-    // Calculate map size in pixels and centering offset for small maps
-    const mapWidth = window.mapData.width * window.mapData.tilewidth;
-    let mapCenterOffsetX = 0;
-    const mapCenterOffsetY = 0;
-
-    if (mapWidth < window.innerWidth) {
-      mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
-    }
-
-    const offsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
-    const offsetY = Math.round(window.innerHeight / 2 - smoothMapY + mapCenterOffsetY);
+    const { x: offsetX, y: offsetY } = worldOffset(smoothMapX, smoothMapY);
     ctx.translate(offsetX, offsetY);
     ctx.imageSmoothingEnabled = false;
 
@@ -2217,10 +2170,9 @@ function animationLoop() {
           document.body.appendChild(p._typingEl);
           typingBubbles.set(p._typingEl, p);
         }
-        const sx = p.renderPosition.x + offsetX - 5;
-        const sy = p.renderPosition.y + offsetY - 58;
-        p._typingEl.style.left = sx + "px";
-        p._typingEl.style.top = sy + "px";
+        const at = worldToScreen(p.renderPosition.x - 5, p.renderPosition.y - 58);
+        p._typingEl.style.left = at.x + "px";
+        p._typingEl.style.top = at.y + "px";
         p._typingEl.style.display = "block";
         typingShown.add(p._typingEl);
       }

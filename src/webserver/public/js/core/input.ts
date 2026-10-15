@@ -8,10 +8,11 @@ const cache = Cache.getInstance();
 import { toggleUI, toggleDebugContainer, handleStatsUI, createGuildUI, collectablesUI, hotbarSlots, spellCooldowns, refreshSpellbookCooldowns, questLogUI, questFrameUI } from "./ui.js";
 import { handleCommand, handleChatMessage } from "./chat.js";
 import { itemOfSlot, useItem } from "./consumables.js";
-import { setDirection, setPendingRequest, getCameraX, getCameraY } from "./renderer.js";
+import { setDirection, setPendingRequest } from "./renderer.js";
 import { chatInput } from "./chat.js";
 import { friendsListSearch } from "./friends.js";
 import { inventoryUI, spellBookUI, friendsListUI, pauseMenu, menuElements, guildContainer } from "./ui.js";
+import { screenToWorld } from "./worldzoom.js";
 let userHasInteracted: boolean = false;
 let lastSentDirection = "";
 
@@ -590,9 +591,8 @@ function getPlayerAtCanvasPosition(clientX: number, clientY: number): any | null
     const screenX = clientX - rect.left;
     const screenY = clientY - rect.top;
 
-    // Use same coordinate system as context menu
-    const worldX = screenX - window.innerWidth / 2 + getCameraX();
-    const worldY = screenY - window.innerHeight / 2 + getCameraY();
+    // Same projection as the context menu (worldzoom.ts)
+    const { x: worldX, y: worldY } = screenToWorld(screenX, screenY);
 
     // Same pick as the context menu: the player drawn on top
     return playerAt(worldX, worldY);
@@ -648,9 +648,8 @@ function setupDragListeners() {
             const screenX = event.clientX - rect.left;
             const screenY = event.clientY - rect.top;
 
-            // Use same coordinate system as context menu for consistency
-            const worldX = screenX - window.innerWidth / 2 + getCameraX();
-            const worldY = screenY - window.innerHeight / 2 + getCameraY();
+            // Same projection as the context menu (worldzoom.ts)
+            const { x: worldX, y: worldY } = screenToWorld(screenX, screenY);
 
             sendRequest({
                 type: "DRAG_UPDATE",

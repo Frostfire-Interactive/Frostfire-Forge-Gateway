@@ -1,6 +1,7 @@
 import Cache from "./cache.js";
 import { config } from "../web/global.js";
 import { getCachedImage } from "./images.js";
+import { mapCenterOffsetX, screenToWorld, worldToScreen, worldZoom } from "./worldzoom.js";
 
 // Death skeletons are fully server-authoritative: the game server spawns a
 // marker where a player dies, sends LOAD_SKELETONS (AOI-filtered) on login,
@@ -194,34 +195,23 @@ export function getScreenView(): ScreenView | null {
   const canvas = document.getElementById("game") as HTMLCanvasElement | null;
   const rawDpr = window.devicePixelRatio || 1;
   const isTouch = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
-  const zoom = isTouch ? 0.85 : 1;
+  const zoom = worldZoom();
   const canvasDpr = isTouch ? Math.min(rawDpr, 2) : rawDpr;
   const viewW = (canvas?.width || window.innerWidth * canvasDpr) / canvasDpr;
   const viewH = (canvas?.height || window.innerHeight * canvasDpr) / canvasDpr;
   const md = (window as any).mapData;
-  let centerX = 0;
-  if (md && md.width * md.tilewidth < window.innerWidth) {
-    centerX = (window.innerWidth - md.width * md.tilewidth) / 2;
-  }
+  const centerX = md ? mapCenterOffsetX() : 0;
   return { viewW, viewH, zoom, centerX, camX, camY };
 }
 
-export function worldToScreenCss(worldX: number, worldY: number, v: ScreenView): { x: number; y: number } {
-  const tx = v.zoom === 1 ? 0 : (v.viewW * (1 - v.zoom)) / (2 * v.zoom);
-  const ty = v.zoom === 1 ? 0 : (v.viewH * (1 - v.zoom)) / (2 * v.zoom);
-  return {
-    x: (worldX - v.camX + v.viewW / 2 + v.centerX) * v.zoom + tx * v.zoom,
-    y: (worldY - v.camY + v.viewH / 2) * v.zoom + ty * v.zoom,
-  };
+// The world zoom's own projection (worldzoom.ts), which the drawing uses too. The view is only asked for so a caller
+// with no camera yet gets null from getScreenView first.
+export function worldToScreenCss(worldX: number, worldY: number, _v: ScreenView): { x: number; y: number } {
+  return worldToScreen(worldX, worldY);
 }
 
-export function screenToWorldCss(sx: number, sy: number, v: ScreenView): { x: number; y: number } {
-  const tx = v.zoom === 1 ? 0 : (v.viewW * (1 - v.zoom)) / (2 * v.zoom);
-  const ty = v.zoom === 1 ? 0 : (v.viewH * (1 - v.zoom)) / (2 * v.zoom);
-  return {
-    x: (sx - tx * v.zoom) / v.zoom - v.viewW / 2 + v.camX - v.centerX,
-    y: (sy - ty * v.zoom) / v.zoom - v.viewH / 2 + v.camY,
-  };
+export function screenToWorldCss(sx: number, sy: number, _v: ScreenView): { x: number; y: number } {
+  return screenToWorld(sx, sy);
 }
 
 export function renderSkeletons(ctx: CanvasRenderingContext2D): void {

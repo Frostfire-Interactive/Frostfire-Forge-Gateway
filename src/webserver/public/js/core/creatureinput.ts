@@ -5,11 +5,13 @@
 import { sendRequest, getIsLoaded } from "./socket.js";
 import { isSelfActionLocked } from "./death.js";
 import Cache from "./cache.js";
-import { getCameraX, getCameraY } from "./renderer.js";
+// (kept for the order the modules start in: see events.ts)
+import "./renderer.js";
 import { canvas } from "./ui.js";
 import { creatures, creatureAt, creatureTargetKey, getAutoAttackingId, parseCreatureTarget, setAutoAttackingId } from "./creature.js";
 import creatureEditor from "./creatureeditor.js";
-import { getScreenView, screenToWorldCss } from "./skeletons.js";
+import "./skeletons.js";
+import { screenToWorld } from "./worldzoom.js";
 
 const cache = Cache.getInstance();
 
@@ -31,19 +33,7 @@ let lastTouchTapAt = 0;
  */
 function worldFromClient(clientX: number, clientY: number): { x: number; y: number } {
   const rect = canvas.getBoundingClientRect();
-  const view = getScreenView();
-  if (view) return screenToWorldCss(clientX - rect.left, clientY - rect.top, view);
-  const screenX = clientX - rect.left;
-  const screenY = clientY - rect.top;
-  let mapCenterOffsetX = 0;
-  if (window.mapData) {
-    const mapWidth = window.mapData.width * window.mapData.tilewidth;
-    if (mapWidth < window.innerWidth) mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
-  }
-  return {
-    x: screenX - window.innerWidth / 2 + getCameraX() - mapCenterOffsetX,
-    y: screenY - window.innerHeight / 2 + getCameraY(),
-  };
+  return screenToWorld(clientX - rect.left, clientY - rect.top);
 }
 
 function shouldIgnore(event: MouseEvent): boolean {

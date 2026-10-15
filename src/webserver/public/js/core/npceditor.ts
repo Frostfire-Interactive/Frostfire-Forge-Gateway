@@ -2,6 +2,7 @@ import { getCameraX, getCameraY } from "./renderer.js";
 import Cache from "./cache.js";
 import { createNPC, deleteNPC } from "./npc.js";
 import { config } from "../web/global.js";
+import { eventToWorld } from "./worldzoom.js";
 
 const cache = Cache.getInstance();
 
@@ -371,10 +372,9 @@ class NpcEditor {
   // ===== Canvas interaction (NPC dragging) =====
 
   private screenToWorld(clientX: number, clientY: number): { x: number; y: number } {
-    return {
-      x: Math.floor(clientX - window.innerWidth / 2 + getCameraX()),
-      y: Math.floor(clientY - window.innerHeight / 2 + getCameraY()),
-    };
+    // the world zoom's projection (worldzoom.ts)
+    const at = eventToWorld({ clientX, clientY });
+    return { x: Math.floor(at.x), y: Math.floor(at.y) };
   }
 
   private findNpcAtWorld(wx: number, wy: number): { live: any; data: any } | null {
