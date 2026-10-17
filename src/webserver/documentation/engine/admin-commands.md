@@ -76,6 +76,7 @@ Most commands take `<username | id>`. A value that is not a number is matched ag
 | `/classeditor` | `/cle` | admin role, `tools.class_editor`, `tools.*`, `server.admin` or `server.*` | Opens the class editor |
 | `/mailbox` | | admin role, `tools.mailbox_editor`, `tools.*`, `server.admin` or `server.*` | Opens the mailbox editor |
 | `/gathering` | | admin role, `tools.gathering`, `tools.*`, `server.admin` or `server.*` | Opens the gathering editor |
+| `/achievements` | | admin role, `tools.achievement_editor`, `tools.*`, `server.admin` or `server.*` | Opens the achievement editor |
 | `/questeditor` | `/qe` | admin role, `tools.quest_editor`, `tools.*` or `server.*` | Opens the quest editor |
 | `/creatureeditor` | `/ce` | admin role, `tools.creature_editor`, `tools.*` or `server.*` | Opens the creature editor |
 | `/looteditor` | `/le` | `admin.loot` or `admin.*` | Opens the loot table editor |
@@ -448,6 +449,7 @@ These commands only tell the client to open a window. Each editor checks permiss
 | `/classeditor` | `/cle` | Admin role, `tools.class_editor`, `tools.*`, `server.admin` or `server.*` | [Class editor](#/tools/class-editor) |
 | `/mailbox` | | Admin role, `tools.mailbox_editor`, `tools.*`, `server.admin` or `server.*` | [Mailbox editor](#/tools/mailbox-editor) |
 | `/gathering` | | Admin role, `tools.gathering`, `tools.*`, `server.admin` or `server.*` | [Gathering editor](#/tools/gathering-editor) |
+| `/achievements` | | Admin role, `tools.achievement_editor`, `tools.*`, `server.admin` or `server.*` | [Achievement editor](#/tools/achievement-editor) |
 | `/questeditor` | `/qe` | Admin role, `tools.quest_editor`, `tools.*` or `server.*` | [Quest editor](#/tools/quest-editor) |
 | `/creatureeditor` | `/ce` | Admin role, `tools.creature_editor`, `tools.*` or `server.*` | [Creature editor](#/tools/creature-editor) |
 | `/looteditor` | `/le` | `admin.loot` or `admin.*` | [Loot editor](#/tools/loot-editor) |

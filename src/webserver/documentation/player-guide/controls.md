@@ -46,8 +46,10 @@ Your target's name, level, health and mana appear in the target frame. A target 
 | O | Open or close the friends list |
 | G | Open or close the guild window |
 | K | Open or close the collectables window (your mounts) |
+| Y | Open or close the achievements window: every achievement, the ones you earned with the date, the others with your progress |
 | Enter | Open the chat box, press again to send |
 | Up and Down arrows | In the chat box: step through messages you sent earlier |
+| Shift + left-click an item or an achievement | Put a link to it in your message: the chat box opens if it was closed. For items, your bags, equipment, bag slots, vendor, trade, mail and quest rewards all work, and clicking the link in chat shows the item and its rarity. For achievements, Shift + left-click a row of the achievements window; the link shows in green, and clicking it in chat opens your own achievements window at that achievement. |
 | Esc | Close the world map, cancel ground targeting, cancel a spell you are casting, close any open windows, or open the menu |
 | F2 | Show or hide the performance and debug readout, including the FPS counter |
 | Shift | Hold while pointing at an equipment item to compare it with what you are wearing |
@@ -126,7 +128,7 @@ On phones and tablets the game adds on-screen controls. Hold your device sideway
 | Tap a party member, guild member or friend | Open their menu |
 | Tap outside an open window | Close the window |
 
-The wheel of windows holds Inventory, Spellbook, Quest Log, World Map, Character, Friends, Guild, Collectables and Settings.
+The wheel of windows holds Inventory, Spellbook, Quest Log, World Map, Character, Friends, Guild, Collectables, Achievements and Settings.
 
 On touch devices your own name, health, mana and level are shown in a frame of their own.
 
@@ -146,6 +148,7 @@ To close a window, press its key again, select the **✕** at its top right corn
 | Friends | O | Your friends and who is online. See [Friends](#/player-guide/friends). |
 | Guild | G | Your guild, or the form to create one. See [Guilds](#/player-guide/guilds). |
 | Collectables | K | Your mounts. See [Mounts](#/player-guide/mounts). |
+| Achievements | Y | Your achievements and progress. |
 | Menu | Esc | Settings, Manage Profile and Logout. |
 
 ## Notifications

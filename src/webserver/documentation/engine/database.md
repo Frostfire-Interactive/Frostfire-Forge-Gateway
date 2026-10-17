@@ -372,6 +372,8 @@ Created by `src/utility/database_setup.ts`. Column lists are shortened to the on
 | `weather` | Weathers. See [Weather](#/engine/weather). | `name`, `temperature`, `humidity`, `wind_speed`, `wind_direction`, `precipitation`, `ambience` |
 | `mailbox_spots` | Mailboxes placed by hand, one row per map. See [Mailbox Editor](#/tools/mailbox-editor). Made at server start when missing. | `map`, `spots` (JSON: `[{"x", "y"}]`) |
 | `gathering_areas` | Where gathering nodes spawn. See [Gathering Editor](#/tools/gathering-editor). Made at server start when missing. | `id`, `map`, `x`, `y`, `radius`, `size`, `item`, `quantity_min`, `quantity_max`, `max_nodes`, `respawn_min_s`, `respawn_max_s`, `enabled` |
+| `achievements` | Achievements. See [Achievement Editor](#/tools/achievement-editor). Made at server start when missing. | `id`, `name` (unique), `description`, `icon`, `type`, `target`, `count`, `reward_item`, `reward_quantity`, `reward_mount`, `enabled` |
+| `player_achievements` | Each player's progress toward each achievement. Written every 60 s and when the player leaves; a completion at once. Made at server start when missing. | `username`, `achievement_id` (together the key), `progress`, `completed_at` (ISO date text, empty until earned) |
 | `classes` | Character classes. See [Class Editor](#/tools/class-editor). Made at server start when missing. | `id`, `name`, `description`, `max_health`, `max_stamina`, `stat_damage`, `stat_armor`, `stat_critical_chance`, `stat_critical_damage`, `stat_avoidance`, `spells` (JSON: `[{"spell", "level"}]`) |
 | `worlds` | Each world and the weather it is set to | `name`, `weather` |
 

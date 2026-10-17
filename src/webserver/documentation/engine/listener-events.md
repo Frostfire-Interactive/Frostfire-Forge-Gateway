@@ -153,7 +153,7 @@ Every gameplay hook the engine emits. The `Area` column is there for the filter 
 | Items | `onPlayerMount` | `{ player, mounted, mountType }` | A player mounted or dismounted |
 | Loot | `onPlayerLootDropped` | `{ player, itemName, quantity, mapName, x, y }` | A loot drop appeared on the ground |
 | Loot | `onPlayerLootDespawned` | `{ player, itemName, quantity, mapName, x, y }` | A loot drop was removed without being picked up. `player` is only `{ username, id }` of the owner, both empty for loot that had no owner |
-| Loot | `onPlayerLootRetrieved` | `{ player, itemName, quantity, mapName, x, y }` | A player picked up a loot drop |
+| Loot | `onPlayerLootRetrieved` | `{ player, itemName, quantity, mapName, x, y }` | A player picked up a loot drop, or took an item from a creature's corpse (once for each item added to the bags; `x`, `y` are the corpse's) |
 | Creatures | `onCreatureKilled` | `{ creature, template, killer, tapper }` | A creature died. `killer` is a player object or `null` |
 | Creatures | `onCreatureKillCredit` | `{ player, templateId, creature, updates }` | A player received kill credit. `updates` are the quest objective updates it caused |
 | Quests | `onQuestAccepted` | `{ username, questId }` | A quest was accepted |
@@ -161,6 +161,8 @@ Every gameplay hook the engine emits. The `Area` column is there for the filter 
 | Quests | `onQuestReady` | `{ username, questId }` | Every objective of a quest is met |
 | Quests | `onQuestCompleted` | `{ username, questId, rewards }` | A quest was turned in. `rewards` is `{ ok, items, xpResult }` |
 | Quests | `onQuestAbandoned` | `{ username, questId }` | A quest was abandoned |
+| Gathering | `onGatherCompleted` | `{ player, item, quantity }` | A gather succeeded: the items are in the player's bags |
+| Collectables | `onCollectableAdded` | `{ username, type, item }` | Something was added to a player's collectables (a mount), once it is written |
 
 ### Declared but never emitted
 

@@ -226,13 +226,13 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `DRAG_PLAYER_STOP` | Both | Players | An admin stops dragging a player |
 | `DRAG_UPDATE` | To server | Players | The new position of a dragged player |
 | `MOUNT` | To server | Players | Mount or dismount |
-| `CHAT` | Both | Chat | A local chat message |
+| `CHAT` | Both | Chat | A local chat message. To clients it may carry `links`: up to 5 entries (items and achievements together) named as `[Name]` in the message. Each has a `kind`: `"item"` entries carry the item's rarity and tooltip fields, `"achievement"` entries carry `id`, `name`, `description` and `icon` (a url). An item wins over an achievement of the same name; disabled achievements are not linked |
 | `TYPING` | Both | Chat | A player started typing |
 | `STOPTYPING` | Both | Chat | A player stopped typing |
 | `COMMAND` | To server | Chat | A slash command, see [Admin Commands](#/engine/admin-commands) |
-| `WHISPER` | To client | Chat | A private message |
-| `PARTY_CHAT` | To client | Chat | A party chat message |
-| `GUILD_CHAT` | Both | Chat | A guild chat message |
+| `WHISPER` | To client | Chat | A private message. May carry `links` as `CHAT` does |
+| `PARTY_CHAT` | To client | Chat | A party chat message. With `system: true` it is a line from the game (an achievement earned), with no speaker, plus `who`, `achievement` and `achievementId` for the link. Player lines may carry `links` as `CHAT` does |
+| `GUILD_CHAT` | Both | Chat | A guild chat message. With `system: true` it is a line from the game (an achievement earned), with no speaker, plus `who`, `achievement` and `achievementId` for the link. Player lines may carry `links` as `CHAT` does |
 | `NOTIFY` | To client | Chat | A notification line |
 | `STATS` | Unused | Stats | A builder exists (`packetManager.stats`) but nothing calls it. Stats are sent as `UPDATESTATS` |
 | `UPDATESTATS` | To client | Stats | A change to a player's stats, with the damage or healing that caused it |
@@ -451,6 +451,16 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `GATHERING_EDITOR_PREVIEW_SPOTS` | To client | Gathering editor | The preview: `{ spots, wanted, note }` |
 | `GATHERING_EDITOR_RESULT` | To client | Gathering editor | Whether a save or delete was done |
 | `GATHERING_EDITOR_UPDATED` | To client | Gathering editor | Another admin changed the areas |
+| `ACHIEVEMENT_EARNED` | To client | Achievements | The earner's popup: `{ id, name, description, icon, rewardItem, rewardQuantity, rewardMount, mailed }` |
+| `ACHIEVEMENTS_LIST` | To server | Achievements | Ask for your achievements (no data). Sent when the window opens, and after one is earned while it is open |
+| `ACHIEVEMENTS` | To client | Achievements | Every achievement that is on, with your progress: `{ achievements: [{ id, name, description, icon, type, count, progress, completedAt, rewardItem, rewardQuantity, rewardMount }] }` |
+| `TOGGLE_ACHIEVEMENT_EDITOR` | To client | Achievement editor | Open or close the achievement editor |
+| `ACHIEVEMENT_EDITOR_LIST` | To server | Achievement editor | Ask for the achievements, the kinds of deed and the pick lists |
+| `ACHIEVEMENT_EDITOR_SAVE` | To server | Achievement editor | Save an achievement (a new one without `id`) |
+| `ACHIEVEMENT_EDITOR_DELETE` | To server | Achievement editor | Delete an achievement and every player's progress toward it: `{ id }` |
+| `ACHIEVEMENT_EDITOR_DATA` | To client | Achievement editor | The achievements, the kinds of deed, the pick lists, the limits |
+| `ACHIEVEMENT_EDITOR_RESULT` | To client | Achievement editor | Whether a save or delete was done |
+| `ACHIEVEMENT_EDITOR_UPDATED` | To client | Achievement editor | Another admin changed the achievements |
 | `TOGGLE_LOOT_EDITOR` | To client | Loot editor | Open or close the loot table editor |
 | `LIST_LOOT_TABLES` | To server | Loot editor | Ask for every loot table |
 | `LOOT_TABLE_LIST` | To client | Loot editor | Every loot table |

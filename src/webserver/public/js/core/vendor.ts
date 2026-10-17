@@ -86,6 +86,7 @@ function nameEl(item: StockItem, quantity = 1): HTMLSpanElement {
 function rowFor(item: StockItem): HTMLDivElement {
   const row = document.createElement("div");
   row.className = "vendor-row";
+  row.dataset.itemName = item.name;
   row.appendChild(itemFrame(iconOf(item), item.quality, 36, item.name));
   setupItemTooltip(row, () => ({ ...item, iconUrl: iconOf(item) }));
   return row;

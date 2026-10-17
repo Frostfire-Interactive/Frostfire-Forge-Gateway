@@ -142,6 +142,7 @@ function slotFor(item: TradeItem | undefined, own: boolean): HTMLDivElement {
   if (!item) return slot;
 
   slot.classList.add("filled");
+  slot.dataset.itemName = item.name;
   slot.appendChild(itemFrame(iconOf(item), item.quality, 40, item.name));
   setupItemTooltip(slot, () => ({ ...item, iconUrl: iconOf(item) }));
 

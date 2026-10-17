@@ -2261,9 +2261,20 @@ function animationLoop() {
     ctx.translate(offsetX, offsetY);
     ctx.imageSmoothingEnabled = false;
 
-    for (const p of visiblePlayers) {
-      p.showChat(ctx, currentPlayer);
+    // Chat bubbles stand over everything on the map: the top tile layers (trees, roofs) are on their own canvas over
+    // this one (aboveCanvas), already drawn this frame, so the bubbles go there, after them. USER REQUEST 2026-10-17:
+    // "ensure player chat text bubbles are always on the top most tile layer + 1". Without that canvas (phones) the
+    // top layers were drawn on this one earlier in the frame, so drawing here is already over them.
+    const bubbleCtx = aboveCtx ?? ctx;
+    if (bubbleCtx !== ctx) {
+      bubbleCtx.save();
+      bubbleCtx.translate(offsetX, offsetY);
+      bubbleCtx.imageSmoothingEnabled = false;
     }
+    for (const p of visiblePlayers) {
+      p.showChat(bubbleCtx, currentPlayer);
+    }
+    if (bubbleCtx !== ctx) bubbleCtx.restore();
 
     const typingShown = new Set<HTMLImageElement>();
     for (const p of visiblePlayers) {

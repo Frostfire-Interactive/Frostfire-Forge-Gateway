@@ -342,6 +342,11 @@
           <div id="quest-log-right" class="ui"></div>
         </div>
       </div>
+      <!-- Achievements (key Y): js/core/achievements.ts fills the list; input.ts adds its X. -->
+      <div id="achievements-container" class="ui book-panel">
+        <div id="achievements-title" class="ui">Achievements</div>
+        <div id="achievements-list" class="ui"></div>
+      </div>
       <div id="quest-tracker" class="ui"></div>
       <div id="guild-container" class="ui">
         <div id="guild-info" class="ui">
@@ -427,6 +432,7 @@
         <button class="radial-item" data-action="friends" data-hotkey="KeyO" title="Friends (O)">👥</button>
         <button class="radial-item" data-action="guild" data-hotkey="KeyG" title="Guild (G)">🛡️</button>
         <button class="radial-item" data-action="collectables" data-hotkey="KeyK" title="Collectables (K)">💎</button>
+        <button class="radial-item" data-action="achievements" data-hotkey="KeyY" title="Achievements (Y)">🏆</button>
         <button class="radial-item" data-action="settings" data-hotkey="Escape" title="Settings">⚙️</button>
         <!-- For admins only (js/core/mobileui.ts shows it to them): opens the control panel, as the /cp command does. -->
         <button class="radial-item" data-action="controlpanel" data-admin="1" title="Control Panel" hidden>🛠️</button>

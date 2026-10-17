@@ -17,6 +17,7 @@ Frostfire Forge ships its content tools inside the game client. An admin logs in
 | [Class Editor](#/tools/class-editor) | `/cle` or `/classeditor` | `/class-editor` | Admin role, `tools.class_editor`, `tools.*`, `server.admin` or `server.*` |
 | [Mailbox Editor](#/tools/mailbox-editor) | `/mailbox` | `/mailbox-editor` | Admin role, `tools.mailbox_editor`, `tools.*`, `server.admin` or `server.*` |
 | [Gathering Editor](#/tools/gathering-editor) | `/gathering` | `/gathering-editor` | Admin role, `tools.gathering`, `tools.*`, `server.admin` or `server.*` |
+| [Achievement Editor](#/tools/achievement-editor) | `/achievements` | `/achievement-editor` | Admin role, `tools.achievement_editor`, `tools.*`, `server.admin` or `server.*` |
 | [Player Editor](#/tools/player-editor) | `/player edit <username or id>` | `/player-editor` | `server.admin` or `server.*` |
 | [Quest Editor](#/tools/quest-editor) | `/qe` or `/questeditor` | `/quest-editor` | Admin role, `tools.quest_editor`, `tools.*` or `server.*` |
 | [NPC Editor](#/tools/npc-editor) | `/ne` or `/npceditor` | `/npc-editor` | `tools.npc_editor` or `tools.*` |

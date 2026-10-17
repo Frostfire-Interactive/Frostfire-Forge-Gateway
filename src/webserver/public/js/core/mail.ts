@@ -286,6 +286,14 @@ function renderTabs() {
   }));
 }
 
+/** The sender of reward mail from the achievements (engine systems/achievements). Stored as returned so it cannot be sent back, but it was never returned. */
+const REWARD_SENDER = "Achievement Rewards";
+
+/** Whether to label the mail "(returned)": a returned mail, except the achievement rewards. */
+function returnedMark(mail: Mail): boolean {
+  return mail.returned && mail.sender !== REWARD_SENDER;
+}
+
 /** One mail in the list: who sent it, its subject, what is attached and how long it has left. */
 function rowFor(mail: Mail): HTMLButtonElement {
   const row = document.createElement("button");
@@ -298,7 +306,7 @@ function rowFor(mail: Mail): HTMLButtonElement {
   text.className = "mail-row-text";
   const from = document.createElement("span");
   from.className = "mail-from";
-  from.innerText = mail.returned ? `${mail.sender} (returned)` : mail.sender;
+  from.innerText = returnedMark(mail) ? `${mail.sender} (returned)` : mail.sender;
   const subject = document.createElement("span");
   subject.className = "mail-subject";
   subject.innerText = mail.subject;
@@ -359,6 +367,7 @@ function attachmentsOf(mail: Mail): HTMLElement {
     slot.type = "button";
     slot.className = "mail-slot filled";
     slot.title = "Take";
+    slot.dataset.itemName = item.name;
     slot.appendChild(itemFrame(iconOf(item), item.quality, 40, item.name));
     if (item.quantity > 1) {
       const count = document.createElement("span");
@@ -393,7 +402,7 @@ function readingPage(mail: Mail): HTMLElement {
   subject.innerText = mail.subject;
   const from = document.createElement("p");
   from.className = "mail-meta";
-  from.innerText = `From ${mail.sender}${mail.returned ? " (returned)" : ""} · ${timeLeft(mail)} left`;
+  from.innerText = `From ${mail.sender}${returnedMark(mail) ? " (returned)" : ""} · ${timeLeft(mail)} left`;
   const body = document.createElement("div");
   body.className = "mail-body";
   body.innerText = mail.body;
@@ -475,6 +484,7 @@ function attachedSlot(attached: { name: string; quantity: number } | undefined):
   if (!attached) return slot;
   const item: MailItem = { ...(cache.inventory || []).find((held: any) => held.name === attached.name), ...attached };
   slot.classList.add("filled");
+  slot.dataset.itemName = item.name;
   slot.appendChild(itemFrame(iconOf(item), item.quality, 40, item.name));
   setupItemTooltip(slot, () => ({ ...item, iconUrl: iconOf(item) }));
 

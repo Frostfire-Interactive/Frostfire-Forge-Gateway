@@ -184,6 +184,7 @@ body {
 #hotbar,
 #spell-book-container,
 #collectables-container,
+#achievements-container,
 #quest-frame-container,
 #quest-log-container,
 #quest-tracker,
@@ -1079,22 +1080,29 @@ body {
   100% { background-position: 0% 50%; }
 }
 
+/*
+ * The chat box, 520 x 360 (it was 400 x 300; the text keeps its size). The panel and the input are drawn from their
+ * art as nine slices (border-image), so the rod, the caps and the knob keep their pixels as the box grows and only
+ * the plain middle stretches.
+ */
 #chat-container {
   position: absolute;
   bottom: 0;
   left: 0;
   z-index: 100;
-  width: 400px;
-  height: 300px;
+  width: 520px;
+  height: 360px;
 }
 
 #chat {
   position: absolute;
-  background: url("../img/ui/ui-chat-container.png");
-  background-repeat: no-repeat;
-  background-size: 100% 100%;
-  width: 400px;
-  height: 193px;
+  box-sizing: border-box;
+  /* ui-chat-container.png is 400 x 193: the rod is the top 48 px, the caps and the rod's tab the outer 18 / 34 px */
+  border-style: solid;
+  border-width: 48px 34px 8px 18px;
+  border-image: url("../img/ui/ui-chat-container.png") 48 34 8 18 fill stretch;
+  width: 520px;
+  height: 253px;
   left: 50%;
   transform: translateX(-50%);
   top: 0;
@@ -1104,8 +1112,13 @@ body {
   position: absolute;
   bottom: 0;
   left: 13px;
-  padding-left: 75px;
-  padding-right: 20px;
+  /* ui-chat-input-container.png is 337 x 87: the knob is the left 62 px, the corner pieces the right 26 px */
+  border-style: solid;
+  border-width: 0 26px 0 62px;
+  border-image: url("../img/ui/ui-chat-input-container.png") 0 26 0 62 fill stretch;
+  background: none;
+  padding-left: 13px;
+  padding-right: 0;
   padding-bottom: 15px;
   box-sizing: border-box;
   color: #FFF1DA;
@@ -1113,23 +1126,21 @@ body {
   font-weight: 600;
   text-shadow: 1px 1px 1px rgba(0,0,0,0.8);
   font-family: 'Comic Relief';
-  background: url("../img/ui/ui-chat-input-container.png");
-  background-repeat: no-repeat;
-  background-size: 100% 100%;
-  width: 374px;
+  width: 494px;
   height: 87px;
   letter-spacing: 0.3px;
 }
 
+/* Inside the panel's border: 12 px under the rod, 7 px in from the left, out to 25 px from the right edge. */
 #chat-messages {
   position: absolute;
-  top: 60px;
-  left: 25px;
-  right: 25px;
-  bottom: 10px;
+  top: 12px;
+  left: 7px;
+  right: -9px;
+  bottom: 2px;
   overflow-y: auto;
   overflow-x: hidden;
-  max-height: 125px;
+  max-height: 185px;
 }
 
 #chat-messages::-webkit-scrollbar {
@@ -1161,6 +1172,74 @@ body {
 .party-username, .party-message {
     color: #86b3ff;
     font-weight: 600;
+}
+
+/* Guild chat, in the colour of the guild tag under names (player.ts), so it is told apart from everyone's chat. */
+.guild-username, .guild-message {
+    color: #c9a655;
+    font-weight: 600;
+}
+
+/* An achievement named in chat ("<name> has completed [<achievement>]", or an [achievement] linked in a line, itemlinks.ts): opens your achievements window at it. */
+.achievement-link {
+    color: #5fd35f;
+    cursor: pointer;
+}
+.achievement-link:hover, .achievement-link:focus-visible {
+    text-decoration: underline;
+    outline: none;
+}
+
+/* An [item] in a chat line (itemlinks.ts): its quality colour, as the item tooltip's name. */
+.item-link {
+    cursor: pointer;
+    font-weight: inherit;
+}
+.item-link:hover, .item-link:focus-visible {
+    text-decoration: underline;
+    outline: none;
+}
+.item-link-common { color: #ffffff; }
+.item-link-uncommon { color: #34eb49; }
+.item-link-rare { color: #347aeb; }
+.item-link-epic { color: #bd34eb; }
+.item-link-legendary {
+    background: linear-gradient(135deg, #ff6b6b, #ffb347, #ffe66d, #51cf66, #45b7d1, #9b59b6, #ff6b6b);
+    background-size: 300% 300%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    text-shadow: none;
+    /* text-shadow cannot show under text filled with a clipped gradient: the same shadow as chat text, as a filter */
+    filter: drop-shadow(1px 1px 1px rgba(0, 0, 0, 0.8));
+    text-decoration-color: #ffe66d;
+    animation: rainbow-shift-gradient 4s ease-in-out infinite;
+}
+
+/*
+ * The chat box while it holds item links (js/core/itemlinks.ts): its own text turns see-through (the caret stays) and
+ * a copy laid exactly over it shows the same text with each link in its rarity colour.
+ */
+#chat-input.has-links {
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    text-shadow: none;
+    caret-color: #FFF1DA;
+}
+#chat-input-mirror {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    white-space: pre;
+    pointer-events: none;
+    background: none;
+    color: #FFF1DA;
+}
+#chat-input-mirror .item-link,
+#chat-input-mirror .achievement-link {
+    cursor: default;
 }
 
 .bold {
@@ -8293,5 +8372,212 @@ body.ios-device #mail-window .mail-postage-amount {
     font-size: calc(12px / var(--pz));
     top: calc(-9px / var(--pz));
     right: calc(-9px / var(--pz));
+  }
+}
+
+/* Achievements (key Y, js/core/achievements.ts): a book panel like the quest log, one row per achievement. */
+#achievements-container {
+  width: 404px;
+  height: 388px;
+  top: 100px;
+  right: 10px;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+#achievements-title {
+  flex: 0 0 auto;
+  text-align: center;
+  font-family: 'Comic Relief', sans-serif;
+  font-size: 19px;
+  font-weight: 700;
+  color: #3d2b12;
+  padding: 26px 34px 6px;
+}
+#achievements-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 34px 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #2a1c10;
+  font-family: 'Comic Relief', sans-serif;
+  font-size: 13px;
+}
+#achievements-list::-webkit-scrollbar {
+  width: 4px;
+}
+#achievements-list::-webkit-scrollbar-thumb {
+  background: #A57D60;
+  border-radius: 2px;
+}
+.achievement-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 6px;
+  border-radius: 4px;
+  background: rgba(90, 67, 24, 0.08);
+}
+.achievement-row.earned {
+  background: rgba(139, 112, 48, 0.22);
+}
+/* The achievement a chat link pointed at, marked for a moment (achievements.ts reveal). */
+.achievement-row {
+  transition: box-shadow 0.3s ease;
+}
+.achievement-row.focused {
+  box-shadow: 0 0 0 2px #5fd35f inset;
+}
+.achievement-icon,
+.achievement-popup-icon {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: url("../img/ui/ui-slot-light.png") no-repeat;
+  background-size: 100% 100%;
+}
+.achievement-icon img {
+  width: 28px;
+  height: 28px;
+  image-rendering: pixelated;
+}
+.achievement-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.achievement-name {
+  font-weight: 700;
+  color: #3d2b12;
+}
+.achievement-description {
+  color: #5a4318;
+}
+.achievement-earned {
+  color: #2f6b2f;
+  font-weight: 700;
+}
+.achievement-bar {
+  position: relative;
+  height: 14px;
+  margin-top: 3px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+.achievement-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: linear-gradient(180deg, #c9a548, #8b7030);
+}
+.achievement-bar-text {
+  position: relative;
+  text-align: center;
+  font-size: 11px;
+  line-height: 14px;
+  color: #FFF1DA;
+  text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.6);
+}
+.achievement-reward {
+  color: #7a5c2e;
+  font-size: 12px;
+}
+.achievements-empty {
+  text-align: center;
+  color: #7a5c2e;
+  margin-top: 20px;
+}
+
+/* The popup for an achievement just earned (js/core/achievementpopup.ts): at the top centre, over the game. Only its card takes clicks. */
+#achievement-popup {
+  position: fixed;
+  top: calc(48px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9600;
+  pointer-events: none;
+}
+.achievement-popup-card {
+  --pz: 1;
+  position: relative;
+  pointer-events: auto;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-width: 280px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 16px 22px;
+  box-sizing: border-box;
+  background: url("../img/ui/ui-book.png") no-repeat;
+  background-size: 100% 100%;
+  color: #2a1c10;
+  font-family: 'Comic Relief', sans-serif;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+.achievement-popup-card.shown {
+  opacity: 1;
+  transform: none;
+}
+.achievement-popup-icon {
+  width: 48px;
+  height: 48px;
+}
+.achievement-popup-icon img {
+  width: 38px;
+  height: 38px;
+  image-rendering: pixelated;
+}
+.achievement-popup-text {
+  min-width: 0;
+}
+.achievement-popup-heading {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #7a5c2e;
+}
+.achievement-popup-name {
+  font-size: 17px;
+  font-weight: 700;
+  color: #3d2b12;
+}
+.achievement-popup-description {
+  font-size: 13px;
+}
+.achievement-popup-reward {
+  font-size: 12px;
+  color: #5a4318;
+  margin-top: 2px;
+}
+
+/* On a touch screen the window stands where the other book panels do (see the rules for #collectables-container). */
+@media (hover: none) and (pointer: coarse) {
+  #achievements-container {
+    position: fixed !important;
+    top: calc((20px + min(env(safe-area-inset-top, 0px), 12px)) / var(--pz, 1)) !important;
+    right: calc((20px + min(env(safe-area-inset-right, 0px), 12px)) / var(--pz, 1)) !important;
+    bottom: auto !important;
+    left: auto !important;
+    transform: none !important;
+    zoom: 0.62;
+    --pz: 0.62;
+    transition: opacity 0.3s ease, visibility 0.3s ease !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    z-index: 9500 !important;
+  }
+  #achievements-container.open {
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
   }
 }

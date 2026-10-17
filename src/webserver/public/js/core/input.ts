@@ -13,6 +13,7 @@ import { chatInput } from "./chat.js";
 import { friendsListSearch } from "./friends.js";
 import { inventoryUI, spellBookUI, friendsListUI, pauseMenu, menuElements, guildContainer } from "./ui.js";
 import { screenToWorld } from "./worldzoom.js";
+import { closeAchievements, isAchievementsOpen, toggleAchievements } from "./achievements.js";
 let userHasInteracted: boolean = false;
 let lastSentDirection = "";
 
@@ -57,7 +58,17 @@ function closeOtherPanels(_except: string) {
   if (_except !== "questframe" && questFrameUI && (questFrameUI.style.display === "block" || questFrameUI.style.display === "flex")) {
     import("./questframe.js").then((m) => m.closeQuestFrame());
   }
+  if (_except !== "achievements" && isAchievementsOpen()) {
+    closeAchievements();
+  }
 }
+
+// Opens the achievements window as Y does, the other windows closing: for a link to an achievement in chat
+// (achievements.ts focusAchievement), which cannot import this file without a cycle.
+(window as any).openAchievementsWindow = () => {
+  closeOtherPanels("achievements");
+  if (!isAchievementsOpen()) toggleAchievements();
+};
 
 /** Opens the bags if they are closed: a trade is made from them. */
 function openInventory() {
@@ -105,6 +116,13 @@ export const keyHandlers = {
   KeyK: () => {
     closeOtherPanels("collectables");
     toggleCollectables = toggleUI(collectablesUI, toggleCollectables, -450);
+  },
+  // the achievements window (achievements.ts)
+  KeyY: () => {
+    // Ctrl+Y is the tile editor's redo
+    if ((window as any).tileEditor?.isActive) return;
+    closeOtherPanels("achievements");
+    toggleAchievements();
   },
   KeyL: () => {
     closeOtherPanels("questlog");
@@ -740,6 +758,10 @@ function closeAllPanels(): boolean {
     import("./questframe.js").then((m) => m.closeQuestFrame());
     closed = true;
   }
+  if (isAchievementsOpen()) {
+    closeAchievements();
+    closed = true;
+  }
   return closed;
 }
 
@@ -771,6 +793,8 @@ const CLOSABLE: Array<[element: HTMLElement | null, close: () => void]> = [
   [guildContainer, () => { if (toggleGuild) toggleGuild = toggleUI(guildContainer, toggleGuild, -450); }],
   [questLogUI, () => { questLogUI.style.display = "none"; questLogUI.classList.remove("open"); }],
   [questFrameUI, () => { import("./questframe.js").then((m) => m.closeQuestFrame()); }],
+  // looked up here, not imported: the X is added while the modules are still loading
+  [document.getElementById("achievements-container"), () => closeAchievements()],
 ];
 for (const [element, close] of CLOSABLE) {
   if (!element || element.querySelector(":scope > .panel-close")) continue;

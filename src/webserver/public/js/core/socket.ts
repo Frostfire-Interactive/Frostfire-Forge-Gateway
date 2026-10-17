@@ -11,6 +11,7 @@ import { setTornadoes } from "./tornado.ts";
 import { setupItemTooltip, removeItemTooltip, hideItemTooltip, setupSpellTooltip } from "./tooltip.ts";
 import { startPersistentSpellCooldown } from "./ui.js";
 import { sampleTime, pushSample } from "./movementsmoothing.ts";
+import { renderMessageParts } from "./itemlinks.ts";
 const cache = Cache.getInstance();
 
 // Pending cooldown/lockout data from CLIENTCONFIG, applied after SPELLS populates the spell cache
@@ -345,6 +346,76 @@ const loadPlayersQueue: any[] = [];
 
 // Global item cache for looking up item details by name
 const itemsByName = new Map<string, any>();
+
+/**
+ * A line from the game itself in party or guild chat (engine systems/achievements): no speaker, no bubble, in the
+ * channel's colour. "<name> has completed [<achievement>]", the achievement a green link that opens the reader's own
+ * achievements window at it (achievements.ts focusAchievement). Text is set as text, never as HTML.
+ */
+function systemChatLine(box: HTMLElement, data: any, channel: "party" | "guild"): void {
+  const line = document.createElement("div");
+  line.classList.add("message", "ui");
+  line.style.userSelect = "text";
+  const stamp = document.createElement("span");
+  stamp.textContent = `${new Date().toLocaleTimeString()} `;
+  const said = document.createElement("span");
+  said.className = `${channel}-message`;
+  const id = Number(data?.achievementId);
+  if (data?.achievement && Number.isFinite(id)) {
+    said.append(`${String(data.who ?? "")} has completed `);
+    const link = document.createElement("span");
+    link.className = "achievement-link";
+    link.textContent = `[${String(data.achievement)}]`;
+    link.setAttribute("role", "link");
+    link.tabIndex = 0;
+    const follow = () => import("./achievements.js").then((m) => m.focusAchievement(id));
+    link.addEventListener("click", follow);
+    link.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      e.stopPropagation();
+      follow();
+    });
+    said.appendChild(link);
+  } else {
+    said.textContent = String(data?.message ?? "");
+  }
+  line.append(stamp, said);
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+
+/**
+ * One line of player speech in the chat box: "<time> <name>: <message>", the name in the channel's colour and the
+ * message in its own span, any [item] in it a link (data.links, itemlinks.ts). Everything is set as text or as DOM
+ * nodes, never as HTML, so neither the name nor the message can inject markup. Same classes and look as before.
+ * `padded` is the older global-chat shape (the space sits inside the name span, none between name and message).
+ */
+function playerChatLine(
+  box: HTMLElement,
+  nameClass: string,
+  username: string,
+  messageClass: string | null,
+  data: any,
+  padded: boolean,
+): void {
+  const line = document.createElement("div");
+  line.classList.add("message", "ui");
+  line.style.userSelect = "text";
+  const outer = document.createElement("span");
+  const name = document.createElement("span");
+  name.className = nameClass;
+  name.textContent = padded ? `${username}: ` : `${username}:`;
+  const said = document.createElement("span");
+  if (messageClass) said.className = messageClass;
+  renderMessageParts(said, String(data.message), data.links ?? []);
+  outer.append(`${new Date().toLocaleTimeString()} `, name);
+  if (!padded) outer.append(" ");
+  outer.appendChild(said);
+  line.appendChild(outer);
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
 
 function getMissingIconUrl(): string {
   return `${config.ASSET_SERVER_URL}/icon?name=missing_icon`;
@@ -2556,6 +2627,30 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       import("./mailboxeditor.js").then((m) => m.default.onUpdated(data));
       break;
     }
+    case "ACHIEVEMENTS": {
+      import("./achievements.js").then((m) => m.onAchievements(data));
+      break;
+    }
+    case "ACHIEVEMENT_EARNED": {
+      import("./achievements.js").then((m) => m.onEarned(data));
+      break;
+    }
+    case "TOGGLE_ACHIEVEMENT_EDITOR": {
+      import("./achievementeditor.js").then((m) => m.default.toggle());
+      break;
+    }
+    case "ACHIEVEMENT_EDITOR_DATA": {
+      import("./achievementeditor.js").then((m) => m.default.onData(data));
+      break;
+    }
+    case "ACHIEVEMENT_EDITOR_RESULT": {
+      import("./achievementeditor.js").then((m) => m.default.onResult(data));
+      break;
+    }
+    case "ACHIEVEMENT_EDITOR_UPDATED": {
+      import("./achievementeditor.js").then((m) => m.default.onUpdated(data));
+      break;
+    }
     case "TOGGLE_GATHERING_EDITOR": {
       import("./gatheringeditor.js").then((m) => m.default.toggle());
       break;
@@ -3632,6 +3727,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         if (!slotElement) {
           continue;
         }
+        slotElement.dataset.itemName = String(itemName);
 
         // Look up item details from global cache or inventory cache
         let itemDetails = itemsByName.get(String(itemName)) || (cache.inventory || []).find((item: any) => item.name === itemName);
@@ -4094,21 +4190,9 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
           const username =
             data?.username?.charAt(0)?.toUpperCase() + data?.username?.slice(1);
-          const timestamp = new Date().toLocaleTimeString();
 
           if (data.message?.trim() !== "" && username) {
-            const message = document.createElement("div");
-            message.classList.add("message");
-            message.classList.add("ui");
-            message.style.userSelect = "text";
-
-            const escapedMessage = data.message
-              .replace(/</g, "&lt;")
-              .replace(/>/g, "&gt;");
-            message.innerHTML = `<span>${timestamp} <span ${player.isAdmin ? "class='admin'" : "class='user'"}>${username}: </span><span>${escapedMessage.toString()}</span></span>`;
-            chatMessages.appendChild(message);
-
-            chatMessages.scrollTop = chatMessages.scrollHeight;
+            playerChatLine(chatMessages, player.isAdmin ? "admin" : "user", username, null, data, true);
 
             player.typing = false;
           }
@@ -4493,6 +4577,9 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
           newSlot.innerHTML = "";
           newSlot.className = "slot empty ui";
+          // cloneNode copied the previous occupant's name: an empty slot must not be linkable.
+          delete newSlot.dataset.itemName;
+          delete newSlot.dataset.equippedItem;
 
           (newSlot as any)._updateId = Date.now() + Math.random();
 
@@ -4508,6 +4595,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
           const slotElement = document.querySelector(`.slot[data-slot="${slotName}"]`) as HTMLDivElement;
           if (!slotElement) continue;
+          slotElement.dataset.itemName = String(itemName);
 
           let itemDetails = targetInventory.find((item: any) => item.name === itemName);
 
@@ -4577,6 +4665,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
               const slotElement = document.querySelector(`.slot[data-slot="${slotName}"]`) as HTMLDivElement;
               if (!slotElement) continue;
+              slotElement.dataset.itemName = String(itemName);
 
               const inventoryData = cache.inventory || [];
               const itemDetails = inventoryData.find((item: any) => item.name === itemName);
@@ -4703,32 +4792,19 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     }
     case "WHISPER": {
 
-      const escapedMessage = data.message
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-      const timestamp = new Date().toLocaleTimeString();
-
       if (data.message?.trim() !== "" && data.username) {
-        const message = document.createElement("div");
-        message.classList.add("message");
-        message.classList.add("ui");
-        message.style.userSelect = "text";
-
         const username =
           data?.username?.charAt(0)?.toUpperCase() + data?.username?.slice(1);
-        message.innerHTML = `<span>${timestamp} <span class="whisper-username">${username}:</span> <span class="whisper-message">${escapedMessage}</span></span>`;
-        chatMessages.appendChild(message);
-
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        playerChatLine(chatMessages, "whisper-username", username, "whisper-message", data, false);
       }
       break;
     }
     case "PARTY_CHAT": {
-
-      const escapedMessage = data.message
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-      const timestamp = new Date().toLocaleTimeString();
+      // A line from the game itself (an achievement earned, engine systems/achievements): no speaker, no bubble.
+      if (data?.system) {
+        systemChatLine(chatMessages, data, "party");
+        break;
+      }
 
       cache.players.forEach((player) => {
         if (player.id === data.id) {
@@ -4746,26 +4822,18 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       });
 
       if (data.message?.trim() !== "" && data.username) {
-        const message = document.createElement("div");
-        message.classList.add("message");
-        message.classList.add("ui");
-        message.style.userSelect = "text";
-
         const username =
           data?.username?.charAt(0)?.toUpperCase() + data?.username?.slice(1);
-        message.innerHTML = `<span>${timestamp} <span class="party-username">${username}:</span> <span class="party-message">${escapedMessage}</span></span>`;
-        chatMessages.appendChild(message);
-
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        playerChatLine(chatMessages, "party-username", username, "party-message", data, false);
       }
       break;
     }
     case "GUILD_CHAT": {
-
-      const escapedMessage = data.message
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-      const timestamp = new Date().toLocaleTimeString();
+      // A line from the game itself (an achievement earned, engine systems/achievements): no speaker, no bubble.
+      if (data?.system) {
+        systemChatLine(chatMessages, data, "guild");
+        break;
+      }
 
       cache.players.forEach((player) => {
         if (player.id === data.id) {
@@ -4783,17 +4851,9 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       });
 
       if (data.message?.trim() !== "" && data.username) {
-        const message = document.createElement("div");
-        message.classList.add("message");
-        message.classList.add("ui");
-        message.style.userSelect = "text";
-
         const username =
           data?.username?.charAt(0)?.toUpperCase() + data?.username?.slice(1);
-        message.innerHTML = `<span>${timestamp} <span class="guild-username">${username}:</span> <span class="guild-message">${escapedMessage}</span></span>`;
-        chatMessages.appendChild(message);
-
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        playerChatLine(chatMessages, "guild-username", username, "guild-message", data, false);
       }
       break;
     }

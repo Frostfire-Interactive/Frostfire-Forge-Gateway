@@ -228,6 +228,7 @@ export function makeRewardSlot(itemName: string, quantity: number, opts?: { choi
   slot.className = "quest-reward-slot ui" + (opts?.choice ? " choice" : "") + (opts?.selected ? " selected" : "");
   // Same quality border as inventory and loot windows.
   applyItemFrame(slot, findItemDetails(itemName)?.quality);
+  slot.dataset.itemName = itemName;
   const img = getCachedImage(iconUrlForItem(itemName));
   slot.appendChild(img);
   if (quantity > 1) {

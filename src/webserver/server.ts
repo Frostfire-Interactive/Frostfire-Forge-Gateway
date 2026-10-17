@@ -72,6 +72,7 @@ import weathereditor_html from "./public/weathereditor.html";
 import classeditor_html from "./public/classeditor.html";
 import mailboxeditor_html from "./public/mailboxeditor.html";
 import gatheringeditor_html from "./public/gatheringeditor.html";
+import achievementeditor_html from "./public/achievementeditor.html";
 import character_html from "./public/character.html";
 import characters from "../systems/characters";
 import playereditor_html from "./public/playereditor.html";
@@ -287,6 +288,7 @@ const routes = {
   "/class-editor": classeditor_html,
   "/mailbox-editor": mailboxeditor_html,
   "/gathering-editor": gatheringeditor_html,
+  "/achievement-editor": achievementeditor_html,
   "/character": character_html,
   "/player-editor": playereditor_html,
   "/control-panel": controlpanel_html,
@@ -550,6 +552,7 @@ Bun.serve({
       "/class-editor": routes["/class-editor"],
       "/mailbox-editor": routes["/mailbox-editor"],
       "/gathering-editor": routes["/gathering-editor"],
+      "/achievement-editor": routes["/achievement-editor"],
       "/character": routes["/character"],
       "/player-editor": routes["/player-editor"],
       "/control-panel": routes["/control-panel"],
