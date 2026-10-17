@@ -134,6 +134,7 @@ Every node name found in the engine source, and where it is checked.
 | `tools.quest_editor` | `/questeditor` and every quest editor packet | MySQL only |
 | `tools.weather_editor` | `/weathereditor` and every weather editor packet | Yes |
 | `tools.class_editor` | `/classeditor` and every class editor packet | Yes (and added at server start) |
+| `tools.mailbox_editor` | `/mailbox` and every mailbox editor packet | Yes (and added at server start) |
 | `tools.entity_editor` | Nothing. Seeded by the SQLite setup only, no check reads it | SQLite only |
 
 "Seeded" means the setup script inserts the name into `permission_types`. "MySQL only" means `src/utility/database_setup.ts` inserts it and `src/utility/database_setup_sqlite.ts` does not.

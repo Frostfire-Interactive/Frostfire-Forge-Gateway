@@ -610,29 +610,270 @@ body.character-page::before {
     from { opacity: 0; transform: translateX(18px); }
 }
 
-/* Narrow screens: one column that scrolls over the fixed world. */
-@media (max-width: 900px) {
+/* The class named again over its details: only where it is not named large over the world (a phone held sideways). */
+.cc-details-head {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.cc-emblem-head {
+    width: 34px;
+    height: 40px;
+    flex: none;
+}
+
+.cc-details-name {
+    margin: 0;
+    color: #fff3d6;
+    font-family: var(--cc-display);
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+}
+
+/* Phones (and narrow windows), held upright: one screen that does not scroll, like a game's own menu. The world and the
+   class named large over it fill the top; under them a row of classes that scrolls sideways, the class's stats and
+   spells in a sheet that scrolls on its own, and Create always at the bottom, clear of the home bar. */
+@media (max-width: 900px) and (orientation: portrait), (max-width: 900px) and (min-height: 521px) {
     body.character-page {
-        overflow: auto;
+        overflow: hidden;
+        -webkit-tap-highlight-color: transparent;
     }
 
     .cc-screen {
         grid-template-areas:
             "top"
-            "classes"
             "hero"
+            "classes"
             "details"
             "bottom";
         grid-template-columns: minmax(0, 1fr);
-        grid-template-rows: auto;
-        gap: 14px;
-        height: auto;
-        min-height: 100dvh;
-        padding: max(14px, env(safe-area-inset-top, 0px)) max(14px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-left, 0px));
+        grid-template-rows: auto minmax(0, 1fr) auto minmax(0, auto) auto;
+        gap: 10px;
+        height: 100vh;
+        height: 100dvh;
+        padding: max(10px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+    }
+
+    /* the title centred on the screen: an empty slot on the right as wide as the back button on the left
+       (USER REPORT 2026-10-16: "in portrait mode, the "Create your character" text is not centered horizontally") */
+    .cc-top {
+        grid-template-columns: 44px minmax(0, 1fr) 44px;
+        gap: 8px;
+    }
+
+    .cc-heading {
+        text-align: center;
+    }
+
+    /* (one line where it fits; on the narrowest phones two balanced lines, never wider than its box: text wider than
+       its box is not centred, it runs out to the right) */
+    .cc-title {
+        font-size: clamp(14px, 4.2vw, 19px);
+        line-height: 1.2;
+        letter-spacing: 0.04em;
+        text-wrap: balance;
+    }
+
+    .cc-subtitle {
+        font-size: 12px;
+    }
+
+    .cc-back {
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        padding: 0;
+    }
+
+    .cc-back span {
+        display: none;
+    }
+
+    /* the chosen class over the world, at the bottom of the space the world has: the box fills its row and clips
+       (sized to its content, it spilled up over the title on a short phone) */
+    .cc-hero {
+        align-items: flex-end;
+        align-self: stretch;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .cc-hero-inner {
+        padding: 8px 12px 0;
+    }
+
+    .cc-emblem-large {
+        width: 46px;
+        height: 53px;
+        margin-bottom: 2px;
+    }
+
+    .cc-hero-name {
+        font-size: clamp(28px, 9vw, 40px);
+    }
+
+    .cc-hero-description {
+        display: -webkit-box;
+        margin-top: 4px;
+        overflow: hidden;
+        font-size: 14px;
+        line-height: 1.45;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        white-space: normal;
+    }
+
+    /* the classes: one row, swiped sideways, each card snapping into place */
+    .cc-classes {
+        align-self: stretch;
+        max-height: none;
+        overflow: visible;
+        padding: 0;
+        border: 0;
+        background: none;
+        box-shadow: none;
+    }
+
+    .cc-classes::before,
+    .cc-classes .cc-panel-title {
+        display: none;
+    }
+
+    .cc-class-list {
+        flex-direction: row;
+        gap: 8px;
+        margin: 0 -12px;
+        padding: 2px 12px 4px;
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        scroll-padding: 0 12px;
+        scroll-snap-type: x mandatory;
+        scrollbar-width: none;
+    }
+
+    .cc-class-list::-webkit-scrollbar {
+        display: none;
+    }
+
+    .cc-class {
+        flex: none;
+        width: auto;
+        min-width: 132px;
+        max-width: 200px;
+        min-height: 56px;
+        padding: 8px 14px 8px 10px;
+        border-color: var(--cc-gold-line);
+        background: rgba(8, 12, 22, 0.86);
+        scroll-snap-align: center;
+    }
+
+    .cc-class-description,
+    .cc-class-chevron {
+        display: none;
+    }
+
+    .cc-class.selected {
+        box-shadow: inset 0 -3px 0 var(--cc-gold), 0 0 22px -8px rgba(232, 194, 122, 0.6);
+    }
+
+    /* stats and spells: a sheet of its own height, at most about a third of the screen, that scrolls inside */
+    .cc-details {
+        align-self: stretch;
+        max-height: min(36dvh, 330px);
+        padding: 14px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .cc-stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px 16px;
+    }
+
+    .cc-stats + .cc-section-title {
+        margin-top: 16px;
+    }
+
+    .cc-spell {
+        padding: 6px 8px 6px 6px;
+    }
+
+    .cc-spell-icon {
+        width: 36px;
+        height: 36px;
+    }
+
+    .cc-bottom {
+        width: 100%;
+        gap: 8px;
+    }
+
+    .cc-warning {
+        padding: 10px 12px;
+        font-size: 12px;
+    }
+
+    .cc-confirm {
+        min-height: 32px;
+        margin-top: 2px;
+    }
+
+    .cc-confirm input {
+        width: 20px;
+        height: 20px;
+    }
+
+    .cc-create {
+        min-height: 54px;
+        font-size: 17px;
+    }
+}
+
+/* A short phone held upright (an older or smaller one): the class's name alone over the world, no emblem or line. */
+@media (max-width: 900px) and (orientation: portrait) and (max-height: 700px) {
+    .cc-hero .cc-emblem-large,
+    .cc-hero-description {
+        display: none;
+    }
+
+    .cc-hero-name {
+        font-size: 28px;
+    }
+
+    .cc-details {
+        max-height: 30dvh;
+    }
+}
+
+/* A phone held sideways: too short for the world, the class and the sheet one over the other. The classes and Create
+   on the left, the class's details beside them; the class is named at the top of its details, not over the world. */
+@media (max-height: 520px) and (orientation: landscape) {
+    body.character-page {
+        overflow: hidden;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .cc-screen {
+        grid-template-areas:
+            "top details"
+            "classes details"
+            "bottom details";
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        gap: 8px 16px;
+        height: 100vh;
+        height: 100dvh;
+        padding: max(8px, env(safe-area-inset-top, 0px)) max(14px, env(safe-area-inset-right, 0px)) max(8px, env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-left, 0px));
     }
 
     .cc-top {
         grid-template-columns: auto 1fr;
+        gap: 10px;
     }
 
     .cc-heading {
@@ -640,40 +881,74 @@ body.character-page::before {
     }
 
     .cc-title {
-        font-size: 20px;
-        letter-spacing: 0.05em;
+        font-size: 17px;
+    }
+
+    .cc-subtitle,
+    .cc-top-end,
+    .cc-back span,
+    .cc-hero {
+        display: none;
     }
 
     .cc-back {
         justify-content: center;
-        width: 38px;
+        width: 40px;
+        height: 40px;
         padding: 0;
     }
 
-    .cc-back span,
-    .cc-top-end {
+    .cc-classes {
+        align-self: stretch;
+        max-height: none;
+        padding: 10px;
+        overflow-y: auto;
+    }
+
+    .cc-classes .cc-panel-title {
+        margin-bottom: 8px;
+    }
+
+    .cc-class {
+        min-height: 48px;
+        padding: 6px 10px;
+    }
+
+    .cc-class-description {
         display: none;
     }
 
-    .cc-panel {
-        overflow: visible;
+    .cc-details {
+        align-self: stretch;
         max-height: none;
+        padding: 12px 14px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
     }
 
-    .cc-hero-inner {
-        padding: 12px 8px 0;
+    .cc-details-head {
+        display: flex;
     }
 
-    .cc-hero-name {
-        font-size: 38px;
-    }
-
-    .cc-hero-description {
-        font-size: 15px;
+    .cc-stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px 14px;
     }
 
     .cc-bottom {
         width: 100%;
+        gap: 6px;
+    }
+
+    .cc-warning {
+        padding: 8px 10px;
+        font-size: 11.5px;
+    }
+
+    .cc-create {
+        min-height: 46px;
+        font-size: 16px;
     }
 }
 

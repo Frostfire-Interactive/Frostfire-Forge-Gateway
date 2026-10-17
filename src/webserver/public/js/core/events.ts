@@ -6,7 +6,7 @@ import Cache from "./cache.js";
 // breaks with any other order: "Cannot read properties of undefined (reading 'addEventListener')")
 import "./renderer.js";
 const cache = Cache.getInstance();
-import { chatInput, pauseMenu, optionsMenu, fpsSlider, musicSlider, effectsSlider, ambienceSlider, mutedCheckbox, canvas, ctx, friendsList } from "./ui.js";
+import { chatInput, pauseMenu, optionsMenu, fpsSlider, musicSlider, effectsSlider, ambienceSlider, weatherSlider, mutedCheckbox, canvas, ctx, friendsList } from "./ui.js";
 import { showItemTooltip, hideItemTooltip } from "./tooltip.js";
 import { getUserHasInteracted, setUserHasInteracted, setControllerConnected, getLastSentDirection, setLastSentDirection,
     getLastTypingPacket, setLastTypingPacket, getContextMenuKeyTriggered, setContextMenuKeyTriggered, blacklistedKeys, movementKeys,
@@ -19,12 +19,12 @@ import { getUserHasInteracted, setUserHasInteracted, setControllerConnected, get
     COOLDOWN_DURATION,
     cooldowns,
     stopMovement,
-    setIsMoving,
-    closeAllPanels} from "./input.js";
+    setIsMoving} from "./input.js";
 import { friendsListSearch } from "./friends.js";
 import { createContextMenu, createPartyContextMenu, createGuildContextMenu, createFriendContextMenu, createIgnoredContextMenu } from "./actions.js";
 import { isTrading, offerItem } from "./trade.js";
 import { isVendorOpen, sellItem } from "./vendor.js";
+import { isMailOpen, attachItem, openNearestMailbox, mailboxAt } from "./mail.js";
 import { playerAt } from "./playerpick.js";
 import { closeRadialMenu } from "./mobileui.js";
 import "./creatureinput.js";
@@ -385,9 +385,11 @@ window.addEventListener("keyup", (e) => {  const activeElement = document.active
       (window as any)._lootPickupProgress = 0;
       return;
     }
-    // No loot pickup armed: E talks to the nearest NPC instead.
+    // No loot pickup armed: E talks to the nearest NPC instead, or opens the mailbox the player stands at.
     if (isSelfActionLocked()) return;
-    import("./quest.js").then((m) => m.tryInteractNpc());
+    import("./quest.js").then((m) => {
+      if (!m.tryInteractNpc()) openNearestMailbox();
+    });
     return;
   }
 
@@ -650,7 +652,13 @@ ambienceSlider.addEventListener("input", () => {
   )!.innerText = `Ambience: (${ambienceSlider.value})`;
 });
 
-[fpsSlider, musicSlider, effectsSlider, ambienceSlider, mutedCheckbox].forEach(element => {
+weatherSlider.addEventListener("input", () => {
+  document.getElementById(
+    "weather-volume-label"
+  )!.innerText = `Weather: (${weatherSlider.value})`;
+});
+
+[fpsSlider, musicSlider, effectsSlider, ambienceSlider, weatherSlider, mutedCheckbox].forEach(element => {
   element.addEventListener("change", () => {
     sendRequest({
       type: "CLIENTCONFIG",
@@ -659,6 +667,7 @@ ambienceSlider.addEventListener("input", () => {
             music_volume: parseInt(musicSlider.value) || 0,
             effects_volume: parseInt(effectsSlider.value) || 0,
             ambience_volume: parseInt(ambienceSlider.value) || 0,
+            weather_volume: parseInt(weatherSlider.value) || 0,
             muted: mutedCheckbox.checked,
           } as ConfigData,
     });
@@ -673,7 +682,7 @@ let lastBagTap: { slot: Element; at: number } | null = null;
 document.addEventListener("touchend", (event) => {
   const bagSlot = (event.target as HTMLElement | null)?.closest?.("#inventory .slot") as HTMLElement | null;
   const name = bagSlot?.dataset.itemName;
-  if (!bagSlot || !name || (!isTrading() && !isVendorOpen())) {
+  if (!bagSlot || !name || (!isTrading() && !isVendorOpen() && !isMailOpen())) {
     lastBagTap = null;
     return;
   }
@@ -686,7 +695,8 @@ document.addEventListener("touchend", (event) => {
   event.preventDefault();
   event.stopPropagation();
   if (isTrading()) offerItem(name);
-  else sellItem(name);
+  else if (isVendorOpen()) sellItem(name);
+  else attachItem(name);
 }, { capture: true });
 
 document.addEventListener("contextmenu", (event) => {
@@ -758,6 +768,12 @@ document.addEventListener("contextmenu", (event) => {
     // At a vendor, the same right-click sells the item: all of it that is spare.
     if (bagSlot?.dataset.itemName && isVendorOpen()) {
       sellItem(bagSlot.dataset.itemName);
+      event.preventDefault();
+      return;
+    }
+    // At a mailbox, it attaches the item to the mail being written.
+    if (bagSlot?.dataset.itemName && isMailOpen()) {
+      attachItem(bagSlot.dataset.itemName);
       event.preventDefault();
       return;
     }
@@ -873,7 +889,14 @@ canvas.addEventListener("touchend", (e) => {
   const screenX = touch.clientX - rect.left;
   const screenY = touch.clientY - rect.top;
   const { x: worldX, y: worldY } = screenToWorld(screenX, screenY);
-  import("./quest.js").then((m) => m.tryTapInteractNpcAt(worldX, worldY));
+  import("./quest.js").then((m) => {
+    // A tap on a mailbox opens it, when it is not a tap on an NPC; the server says when it is too far.
+    // While the mailbox editor is open, a tap on a mailbox picks it.
+    if ((window as any).mailboxEditorTap?.(worldX, worldY, TOUCH_TARGET_SLOP)) return;
+    if (!m.tryTapInteractNpcAt(worldX, worldY) && mailboxAt(worldX, worldY, TOUCH_TARGET_SLOP)) {
+      sendRequest({ type: "MAIL_OPEN", data: null });
+    }
+  });
 });
 
 // Double-tap on mobile for admin warp
@@ -1047,6 +1070,8 @@ document.addEventListener("click", (event) => {
 
   // Check if clicked on NPC
   const clickedNpc = cache.npcs.find((npc: any) => {
+    // A sound NPC is only heard: there is nothing to click.
+    if (npc.sound_npc) return false;
     const npcX = npc.position.x;
     const npcY = npc.position.y;
     return (
@@ -1057,6 +1082,12 @@ document.addEventListener("click", (event) => {
 
   if (clickedNpc) {
     cache.targetId = clickedNpc.id;
+    return;
+  }
+
+  // A click on a mailbox opens it; the server says when it is too far. A tap is the touch handler's (below).
+  if (!isTouch && mailboxAt(worldX, worldY, slop)) {
+    if (!isSelfActionLocked()) sendRequest({ type: "MAIL_OPEN", data: null });
     return;
   }
 
@@ -1145,30 +1176,9 @@ document.addEventListener("click", (e) => {
   }
 });
 
-// Close open panels when tapping outside on mobile
-document.addEventListener("click", (e) => {
-  const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
-  if (!isTouchDevice) return;
-
-  const target = e.target as HTMLElement;
-  // Don't close if clicking radial menu items - they toggle panels themselves
-  if (target.closest(".radial-item") || target.closest(".radial-menu-btn") || target.closest("#radial-menu")) return;
-  // A trade or a sale is made from the bags: tapping the trade or vendor window leaves them open.
-  if (target.closest("#trade-window") || target.closest("#vendor-window")) return;
-  // What was tapped has since been taken off the page: a panel drew itself anew in answer to the tap (the innkeeper's
-  // "Make this inn your home" row is replaced by the question it asks). It is in no panel any more, and read as a tap
-  // outside them all, which closed the panel that had just asked. USER REPORT 2026-10-07: "on mobile when I click
-  // 'make this inn your home' the UI just disappears".
-  if (!target.isConnected) return;
-
-  const openPanels = document.querySelectorAll("#inventory.open, #spell-book-container.open, #collectables-container.open, #quest-frame-container.open, #quest-log-container.open, #friends-list-container.open, #guild-container.open");
-  if (openPanels.length === 0) return;
-
-  const clickedInside = Array.from(openPanels).some(panel => panel.contains(target));
-  if (!clickedInside) {
-    closeAllPanels();
-  }
-});
+// A tap off a window does not close it: only its X or Close button does (and Escape, and its own key, on a keyboard).
+// USER REQUEST 2026-10-16: "Keep all UI elements open when tapping off of them. Only allow the x or close buttons to
+// close them from now on". Until then a tap outside the open panels closed them all on a touch screen.
 
 // Allow dropping items from inventory/equipment onto the game world (canvas)
 canvas.addEventListener("dragover", (e: DragEvent) => {

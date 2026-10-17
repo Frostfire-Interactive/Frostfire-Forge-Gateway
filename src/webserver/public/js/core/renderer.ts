@@ -3,7 +3,7 @@ import { getIsKeyPressed, pressedKeys, setIsMoving, getIsMoving } from "./input.
 import Cache from "./cache.ts";
 import { getParticleSprite, particleBrightness, particlePool, renderNpcInteractBadge, tickNpcGossip } from "./npc.js";
 import { queueGlow } from "./glowqueue.js";
-import { getNearestNpcId } from "./quest.js";
+import { getNearestNpcId, canInteractWith } from "./quest.js";
 import { stepCreatures, drawCreature, drawFloatingTexts, creatureFeetY, parseCreatureTarget, creaturePositionFor, creatures, FEET_FRACTION } from "./creature.js";
 import { backToFront, PLAYER_FEET, type Standing } from "./depthorder.js";
 import { updateUnitFrames } from "./targetframe.js";
@@ -14,7 +14,11 @@ let weatherType = null as string | null;
 let currentWeatherData = null as any; // Store full weather object for wind speed
 const cache = Cache.getInstance();
 import { updateHealthBar, updateStaminaBar, updateAbsorptionBar } from "./ui.js";
-import { updateWeatherCanvas, weather, updateRainSound } from './weather.ts';
+import { updateWeatherCanvas, weather, updateWeatherSound } from './weather.ts';
+import { stepTornadoes, standingTornadoes, drawTornadoesOverCovers } from './tornado.ts';
+/** How often (ms) the rain and wind sounds are brought in line with the weather. */
+const WEATHER_SOUND_EVERY = 100;
+import { updateNpcSounds, soundCenterRadius } from './npcsounds.ts';
 import { getShadowParams, SHADOW_MAX_OFFSET } from './shadows.js';
 import { renderMapPass, setShadowMaxOffset } from './glmap/index.js';
 import {
@@ -50,7 +54,7 @@ const CHUNK_FADE_DURATION = 0.5; // Fade duration in seconds
 
 // Tileset lookup cache for fast tile->tileset resolution
 
-import { canvas, ctx, ghostCanvas, ghostCtx, aboveCanvas, aboveCtx, fpsSlider, healthBar, staminaBar, collisionDebugCheckbox, chunkOutlineDebugCheckbox, collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText } from "./ui.js";
+import { canvas, ctx, ghostCanvas, ghostCtx, aboveCanvas, aboveCtx, debugLayerCanvas, debugLayerCtx, fpsSlider, healthBar, staminaBar, collisionDebugCheckbox, chunkOutlineDebugCheckbox, collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText } from "./ui.js";
 
 // Frame pacing: the measured display refresh interval (ms), from rAF deltas.
 let rafInterval = 1000 / 60;
@@ -172,7 +176,7 @@ function updateCamera(currentPlayer: any, deltaTime: number) {
     smoothMapX = cameraX;
     smoothMapY = cameraY;
 
-    updateRainSound(weatherType, currentWeatherData); // (every frame: no weather fades the rain out)
+    updateNpcSounds(cameraX, cameraY); // (heard from the editor's camera while the map is edited)
     if (weatherType) {
       updateWeatherCanvas(cameraX, cameraY);
       weather(weatherType, currentWeatherData);
@@ -213,11 +217,62 @@ function updateCamera(currentPlayer: any, deltaTime: number) {
     smoothMapX = cameraX;
     smoothMapY = cameraY;
 
-    updateRainSound(weatherType, currentWeatherData); // (every frame: no weather fades the rain out)
+    updateNpcSounds(targetX, targetY); // (heard from the player, not the camera: a map's edge stops the camera)
     if (weatherType) {
-      updateWeatherCanvas(cameraX, cameraY);
+      updateWeatherCanvas(cameraX, cameraY, targetX, targetY);
       weather(weatherType, currentWeatherData);
     }
+  }
+}
+
+/**
+ * While the NPC editor is open: where each sound NPC is heard, as a purple circle that fades out toward its edge, as
+ * the sound does (npcsounds.ts), with a thin ring at the edge; its middle, where it is heard at full level in both
+ * ears, in blue; and the NPC itself as a purple dot with its id (it is not drawn otherwise). Every sound NPC is gone through, not the ones in view: a circle reaches far past its NPC.
+ */
+function drawSoundRanges(context: CanvasRenderingContext2D) {
+  const viewHalfW = viewWidth() / 2, viewHalfH = viewHeight() / 2;
+  for (const npc of cache.npcs as any[]) {
+    if (npc?.sound_npc !== true || !npc.position) continue;
+    const x = npc.position.x, y = npc.position.y, radius = Math.max(0, Number(npc.sound_radius) || 0);
+    if (Math.abs(x - cameraX) > viewHalfW + radius + 32 || Math.abs(y - cameraY) > viewHalfH + radius + 32) continue;
+    const dim = npc.hidden ? 0.5 : 1;
+    if (radius > 0) {
+      const fade = context.createRadialGradient(x, y, 0, x, y, radius);
+      fade.addColorStop(0, `rgba(168, 85, 247, ${0.38 * dim})`);
+      fade.addColorStop(0.6, `rgba(168, 85, 247, ${0.16 * dim})`);
+      fade.addColorStop(1, "rgba(168, 85, 247, 0)");
+      context.fillStyle = fade;
+      context.beginPath();
+      context.arc(x, y, radius, 0, Math.PI * 2);
+      context.fill();
+      context.strokeStyle = `rgba(192, 132, 252, ${0.55 * dim})`;
+      context.lineWidth = 1.5;
+      context.setLineDash([6, 6]);
+      context.stroke();
+      context.setLineDash([]);
+      const center = soundCenterRadius(radius);
+      context.fillStyle = `rgba(59, 130, 246, ${0.3 * dim})`;
+      context.strokeStyle = `rgba(96, 165, 250, ${0.9 * dim})`;
+      context.lineWidth = 1.5;
+      context.beginPath();
+      context.arc(x, y, center, 0, Math.PI * 2);
+      context.fill();
+      context.stroke();
+    }
+    context.fillStyle = `rgba(192, 132, 252, ${dim})`;
+    context.strokeStyle = "rgba(20, 0, 40, 0.9)";
+    context.lineWidth = 2;
+    context.beginPath();
+    context.arc(x, y, 6, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+    context.font = "bold 13px monospace";
+    context.textAlign = "center";
+    context.shadowColor = "rgba(0, 0, 0, 0.8)";
+    context.shadowBlur = 4;
+    context.fillText(npc.id === null || npc.id === undefined ? "new" : `#${npc.id}`, x, y - 12);
+    context.shadowColor = "transparent";
   }
 }
 
@@ -774,7 +829,15 @@ function collectOccluders(): Array<[number, number, number, number, number]> {
     const x = p.renderPosition?.x ?? p.position?.x;
     const y = p.renderPosition?.y ?? p.position?.y;
     if (x === undefined || y === undefined || !inView(x, y)) continue;
-    push(spriteOccluder(p.layeredAnimation, null, x, y, 1), x, y);
+    const box = spriteOccluder(p.layeredAnimation, null, x, y, 1);
+    // The nameplate under the feet sorts with the player: covered by whatever covers them.
+    const plate = p.nameplate;
+    if (plate) {
+      box[0] = Math.min(box[0], x - plate.left);
+      box[2] = Math.max(box[2], x + plate.right);
+      box[3] = Math.max(box[3], y + plate.bottom);
+    }
+    push(box, x, y);
   }
   for (const npc of cache.npcs as any[]) {
     const x = npc.position?.x;
@@ -1078,6 +1141,7 @@ function animationLoop() {
   (window as any).updateNpcInteraction?.(px, py, playerMap);
   (window as any).updateQuestFrameProximity?.(px, py);
   (window as any).updateVendorProximity?.(px, py);
+  (window as any).updateMailProximity?.(px, py);
   // footsteps: the sound of the tile under the player's feet, a step at a time while walking
   updateTileSounds(currentPlayer);
 
@@ -1412,6 +1476,17 @@ function animationLoop() {
       if (c.state === "dead") drawCreature(scene, c, playerLevel, false);
       else standing.push({ feet: creatureFeetY(c), draw: () => drawCreature(scene, c, playerLevel, c.id === targetedCreature) });
     }
+    // Mailboxes stand among them, at their foot.
+    for (const box of (window as any).mailboxesHere?.(String(window.mapData?.name ?? "")) ?? []) {
+      standing.push({ feet: box.y, draw: () => (window as any).drawMailbox?.(scene, box) });
+    }
+    // So do tornadoes (tornado.ts): whoever stands in front of one is drawn in front of it (heard from the camera, on the
+    // player). Trees and roofs do not hide them: they are painted over those, after the map's upper layers.
+    // (on phones, and without the canvas above, they are drawn once only, over the upper layers: twice would be darker)
+    stepTornadoes(deltaTime, smoothMapX, smoothMapY);
+    if (!MOBILE_RENDERER && aboveCtx) {
+      for (const twister of standingTornadoes()) standing.push({ feet: twister.feet, draw: () => twister.draw(scene) });
+    }
     for (const character of backToFront(standing)) character.draw();
 
     drawFloatingTexts(ctx, (playerId) => {
@@ -1665,11 +1740,37 @@ function animationLoop() {
     aboveCtx.imageSmoothingEnabled = false;
   }
 
+  // The debug layer: cleared every frame and drawn in the world's place, like the layer above.
+  if (debugLayerCanvas && debugLayerCtx) {
+    if (debugLayerCanvas.width !== canvas.width || debugLayerCanvas.height !== canvas.height) {
+      debugLayerCanvas.width = canvas.width;
+      debugLayerCanvas.height = canvas.height;
+      debugLayerCanvas.style.width = canvas.style.width;
+      debugLayerCanvas.style.height = canvas.style.height;
+    }
+    debugLayerCtx.setTransform(1, 0, 0, 1, 0, 0);
+    debugLayerCtx.clearRect(0, 0, debugLayerCanvas.width, debugLayerCanvas.height);
+    debugLayerCtx.setTransform(ctx.getTransform());
+    debugLayerCtx.imageSmoothingEnabled = false;
+  }
+  /** Where debug drawing goes: the debug layer, over the whole world (USER REQUEST 2026-10-16). */
+  const dbg = debugLayerCtx || ctx;
+
   if (!wireframeDebugCheckbox.checked) {
     if (aboveCtx) {
       renderMap('above', aboveCtx);
     } else {
       renderMap('above');
+    }
+    // Tornadoes ignore trees and roofs (tornado.ts): painted again over what those layers drew, only on their pixels.
+    // On phones those layers are a canvas of their own, under this one: there they are drawn over it whole.
+    {
+      const coverCtx = aboveCtx || ctx;
+      const at = worldOffset(smoothMapX, smoothMapY);
+      coverCtx.save();
+      coverCtx.translate(at.x, at.y);
+      drawTornadoesOverCovers(coverCtx, !MOBILE_RENDERER && !!aboveCtx);
+      coverCtx.restore();
     }
 
     // Render upper particles (zIndex >= 3) after upper map layers
@@ -1698,47 +1799,49 @@ function animationLoop() {
     // Render graveyards and warps on top of all tile layers when tile editor is active
     const tileEditor = (window as any).tileEditor;
     if (tileEditor?.isActive) {
-      ctx.save();
+      dbg.save();
       const graveyardWarpOffsetX = worldOffset(smoothMapX, smoothMapY).x;
       const graveyardWarpOffsetY = worldOffset(smoothMapX, smoothMapY).y;
-      ctx.translate(graveyardWarpOffsetX, graveyardWarpOffsetY);
-      renderGraveyardsAndWarps(ctx, graveyardWarpOffsetX, graveyardWarpOffsetY);
-      ctx.restore();
+      dbg.translate(graveyardWarpOffsetX, graveyardWarpOffsetY);
+      renderGraveyardsAndWarps(dbg, graveyardWarpOffsetX, graveyardWarpOffsetY);
+      dbg.restore();
     }
 
     // Draw outline for hidden NPCs when NPC editor is active (z-index 15 - after upper particles)
     if (npcEditor?.isActive) {
-      ctx.save();
+      dbg.save();
       const npcOutlineOffsetX = worldOffset(smoothMapX, smoothMapY).x;
       const npcOutlineOffsetY = worldOffset(smoothMapX, smoothMapY).y;
-      ctx.translate(npcOutlineOffsetX, npcOutlineOffsetY);
+      dbg.translate(npcOutlineOffsetX, npcOutlineOffsetY);
+
+      drawSoundRanges(dbg);
 
       for (const npc of visibleNpcs) {
         if (npc.hidden) {
-          ctx.strokeStyle = 'rgba(255, 80, 80, 0.7)';
-          ctx.fillStyle = 'rgba(255, 80, 80, 0.1)';
-          ctx.lineWidth = 1.5;
-          ctx.setLineDash([]);
+          dbg.strokeStyle = 'rgba(255, 80, 80, 0.7)';
+          dbg.fillStyle = 'rgba(255, 80, 80, 0.1)';
+          dbg.lineWidth = 1.5;
+          dbg.setLineDash([]);
           // Draw centered square (16x16) - NPC visual center is at position + (16, 24)
           const squareSize = 16;
           const centerX = npc.position.x + 16;
           const centerY = npc.position.y + 24;
-          ctx.fillRect(centerX - squareSize / 2, centerY - squareSize / 2, squareSize, squareSize);
-          ctx.strokeRect(centerX - squareSize / 2, centerY - squareSize / 2, squareSize, squareSize);
+          dbg.fillRect(centerX - squareSize / 2, centerY - squareSize / 2, squareSize, squareSize);
+          dbg.strokeRect(centerX - squareSize / 2, centerY - squareSize / 2, squareSize, squareSize);
 
           // Draw NPC ID above the square
-          ctx.font = 'bold 13px monospace';
-          ctx.textAlign = 'center';
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-          ctx.shadowBlur = 4;
-          ctx.shadowOffsetX = 0;
-          ctx.shadowOffsetY = 0;
-          ctx.fillStyle = 'rgba(255, 100, 100, 1)';
-          ctx.fillText(`#${npc.id}`, centerX, centerY - squareSize / 2 - 5);
-          ctx.shadowColor = 'transparent';
+          dbg.font = 'bold 13px monospace';
+          dbg.textAlign = 'center';
+          dbg.shadowColor = 'rgba(0, 0, 0, 0.8)';
+          dbg.shadowBlur = 4;
+          dbg.shadowOffsetX = 0;
+          dbg.shadowOffsetY = 0;
+          dbg.fillStyle = 'rgba(255, 100, 100, 1)';
+          dbg.fillText(`#${npc.id}`, centerX, centerY - squareSize / 2 - 5);
+          dbg.shadowColor = 'transparent';
         }
       }
-      ctx.restore();
+      dbg.restore();
     }
   } else {
 
@@ -1776,9 +1879,9 @@ function animationLoop() {
     ctx.restore();
   }
 
-  ctx.save();
-  ctx.translate(offsetX, offsetY);
-  ctx.imageSmoothingEnabled = false;
+  dbg.save();
+  dbg.translate(offsetX, offsetY);
+  dbg.imageSmoothingEnabled = false;
 
   if (collisionDebugCheckbox.checked && (window as any).collisionTiles && window.mapData) {
     const collisionTiles = (window as any).collisionTiles as Array<{ x: number; y: number; time: number }>;
@@ -1787,17 +1890,17 @@ function animationLoop() {
 
     (window as any).collisionTiles = collisionTiles.filter(tile => currentTime - tile.time < maxAge);
 
-    ctx.fillStyle = 'rgba(0, 100, 255, 0.5)';
-    ctx.strokeStyle = 'rgba(0, 150, 255, 0.8)';
-    ctx.lineWidth = 2;
+    dbg.fillStyle = 'rgba(0, 100, 255, 0.5)';
+    dbg.strokeStyle = 'rgba(0, 150, 255, 0.8)';
+    dbg.lineWidth = 2;
 
     for (const tile of (window as any).collisionTiles) {
       const tileWorldX = tile.x * window.mapData.tilewidth;
       const tileWorldY = tile.y * window.mapData.tileheight;
 
       if (isInView(tileWorldX, tileWorldY)) {
-        ctx.fillRect(tileWorldX, tileWorldY, window.mapData.tilewidth, window.mapData.tileheight);
-        ctx.strokeRect(tileWorldX, tileWorldY, window.mapData.tilewidth, window.mapData.tileheight);
+        dbg.fillRect(tileWorldX, tileWorldY, window.mapData.tilewidth, window.mapData.tileheight);
+        dbg.strokeRect(tileWorldX, tileWorldY, window.mapData.tilewidth, window.mapData.tileheight);
       }
     }
   }
@@ -1805,24 +1908,24 @@ function animationLoop() {
   if (chunkOutlineDebugCheckbox.checked && window.mapData) {
     const visibleChunks = getVisibleChunksCached();
 
-    ctx.strokeStyle = 'rgba(0, 255, 0, 0.8)';
-    ctx.lineWidth = 3;
+    dbg.strokeStyle = 'rgba(0, 255, 0, 0.8)';
+    dbg.lineWidth = 3;
 
     for (const chunk of visibleChunks) {
       const chunkPixelSize = window.mapData.chunkSize * window.mapData.tilewidth;
       const chunkWorldX = chunk.x * chunkPixelSize;
       const chunkWorldY = chunk.y * chunkPixelSize;
 
-      ctx.strokeRect(chunkWorldX, chunkWorldY, chunkPixelSize, chunkPixelSize);
+      dbg.strokeRect(chunkWorldX, chunkWorldY, chunkPixelSize, chunkPixelSize);
     }
   }
 
   if (collisionTilesDebugCheckbox.checked && window.mapData) {
     const visibleChunks = getVisibleChunksCached();
 
-    ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)';
-    ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
-    ctx.lineWidth = 1;
+    dbg.strokeStyle = 'rgba(255, 0, 0, 0.6)';
+    dbg.fillStyle = 'rgba(255, 0, 0, 0.2)';
+    dbg.lineWidth = 1;
 
     for (const chunk of visibleChunks) {
       const chunkKey = `${chunk.x}-${chunk.y}`;
@@ -1848,8 +1951,8 @@ function animationLoop() {
               const tileWorldX = chunkWorldX + (x * window.mapData.tilewidth);
               const tileWorldY = chunkWorldY + (y * window.mapData.tileheight);
 
-              ctx.fillRect(tileWorldX, tileWorldY, window.mapData.tilewidth, window.mapData.tileheight);
-              ctx.strokeRect(tileWorldX, tileWorldY, window.mapData.tilewidth, window.mapData.tileheight);
+              dbg.fillRect(tileWorldX, tileWorldY, window.mapData.tilewidth, window.mapData.tileheight);
+              dbg.strokeRect(tileWorldX, tileWorldY, window.mapData.tilewidth, window.mapData.tileheight);
             }
           }
         }
@@ -1860,9 +1963,9 @@ function animationLoop() {
   if (noPvpDebugCheckbox.checked && window.mapData) {
     const visibleChunks = getVisibleChunksCached();
 
-    ctx.strokeStyle = 'rgba(0, 255, 0, 0.6)';
-    ctx.fillStyle = 'rgba(0, 255, 0, 0.2)';
-    ctx.lineWidth = 1;
+    dbg.strokeStyle = 'rgba(0, 255, 0, 0.6)';
+    dbg.fillStyle = 'rgba(0, 255, 0, 0.2)';
+    dbg.lineWidth = 1;
 
     for (const chunk of visibleChunks) {
       const chunkKey = `${chunk.x}-${chunk.y}`;
@@ -1888,8 +1991,8 @@ function animationLoop() {
               const tileWorldX = chunkWorldX + (x * window.mapData.tilewidth);
               const tileWorldY = chunkWorldY + (y * window.mapData.tileheight);
 
-              ctx.fillRect(tileWorldX, tileWorldY, window.mapData.tilewidth, window.mapData.tileheight);
-              ctx.strokeRect(tileWorldX, tileWorldY, window.mapData.tilewidth, window.mapData.tileheight);
+              dbg.fillRect(tileWorldX, tileWorldY, window.mapData.tilewidth, window.mapData.tileheight);
+              dbg.strokeRect(tileWorldX, tileWorldY, window.mapData.tilewidth, window.mapData.tileheight);
             }
           }
         }
@@ -1899,7 +2002,7 @@ function animationLoop() {
 
   if (shadowsDebugCheckbox && shadowsDebugCheckbox.checked && window.mapData) {
     const shadowLayerNames = window.mapData.shadowLayerNames;
-    if (!shadowLayerNames || shadowLayerNames.length === 0) return;
+    if (!shadowLayerNames || shadowLayerNames.length === 0) { dbg.restore(); return; }
 
     // Camera-position cache key (recompute every tile-width of movement)
     const tw = window.mapData.tilewidth;
@@ -2026,14 +2129,14 @@ function animationLoop() {
 
     // Draw cached edges (already in world-space, ctx is translated)
     if (allEdges.length > 0) {
-      ctx.strokeStyle = 'rgba(255, 255, 0, 0.9)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
+      dbg.strokeStyle = 'rgba(255, 255, 0, 0.9)';
+      dbg.lineWidth = 1.5;
+      dbg.beginPath();
       for (const [x1, y1, x2, y2] of allEdges) {
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
+        dbg.moveTo(x1, y1);
+        dbg.lineTo(x2, y2);
       }
-      ctx.stroke();
+      dbg.stroke();
     }
   }
 
@@ -2072,39 +2175,39 @@ function animationLoop() {
         const b = Math.round((1 - fNormalized) * 255);
 
         // Draw tile with gradient color
-        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.5)`;
-        ctx.fillRect(node.x * 32, node.y * 32, 32, 32);
+        dbg.fillStyle = `rgba(${r}, ${g}, ${b}, 0.5)`;
+        dbg.fillRect(node.x * 32, node.y * 32, 32, 32);
 
         // Draw border
-        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.8)`;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(node.x * 32, node.y * 32, 32, 32);
+        dbg.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.8)`;
+        dbg.lineWidth = 1;
+        dbg.strokeRect(node.x * 32, node.y * 32, 32, 32);
 
         // Optional: Draw f-score text for small number of nodes
         if (nodes.length < 50) {
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-          ctx.font = '10px Arial';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
+          dbg.fillStyle = 'rgba(255, 255, 255, 0.8)';
+          dbg.font = '10px Arial';
+          dbg.textAlign = 'center';
+          dbg.textBaseline = 'middle';
           const text = `${Math.round(node.f)}`;
-          ctx.fillText(text, node.x * 32 + 16, node.y * 32 + 16);
+          dbg.fillText(text, node.x * 32 + 16, node.y * 32 + 16);
         }
       }
 
       // Draw legend
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-      ctx.fillRect(10, 10, 200, 60);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(10, 10, 200, 60);
+      dbg.fillStyle = 'rgba(0, 0, 0, 0.8)';
+      dbg.fillRect(10, 10, 200, 60);
+      dbg.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+      dbg.lineWidth = 2;
+      dbg.strokeRect(10, 10, 200, 60);
 
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-      ctx.font = '12px Arial';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillText('A* Debug:', 20, 20);
-      ctx.fillText(`Nodes: ${nodes.length}`, 20, 35);
-      ctx.fillText(`Blue=Low, Red=High`, 20, 50);
+      dbg.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      dbg.font = '12px Arial';
+      dbg.textAlign = 'left';
+      dbg.textBaseline = 'top';
+      dbg.fillText('A* Debug:', 20, 20);
+      dbg.fillText(`Nodes: ${nodes.length}`, 20, 35);
+      dbg.fillText(`Blue=Low, Red=High`, 20, 50);
       }
     }
   }
@@ -2112,8 +2215,8 @@ function animationLoop() {
   if (showGridCheckbox.checked && window.mapData) {
     const visibleChunks = getVisibleChunksCached();
 
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-    ctx.lineWidth = 1;
+    dbg.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    dbg.lineWidth = 1;
 
     for (const chunk of visibleChunks) {
       const chunkPixelSize = window.mapData.chunkSize * window.mapData.tilewidth;
@@ -2122,23 +2225,23 @@ function animationLoop() {
 
       for (let x = 0; x <= window.mapData.chunkSize; x++) {
         const lineX = chunkWorldX + (x * window.mapData.tilewidth);
-        ctx.beginPath();
-        ctx.moveTo(lineX, chunkWorldY);
-        ctx.lineTo(lineX, chunkWorldY + chunkPixelSize);
-        ctx.stroke();
+        dbg.beginPath();
+        dbg.moveTo(lineX, chunkWorldY);
+        dbg.lineTo(lineX, chunkWorldY + chunkPixelSize);
+        dbg.stroke();
       }
 
       for (let y = 0; y <= window.mapData.chunkSize; y++) {
         const lineY = chunkWorldY + (y * window.mapData.tileheight);
-        ctx.beginPath();
-        ctx.moveTo(chunkWorldX, lineY);
-        ctx.lineTo(chunkWorldX + chunkPixelSize, lineY);
-        ctx.stroke();
+        dbg.beginPath();
+        dbg.moveTo(chunkWorldX, lineY);
+        dbg.lineTo(chunkWorldX + chunkPixelSize, lineY);
+        dbg.stroke();
       }
     }
   }
 
-  ctx.restore();
+  dbg.restore();
 
   if ((window as any).tileEditor) {
     ctx.save();
@@ -2256,6 +2359,8 @@ function animationLoop() {
   renderLootInteractionHint(ctx, cameraX, cameraY, canvas.width, canvas.height, (window as any)._lootPickupProgress || 0, cachedPlayerId);
 
   (window as any).renderChestInteractionHint?.(ctx, cameraX, cameraY, canvas.width, canvas.height, (window as any).chestInteractionProgress || 0, cachedPlayerId);
+  const talkTo = getNearestNpcId();
+  (window as any).renderMailboxHint?.(ctx, talkTo !== null && canInteractWith(talkTo));
 
   renderNpcInteractBadge(ctx, cameraX, cameraY, canvas.width, canvas.height, getNearestNpcId());
 
@@ -2296,11 +2401,19 @@ function getWeatherType() {
 
 function setWeatherType(type: string | null) {
   weatherType = type;
+  updateWeatherSound(weatherType, currentWeatherData);
 }
 
 function setWeatherData(data: any) {
   currentWeatherData = data;
+  updateWeatherSound(weatherType, currentWeatherData);
 }
+
+// USER REPORT 2026-10-16 ("Weather effects like wind and sounds stay around even when the weather has changed"): the
+// rain and wind loops follow the weather on a timer of their own, not the frames. No frame is drawn in a hidden tab
+// or while a map loads (no player of our own yet), and a loop asked for nothing kept playing at its last level then.
+// A background tab still runs this, about once a second.
+setInterval(() => updateWeatherSound(weatherType, currentWeatherData), WEATHER_SOUND_EVERY);
 
 function resetCameraInitialized() {
   cameraInitialized = false;

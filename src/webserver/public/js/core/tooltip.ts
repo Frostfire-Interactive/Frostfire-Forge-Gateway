@@ -76,6 +76,13 @@ function showItemTooltip(element: HTMLElement, itemData: any, mouseX: number, mo
   } else if (itemData.type) {
     tooltipType.innerText = itemData.type.charAt(0).toUpperCase() + itemData.type.slice(1);
   }
+  // Soulbound, as WoW shows it: a line of its own above the type.
+  if (itemData.soulbound === true || Number(itemData.soulbound) === 1) {
+    const bound = document.createElement("div");
+    bound.className = "tooltip-soulbound";
+    bound.innerText = "Soulbound";
+    tooltipType.prepend(bound);
+  }
 
   let equippedItem: any = null;
   if (compareMode && itemData.type === "equipment" && itemData.equipment_slot) {

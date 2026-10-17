@@ -48,6 +48,10 @@ declare interface NPC {
   vendor?: boolean;
   /** Whether it keeps an inn the player can make their home: a reason to talk to it too. */
   innkeeper?: boolean;
+  /** A sound NPC: not drawn and not talked to, it plays `sound` to a player within `sound_radius` px (npcsounds.ts). */
+  sound_npc?: boolean;
+  sound?: string | null;
+  sound_radius?: number;
   particles?: Particle[];
   hidden?: boolean;
   quest_giver?: boolean;

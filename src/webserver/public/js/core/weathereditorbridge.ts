@@ -47,7 +47,10 @@ const DRAWN: Record<string, { icon: IconName; short: string; long: string; ambie
   rainy: { icon: "cloud", short: "Rain", long: "Draws rain as heavy as Precipitation says, with splashes where it lands. Below 32 degrees it falls as snow.", ambience: false },
   thunderstorm: { icon: "bolt", short: "Rain, lightning, dark sky", long: "Draws rain as heavy as Precipitation says (snow below 32 degrees) and lightning strikes, turns shadows off and darkens the scene as much as Ambience says.", ambience: true },
   snowy: { icon: "sparkle", short: "Snow", long: "Draws snow as heavy as Precipitation says, which melts where it lands.", ambience: false },
-  darkness: { icon: "moon", short: "Near-black scene", long: "Darkens the scene as much as Ambience says, with no sun and no shadows: lights and glowing particles carry it.", ambience: true },};
+  darkness: { icon: "moon", short: "Near-black scene", long: "Darkens the scene as much as Ambience says, with no sun and no shadows: lights and glowing particles carry it.", ambience: true },
+  tornado: { icon: "wind", short: "Storm with tornadoes", long: "Draws a thunderstorm (rain as heavy as Precipitation says, lightning, the scene darkened by Ambience) and always has one or two tornadoes on the map, which pull players in and hurt them. Any thunderstorm also has a rare chance of one.", ambience: true },
+  sandstorm: { icon: "wind", short: "Sandstorm in deserts", long: "Draws a sandstorm only where the player stands in a desert zone (clear elsewhere): an orange tint, rolling dust and blowing sand, harsher the higher Wind speed is (a few mph a faint drift, 15 light, 35 heavy, 45 and over the worst).", ambience: false },
+};
 
 const lower = (s: unknown): string => String(s ?? "").toLowerCase();
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
@@ -328,7 +331,7 @@ class WeatherEditorBridge {
   private summary(): string[] {
     const d = this.draft!;
     const drawn = this.drawnFor(d.name);
-    const lines = [drawn ? drawn.long : "Draws no rain, no snow and no darkening: the game only does that for the names rainy, thunderstorm, snowy and darkness."];
+    const lines = [drawn ? drawn.long : "Draws no rain, no snow and no darkening: the game only does that for the names rainy, thunderstorm, tornado, snowy, darkness and sandstorm."];
 
     const speed = Number(d.wind_speed) || 0;
     if (this.blows(d)) {
@@ -349,7 +352,7 @@ class WeatherEditorBridge {
 
     const ambience = Number(d.ambience) || 0;
     if (drawn?.ambience) lines.push(`Ambience ${ambience}: the scene is darkened by ${Math.round(Math.min(1, Math.max(0, ambience)) * 100)}%.`);
-    else if (ambience > 0) lines.push(`Ambience ${ambience} is stored, but only thunderstorm and darkness use it.`);
+    else if (ambience > 0) lines.push(`Ambience ${ambience} is stored, but only thunderstorm, tornado and darkness use it.`);
 
     const saved = this.originalName !== null;
     const worlds = saved ? this.worldNames(this.originalName) : [];
@@ -474,7 +477,7 @@ class WeatherEditorBridge {
     // Said where the name is typed, not left to be found out: the numbers below draw nothing on their own.
     const drawn = note([
       "The game picks what it draws by this name. The numbers below only shape it.",
-      "rainy and thunderstorm draw rain, as heavy as Precipitation says, and snow instead below 32 degrees. snowy draws snow. thunderstorm and darkness darken the scene, by as much as Ambience says. thunderstorm also has lightning.",
+      "rainy and thunderstorm draw rain, as heavy as Precipitation says, and snow instead below 32 degrees. snowy draws snow. thunderstorm and darkness darken the scene, by as much as Ambience says. thunderstorm also has lightning, and tornado is a thunderstorm with tornadoes. sandstorm blows sand in the deserts, as harsh as Wind speed says.",
       "Any other name draws no rain, no snow and no darkening: it only carries its wind. The real weather (/weather weather_api) is not a weather of this list.",
     ]);
     drawn.classList.add("tl-field-wide");

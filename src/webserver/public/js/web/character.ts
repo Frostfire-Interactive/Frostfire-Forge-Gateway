@@ -98,7 +98,7 @@ function hueOf(name: string): number {
 }
 
 /** A shield with the class's first letter. */
-function emblem(c: CharacterClassView, size: 'small' | 'large' = 'small'): string {
+function emblem(c: CharacterClassView, size: 'small' | 'large' | 'head' = 'small'): string {
     const hue = hueOf(c.name);
     const id = `cc-emblem-${c.id}-${size}`;
     const letter = escapeHtml((c.name.trim()[0] || '?').toUpperCase());
@@ -148,11 +148,13 @@ function selectClass(id: number, scroll = true): void {
     renderDetails(chosen);
     updateButton();
 
-    // The details are below the list on a phone: bring them into view.
-    const details = document.querySelector('.cc-hero');
-    if (scroll && details && window.matchMedia('(max-width: 900px)').matches) {
+    // On a phone the classes are a row that scrolls sideways: the chosen card comes into view in it (the page itself
+    // does not scroll there), and its details start from the top.
+    if (window.matchMedia('(max-width: 900px), (max-height: 520px)').matches) {
+        const card = document.querySelector<HTMLElement>(`#class-list .cc-class[data-class-id="${id}"]`);
         const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        details.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+        if (scroll) card?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'nearest', inline: 'center' });
+        document.querySelector('.cc-details')?.scrollTo({ top: 0 });
     }
 }
 
@@ -198,7 +200,9 @@ function renderDetails(c: CharacterClassView): void {
                 <span class="cc-spell-level">${s.level <= 1 ? 'Start' : `Lv ${escapeHtml(s.level)}`}</span>
             </li>`;
         }).join('')}</ul>`;
+    // (the heading only shows where the class is not named large over the world: a phone held sideways)
     box.innerHTML = `
+        <div class="cc-details-head">${emblem(c, 'head')}<h2 class="cc-details-name">${escapeHtml(c.name)}</h2></div>
         <h3 class="cc-section-title">Starting stats</h3>
         <div class="cc-stats">${stats}</div>
         <h3 class="cc-section-title">Spells</h3>

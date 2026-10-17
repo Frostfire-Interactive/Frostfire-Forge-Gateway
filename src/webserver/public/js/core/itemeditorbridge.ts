@@ -53,7 +53,8 @@ const PROBLEM_FIELDS: Array<[RegExp, string]> = [
   [/^Maximum damage /, "damage_max"],
   [/^Attack speed /, "attack_speed_ms"],
   [/^Weapon damage and speed only apply/, "equipment_slot"],
-  [/^Vendor sell price /, "sell_price"],
+  [/^Sell price /, "sell_price"],
+  [/^Buy price /, "buy_price"],
   [/^(What a consumable restores|A consumable must restore)/, "restore_health"],
   [/is already the home item/, "teleports_home"],
 ];
@@ -266,7 +267,9 @@ class ItemEditorBridge {
           { key: "quality", label: "Quality", type: "select", options: this.choices(this.data.qualities ?? [], DEFAULT_QUALITIES), rerender: true, hint: "Sets the colour of its name and icon frame." },
           { key: "icon", label: "Icon", type: "asset", assets: () => this.iconAssets(), fallback: "box" },
           ...(isEquipment ? [] : ([{ key: "level_requirement", label: "Level requirement", type: "number" }] as Field[])),
-          { key: "sell_price", label: "Vendor sell price", type: "money", hint: "What a vendor pays for one. Nothing at all means vendors will not buy it. Quest items are never bought." },
+          { key: "sell_price", label: "Sell price", type: "money", hint: "What a vendor pays for one. Nothing means vendors will not buy it. Quest items are never bought." },
+          { key: "buy_price", label: "Buy price", type: "money", hint: "What a vendor charges for one. An NPC can set its own price in the NPC editor." },
+          { key: "soulbound", label: "Soulbound", type: "switch", hint: "Cannot be traded or mailed." },
           { key: "description", label: "Description", type: "textarea", hint: "Shown in the item's tooltip." },
         ];
     }
@@ -320,8 +323,11 @@ class ItemEditorBridge {
       damage_min: null, damage_max: null, attack_speed_ms: null,
       // What a vendor pays for one, in copper.
       sell_price: 1,
+      // What a vendor charges for one, in copper.
+      buy_price: 4,
       // What using it does, when it is a consumable.
       restore_health: null, restore_stamina: null, no_combat: false, teleports_home: false,
+      soulbound: false,
     };
   }
 
@@ -556,6 +562,9 @@ class ItemEditorBridge {
         : d.type === "quest" ? "Quest item: vendors do not buy it" : price > 0 ? `Sells to a vendor for ${coinWords(price)}` : "Vendors do not buy it",
       "faint",
     );
+    // What a vendor charges, where the NPC sets no price of its own: never less than a vendor pays.
+    const cost = Math.max(Math.max(0, Math.floor(Number(d.buy_price) || 0)), d.type === "quest" ? 0 : price);
+    if (!isHome) line(cost > 0 ? `Costs ${coinWords(cost)} at a vendor` : "Free at a vendor", "faint");
     if (String(d.description ?? "").trim()) box.appendChild(el("div", "tl-preview-text", String(d.description).trim()));
     body.appendChild(box);
   }
@@ -569,8 +578,8 @@ class ItemEditorBridge {
 
   private open(draft: any, originalName: string | null, dirty: boolean): void {
     this.originalName = originalName;
-    // The table keeps these two as 0 or 1: a switch is on or off.
-    for (const flag of ["no_combat", "teleports_home"]) draft[flag] = draft[flag] === true || Number(draft[flag]) === 1;
+    // The table keeps these as 0 or 1: a switch is on or off.
+    for (const flag of ["no_combat", "teleports_home", "soulbound"]) draft[flag] = draft[flag] === true || Number(draft[flag]) === 1;
     this.draft = draft;
     this.dirty = dirty;
     this.refused = false;

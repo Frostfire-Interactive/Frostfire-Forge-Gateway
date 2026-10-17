@@ -7,6 +7,7 @@ import Cache from "./cache.ts";
 import { updateTime, setHasWeather, setStormAmbience, setDarknessAmbience } from "./ambience.ts";
 import { setWeatherType, setWeatherData, getWeatherType } from "./renderer.ts";
 import { addLightningStrike } from "./weather.ts";
+import { setTornadoes } from "./tornado.ts";
 import { setupItemTooltip, removeItemTooltip, hideItemTooltip, setupSpellTooltip } from "./tooltip.ts";
 import { startPersistentSpellCooldown } from "./ui.js";
 import { sampleTime, pushSample } from "./movementsmoothing.ts";
@@ -90,6 +91,7 @@ import { startStatPreview, noteSelfSpritesChanged } from "./preview.js";
 import { createInvitationPopup } from "./invites.ts";
 import { showTrade, closeTrade } from "./trade.ts";
 import { showVendor, closeVendor, refreshVendor } from "./vendor.ts";
+import { setMailboxes, showMail, mailSent, setUnreadMail, closeMail, refreshMail } from "./mail.ts";
 import { startItemCooldown, refreshHotbarItems, clearItemCooldowns } from "./consumables.ts";
 import { showNotification } from "./notifications.ts";
 import { updateFriendOnlineStatus } from "./friends.js";
@@ -105,6 +107,7 @@ import {
   musicSlider,
   effectsSlider,
   ambienceSlider,
+  weatherSlider,
   mutedCheckbox,
   statUI,
   packetsSentReceived,
@@ -1407,7 +1410,13 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     }
     case "LIGHTNING": {
       if (!data || data.x == null || data.y == null) return;
-      addLightningStrike(data.x, data.y);
+      addLightningStrike(data.x, data.y, data.map);
+      break;
+    }
+    case "TORNADOES": {
+      // the tornadoes on a map now, about five times a second while there are any (tornado.ts)
+      if (!data) return;
+      setTornadoes(data);
       break;
     }
     case "CONSOLE_MESSAGE": {
@@ -1497,6 +1506,12 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         if (updatedNpc.vendor !== undefined || updatedNpc.vendor_items !== undefined) liveNpc.vendor = sellsThings(updatedNpc);
         // The same for an inn it was just given, or no longer keeps.
         if (updatedNpc.innkeeper !== undefined) liveNpc.innkeeper = updatedNpc.innkeeper === true;
+        // What it plays, if it is a sound NPC (npcsounds.ts).
+        if (updatedNpc.sound_npc !== undefined) {
+          liveNpc.sound_npc = updatedNpc.sound_npc === true;
+          liveNpc.sound = updatedNpc.sound ?? null;
+          liveNpc.sound_radius = Number(updatedNpc.sound_radius) || 0;
+        }
         if (updatedNpc.particles !== undefined) liveNpc.particles = resolveParticles(updatedNpc.particles || []);
         if (updatedNpc.quest !== undefined) liveNpc.quest = updatedNpc.quest || null;
         // Update sprite and reinit if changed
@@ -1532,6 +1547,9 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           gossip: updatedNpc.gossip || "",
           vendor: sellsThings(updatedNpc),
           innkeeper: updatedNpc.innkeeper === true,
+          sound_npc: updatedNpc.sound_npc === true,
+          sound: updatedNpc.sound ?? null,
+          sound_radius: updatedNpc.sound_radius ?? 0,
           hidden: updatedNpc.hidden ?? false,
           particles: resolveParticles(updatedNpc.particles || []),
           quest: updatedNpc.quest || null,
@@ -1797,6 +1815,30 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     }
     case "VENDOR_CLOSED": {
       closeVendor();
+      if (data?.message) showNotification(data.message, true, false);
+      break;
+    }
+    case "MAILBOXES": {
+      // Where the mailboxes of the map are: in front of its inns.
+      setMailboxes(data);
+      // an open mailbox editor asks for the list again (mailboxeditor.ts)
+      (window as any).mailboxEditorRefresh?.();
+      break;
+    }
+    case "MAIL_INBOX": {
+      showMail(data);
+      break;
+    }
+    case "MAIL_SENT": {
+      mailSent(data);
+      break;
+    }
+    case "MAIL_NOTICE": {
+      setUnreadMail(Number(data?.unread) || 0);
+      break;
+    }
+    case "MAIL_CLOSED": {
+      closeMail();
       if (data?.message) showNotification(data.message, true, false);
       break;
     }
@@ -2484,6 +2526,14 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     }
     case "WEATHER_EDITOR_UPDATED": {
       import("./weathereditor.js").then((m) => m.default.onUpdated(data));
+      break;
+    }
+    case "TOGGLE_MAILBOX_EDITOR": {
+      import("./mailboxeditor.js").then((m) => m.default.toggle());
+      break;
+    }
+    case "MAILBOX_EDITOR_DATA": {
+      import("./mailboxeditor.js").then((m) => m.default.onData(data));
       break;
     }
     case "TOGGLE_CLASS_EDITOR": {
@@ -4109,6 +4159,11 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       document.getElementById(
         "ambience-volume-label"
       )!.innerText = `Ambience: (${ambienceSlider.value})`;
+      // (a server from before the Weather slider sends no level: full)
+      weatherSlider.value = String(config.weather_volume ?? 100);
+      document.getElementById(
+        "weather-volume-label"
+      )!.innerText = `Weather: (${weatherSlider.value})`;
       mutedCheckbox.checked = config.muted;
       document.getElementById(
         "muted-checkbox"
@@ -4717,8 +4772,9 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       }
 
       updateCurrencyDisplay();
-      // What can be afforded at an open vendor follows the coins.
+      // What can be afforded at an open vendor follows the coins, and so does what a mail costs.
       refreshVendor();
+      refreshMail();
       break;
     }
     case "MAP_CHUNK": {

@@ -25,9 +25,10 @@ const TABS = [
 ];
 /** How many different items one vendor stocks: the server's limit. */
 const STOCK_MAX = 40;
-/** What a newly stocked item costs, as a multiple of what vendors pay for it, until a price is set. */
-const MARKUP = 4;
 const FACINGS = ["down", "up", "left", "right"];
+
+/** A stocked item's price as it is kept: whole copper, 0 or more, or null for the item's own buy price. */
+const priceOf = (price: unknown): number | null => (price === null || price === undefined || price === "" ? null : Math.max(0, Math.floor(Number(price) || 0)));
 const FACING_WORDS: Record<string, string> = { down: "Down", up: "Up", left: "Left", right: "Right" };
 const SPRITE_WORDS: Record<string, string> = { animated: "Animated", static: "Static", none: "None" };
 /** The sprite sheets an animated NPC wears over its body and head. */
@@ -41,6 +42,13 @@ const WORN: Array<{ key: string; label: string; slot: string }> = [
   { key: "sprite_legs", label: "Pants", slot: "legs" },
   { key: "sprite_weapon", label: "Weapon", slot: "weapon" },
 ];
+/** How far a new sound NPC is heard, and the least and most it can be (the server's limit), in pixels. */
+const SOUND_RADIUS = 256, SOUND_RADIUS_MIN = 16, SOUND_RADIUS_MAX = 2048;
+/** A sound NPC's radius as it is saved: whole pixels, within the limits. */
+const radiusOf = (value: unknown): number => Math.min(SOUND_RADIUS_MAX, Math.max(SOUND_RADIUS_MIN, Math.round(Number(value) || SOUND_RADIUS)));
+/** A sound NPC only has its General tab: nothing else it could be given is heard. */
+const isSound = (npc: any): boolean => npc?.sound_npc === true;
+
 /** With no answer for this long, the page stops waiting and says so. */
 const ANSWER_MS = 15000;
 /** How long the list waits for the map's NPCs before it says there are none. */
@@ -61,18 +69,20 @@ interface Edit {
   given: number[];
   ended: number[];
   particles: string[];
-  /** What the NPC sells: each item's name, and what one costs there, in copper. */
-  stock: Array<{ item: string; price: number }>;
+  /** What the NPC sells: each item's name, and what one costs there, in copper (null: the item's own buy price). */
+  stock: Array<{ item: string; price: number | null }>;
 }
 
 /** An item as the stock picker knows it. */
-interface StockChoice { name: string; icon: string | null; quality: string | null; sell_price: number }
+interface StockChoice { name: string; icon: string | null; quality: string | null; sell_price: number; buy_price: number }
 
 class NpcEditorBridge {
   private npcs: any[] = [];
   private availableParticles: string[] = [];
   private availableQuests: Array<{ id: number; name: string }> = [];
   private availableItems: StockChoice[] = [];
+  /** The audio files of the asset server, for picking what a sound NPC plays. */
+  private availableSounds: string[] = [];
   private spriteData: { spriteSheets: Record<string, Array<{ name: string; image: string | null }>>; icons: Array<{ name: string; image: string | null }> } = { spriteSheets: {}, icons: [] };
   private selectedNpcId: number | null = null;
   /**
@@ -189,6 +199,7 @@ class NpcEditorBridge {
     this.availableParticles = msg.particles || [];
     if (msg.quests) this.setAvailableQuests(msg.quests);
     this.setAvailableItems(msg.items);
+    this.setAvailableSounds(msg.sounds);
     this.storeSpriteData(msg);
     this.ready = true;
     this.shell.arrived();
@@ -220,6 +231,7 @@ class NpcEditorBridge {
     this.settled = true;
     let redraw = msg.quests ? this.setAvailableQuests(msg.quests) : false;
     redraw = this.setAvailableItems(msg.items) || redraw;
+    redraw = this.setAvailableSounds(msg.sounds) || redraw;
     redraw = this.storeSpriteData(msg) || redraw;
     const dropped = this.dropDeletedSelection();
     redraw = this.refreshDraftFromList() || redraw;
@@ -239,6 +251,7 @@ class NpcEditorBridge {
     const another = !this.draft || (this.selectedNpcId !== msg.npc.id && !adopted);
     let redraw = msg.quests ? this.setAvailableQuests(msg.quests) : false;
     redraw = this.setAvailableItems(msg.items) || redraw;
+    redraw = this.setAvailableSounds(msg.sounds) || redraw;
     redraw = this.storeSpriteData(msg) || redraw;
     // The answer to an NPC picked here is mostly the row it was opened from: then there is nothing to do.
     if (!another && !adopted && !this.dirty && JSON.stringify(msg.npc) === this.source) {
@@ -287,7 +300,7 @@ class NpcEditorBridge {
       ended: ids(this.draft.questsEnded),
       particles: this.normalizeParticleNames(this.draft.particles),
       stock: (Array.isArray(this.draft.vendor_items) ? this.draft.vendor_items : [])
-        .map((entry: any) => ({ item: String(entry?.item ?? ""), price: Math.max(0, Math.floor(Number(entry?.price) || 0)) })),
+        .map((entry: any) => ({ item: String(entry?.item ?? ""), price: priceOf(entry?.price) })),
     };
   }
 
@@ -327,9 +340,22 @@ class NpcEditorBridge {
     if (!Array.isArray(items)) return false;
     const next: StockChoice[] = items
       .filter((item: any) => item && typeof item.name === "string" && item.name)
-      .map((item: any) => ({ name: item.name, icon: item.icon ?? null, quality: item.quality ?? null, sell_price: Math.max(0, Math.floor(Number(item.sell_price ?? 1) || 0)) }));
+      .map((item: any) => ({
+        name: item.name, icon: item.icon ?? null, quality: item.quality ?? null,
+        sell_price: Math.max(0, Math.floor(Number(item.sell_price ?? 1) || 0)),
+        buy_price: Math.max(0, Math.floor(Number(item.buy_price) || 0)),
+      }));
     const changed = JSON.stringify(next) !== JSON.stringify(this.availableItems);
     this.availableItems = next;
+    return changed;
+  }
+
+  /** The audio files there are. Whether the list changed, so the page is only drawn again when it did. */
+  private setAvailableSounds(sounds: unknown): boolean {
+    if (!Array.isArray(sounds)) return false;
+    const next = sounds.filter((name): name is string => typeof name === "string" && !!name).sort((a, b) => a.localeCompare(b));
+    const changed = JSON.stringify(next) !== JSON.stringify(this.availableSounds);
+    this.availableSounds = next;
     return changed;
   }
 
@@ -421,6 +447,7 @@ class NpcEditorBridge {
 
   /** An NPC's picture: its static image where it has one, a figure otherwise. */
   private thumbOf(npc: any, size: "" | "lg" | "xl" = ""): HTMLElement {
+    if (isSound(npc)) return thumb(null, { size, fallback: "megaphone" });
     const still = String(npc?.sprite_type ?? "") === "static";
     return thumb(still ? this.iconImage(npc.sprite_body) : null, { size, fallback: still ? "image" : "user" });
   }
@@ -441,6 +468,7 @@ class NpcEditorBridge {
       const tags: HTMLElement[] = [];
       if (fresh) tags.push(tag("New", "warning"));
       else if (this.unsaved.has(npc.id) || (open && this.dirty)) tags.push(tag("Unsaved", "warning"));
+      if (isSound(open ? this.draft : npc)) tags.push(tag("Sound", "muted", "megaphone"));
       if ((open ? this.draft : npc).hidden) tags.push(tag("Hidden", "muted", "eyeOff"));
       rows.push({
         id: fresh ? "\u0000new" : String(npc.id), name: label,
@@ -477,7 +505,7 @@ class NpcEditorBridge {
     }
     const fresh = this.selectedNpcId === null;
     // The picture is only drawn again when it changes, not at every key typed.
-    const looks = `${d.sprite_type}:${d.sprite_body}`;
+    const looks = `${isSound(d)}:${d.sprite_type}:${d.sprite_body}`;
     if (this.headThumb?.key !== looks) this.headThumb = { key: looks, node: this.thumbOf(d, "lg") };
     shell.setRecord({ title: this.liveLabel(), note: `${fresh ? "Not saved yet" : `NPC #${this.selectedNpcId}`} · ${this.placeOf(d)}`, thumb: this.headThumb.node });
 
@@ -495,6 +523,8 @@ class NpcEditorBridge {
       ...(fresh ? { deleteTip: "Discard this NPC: it was never saved" } : {}),
     });
     shell.setTabs(this.tab);
+    // A sound NPC is only its General tab: the others hold what it cannot have.
+    for (const btn of document.querySelectorAll<HTMLElement>(".tl-tab[data-tab]")) btn.hidden = isSound(d) && btn.dataset.tab !== "general";
     shell.setBanner(fresh
       ? { tone: "info", icon: "pin", text: "This NPC stands where your character stood when you placed it. Drag it in the game window to move it. It is only kept once you save it." }
       : null);
@@ -529,14 +559,15 @@ class NpcEditorBridge {
       box.appendChild(button("New NPC", () => void this.createNpc(), { icon: "plus", kind: "primary" }));
       return;
     }
-    const { main, aside } = this.shell.page(`${this.opened}:${this.tab}`, { aside: true });
+    const tab = isSound(this.draft) ? "general" : this.tab;
+    const { main, aside } = this.shell.page(`${this.opened}:${tab}`, { aside: true });
 
-    if (this.tab === "appearance") this.renderAppearance(main);
+    if (tab === "general") this.renderGeneral(main);
+    else if (this.tab === "appearance") this.renderAppearance(main);
     else if (this.tab === "content") this.renderContent(main);
     else if (this.tab === "quests") this.renderQuests(main);
     else if (this.tab === "vendor") this.renderVendor(main);
     else if (this.tab === "effects") this.renderEffects(main);
-    else this.renderGeneral(main);
 
     // The NPC in plain words, beside the form on every tab.
     const { body } = card(aside, "At a glance", "The NPC as players find it");
@@ -548,7 +579,17 @@ class NpcEditorBridge {
   private renderGeneral(main: HTMLElement): void {
     const d = this.draft;
     const who = this.section(main, "NPC", "What it is called");
-    who.appendChild(this.field({ key: "name", label: "Name", type: "text", maxLength: 64, hint: "What players see the NPC called. Leave it empty for an NPC without a name." }, d, "name"));
+    const sound = isSound(d);
+    who.appendChild(this.field({ key: "name", label: "Name", type: "text", maxLength: 64, hint: sound ? "Only seen here, in the list of NPCs." : "What players see the NPC called. Leave it empty for an NPC without a name." }, d, "name"));
+    who.appendChild(this.fields.renderField(
+      { key: "sound_npc", label: "Sound NPC", type: "switch", wide: true, rerender: true, path: "sound_npc", hint: "Plays a sound around where it stands, and nothing else: it is not drawn and cannot be talked to." },
+      d,
+      () => {
+        if (isSound(d) && !(Number(d.sound_radius) > 0)) d.sound_radius = SOUND_RADIUS;
+        this.touched("sound_npc");
+      }
+    ));
+    if (sound) this.renderSound(main);
 
     const placement = card(main, "Placement", "Where the NPC stands and which way it faces");
     const facts = el("div", "tl-facts ne-place");
@@ -575,11 +616,33 @@ class NpcEditorBridge {
     spot.append(across, down, bring);
     const grid = el("div", "tl-fields");
     placement.body.append(facts, spot, grid);
-    grid.appendChild(this.field(
-      { key: "direction", label: "Facing", type: "segmented", options: () => FACINGS.map((value) => ({ value, label: FACING_WORDS[value] })) },
-      this.edit, "direction"
+    if (!sound) {
+      grid.appendChild(this.field(
+        { key: "direction", label: "Facing", type: "segmented", options: () => FACINGS.map((value) => ({ value, label: FACING_WORDS[value] })) },
+        this.edit, "direction"
+      ));
+    }
+    grid.appendChild(this.field({ key: "hidden", label: "Hidden", type: "switch", hint: sound ? "Hidden sound NPCs are not heard." : "Hidden NPCs are not shown to players." }, d, "hidden"));
+  }
+
+  /** What a sound NPC plays, and how far it is heard. */
+  private renderSound(main: HTMLElement): void {
+    const d = this.draft;
+    const plays = this.section(main, "Sound", "Heard inside the purple circle in the game window, fading out toward its edge. Inside the blue middle it is at full level in both ears");
+    const known = new Set(this.availableSounds.map((name) => name.toLowerCase()));
+    const missing = !!d.sound && this.availableSounds.length > 0 && !known.has(String(d.sound).toLowerCase());
+    plays.appendChild(this.field(
+      {
+        key: "sound", label: "Audio", type: "asset", noIcons: true, rerender: true, fallback: "megaphone",
+        hint: missing ? "The asset server has no audio of this name, so nothing is heard." : "From the asset server's audio folder. It loops while a player is in range.",
+        assets: () => [{ value: "", label: "None" }, ...this.availableSounds.map((name) => ({ value: name, label: name }))],
+      },
+      d, "sound"
     ));
-    grid.appendChild(this.field({ key: "hidden", label: "Hidden", type: "switch", hint: "Hidden NPCs are not shown to players." }, d, "hidden"));
+    plays.appendChild(this.field(
+      { key: "sound_radius", label: "Radius", type: "number", min: SOUND_RADIUS_MIN, max: SOUND_RADIUS_MAX, step: 16, unit: "px", hint: `How far it is heard, ${SOUND_RADIUS_MIN} to ${SOUND_RADIUS_MAX.toLocaleString()} px. It fades out toward the edge.` },
+      d, "sound_radius"
+    ));
   }
 
   /**
@@ -681,13 +744,18 @@ class NpcEditorBridge {
     return wanted ? this.availableItems.find((item) => item.name.toLowerCase() === wanted) : undefined;
   }
 
-  /** What a stocked item is sold for, under its card's title: its price, or why the price asked is not the one charged. */
-  private stockLine(entry: { item: string; price: number }): string {
+  /**
+   * What a stocked item is sold for, under its card's title: its price here, or the item's own buy price, or why the
+   * price asked is not the one charged.
+   */
+  private stockLine(entry: { item: string; price: number | null }): string {
     const item = this.itemNamed(entry.item);
     if (!entry.item) return "Pick the item this NPC sells.";
     if (!item) return "This item no longer exists, so it is left out when the NPC is saved.";
-    if (entry.price < item.sell_price) return `Sold for ${coinWords(item.sell_price)}: never less than vendors pay for it.`;
-    return entry.price > 0 ? `Sold for ${coinWords(entry.price)}. Vendors pay ${coinWords(item.sell_price)} for it.` : "Given away for nothing.";
+    const asked = entry.price ?? item.buy_price;
+    const whose = entry.price === null ? "its buy price" : "this NPC's price";
+    if (asked < item.sell_price) return `Sold for ${coinWords(item.sell_price)}: never less than vendors pay for it.`;
+    return asked > 0 ? `Sold for ${coinWords(asked)}, ${whose}. Vendors pay ${coinWords(item.sell_price)} for it.` : "Given away for nothing.";
   }
 
   /**
@@ -741,25 +809,32 @@ class NpcEditorBridge {
       grid.appendChild(this.fields.renderField(
         { key: "item", label: "Item", type: "asset", assets: () => this.itemOptions(), searchFirst: true, fallback: "box", rerender: true, path: `vendor_items.${index}.item` },
         entry,
-        () => {
-          // A newly picked item starts at a few times what vendors pay for it, rather than free.
-          const item = this.itemNamed(entry.item);
-          if (item && entry.price === 0) entry.price = item.sell_price * MARKUP;
-          this.touched("vendor_items");
-        }
+        () => this.touched("vendor_items")
       ));
+      // Off: sold at the item's own buy price (item editor). On: this NPC's price, starting from the item's.
+      const own = { own: entry.price !== null };
       grid.appendChild(this.fields.renderField(
-        { key: "price", label: "Price", type: "money", hint: "What one costs to buy here. Never charged at less than vendors pay for the item.", path: `vendor_items.${index}.price` },
-        entry,
+        { key: "own", label: "Own price", type: "switch", rerender: true, hint: "Sell it here for a price other than the item's buy price.", path: `vendor_items.${index}.price` },
+        own,
         () => {
-          said();
+          entry.price = own.own ? (this.itemNamed(entry.item)?.buy_price ?? 0) : null;
           this.touched("vendor_items");
         }
       ));
+      if (entry.price !== null) {
+        grid.appendChild(this.fields.renderField(
+          { key: "price", label: "Price", type: "money", hint: "What one costs to buy here. Never charged at less than vendors pay for the item.", path: `vendor_items.${index}.price` },
+          entry,
+          () => {
+            said();
+            this.touched("vendor_items");
+          }
+        ));
+      }
     });
 
     const add = button("Add item", () => {
-      stock.push({ item: "", price: 0 });
+      stock.push({ item: "", price: null });
       this.touched("vendor_items");
       this.renderForm();
     }, { icon: "plus" });
@@ -800,6 +875,11 @@ class NpcEditorBridge {
     out.push(head);
 
     const where = `${this.placeOf(d)}${d.map ? ` on ${d.map}` : ""}`;
+    if (isSound(d)) {
+      say(`A sound NPC at ${where}.${d.hidden ? " Hidden: players do not hear it." : ""}`);
+      say(d.sound ? `Plays ${d.sound} to players within ${radiusOf(d.sound_radius).toLocaleString()} px, louder toward its middle.` : "Plays nothing yet: pick its audio.");
+      return out;
+    }
     say(`Stands at ${where}, facing ${this.edit.direction}.${d.hidden ? " Hidden: players do not see it." : ""}`);
 
     const spriteType = String(d.sprite_type ?? "none");
@@ -899,7 +979,8 @@ class NpcEditorBridge {
     const text = (value: unknown) => (value ? String(value).trim() : null) || null;
     // Only quests that exist are sent, in the order of their ids.
     const quests = (picked: number[]) => this.availableQuests.filter((q) => picked.includes(q.id)).map((q) => q.id);
-    return {
+    const sound = isSound(d);
+    const data = {
       id: this.selectedNpcId,
       map: d ? d.map : "",
       position: { x: d ? (d.position?.x || 0) : 0, y: d ? (d.position?.y || 0) : 0, direction: this.edit.direction || "down" },
@@ -914,7 +995,7 @@ class NpcEditorBridge {
       questsEnded: quests(this.edit.ended),
       // Only items that exist are sent, under their own names, each once.
       vendor_items: this.edit.stock
-        .map((entry) => ({ item: this.itemNamed(entry.item)?.name ?? "", price: Math.max(0, Math.floor(Number(entry.price) || 0)) }))
+        .map((entry) => ({ item: this.itemNamed(entry.item)?.name ?? "", price: priceOf(entry.price) }))
         .filter((entry, index, list) => entry.item && list.findIndex((other) => other.item === entry.item) === index),
       particles: this.edit.particles.slice(),
       sprite_type: d?.sprite_type || "none",
@@ -928,7 +1009,20 @@ class NpcEditorBridge {
       sprite_feet: d?.sprite_feet ?? null,
       sprite_legs: d?.sprite_legs ?? null,
       sprite_weapon: d?.sprite_weapon ?? null,
+      sound_npc: sound,
+      sound: sound ? text(d?.sound) : null,
+      sound_radius: sound ? radiusOf(d?.sound_radius) : 0,
     };
+    // A sound NPC keeps none of what its hidden tabs hold: nothing of it would be seen, and nothing is saved unseen.
+    if (sound) {
+      Object.assign(data, {
+        quest_giver: false, innkeeper: false, dialog: null, gossip: null, script: null,
+        questsGiven: [], questsEnded: [], vendor_items: [], particles: [],
+        sprite_type: "none", sprite_body: null, sprite_head: null, sprite_helmet: null, sprite_shoulderguards: null,
+        sprite_neck: null, sprite_hands: null, sprite_chest: null, sprite_feet: null, sprite_legs: null, sprite_weapon: null,
+      });
+    }
+    return data;
   }
 
   /** Something was changed: there is something to save, and the game window is told, so the world shows it. */
@@ -943,7 +1037,7 @@ class NpcEditorBridge {
     this.chrome();
     this.paintLive();
     // The list follows the name as it is typed, and marks the NPC as changed.
-    if (!marked || path === "name" || path === "hidden") this.renderList();
+    if (!marked || path === "name" || path === "hidden" || path === "sound_npc") this.renderList();
   }
 
   // ----------------------------------------------------------------- actions

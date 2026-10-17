@@ -78,6 +78,10 @@
             <input type="range" min="0" max="100" value="100" step="1" class="slider" id="ambience-slider" class="ui">
           </div>
           <div class="settings-row">
+            <label id="weather-volume-label" class="ui">Weather:</label>
+            <input type="range" min="0" max="100" value="100" step="1" class="slider" id="weather-slider" class="ui">
+          </div>
+          <div class="settings-row">
             <label id="muted-label" class="ui">Muted:</label>
             <input type="checkbox" id="muted-checkbox" class="ui">
           </div>
@@ -465,5 +469,6 @@
     <canvas id="light-dodge"></canvas>
     <canvas id="light-overlay"></canvas>
     <canvas id="weather"></canvas>
+    <canvas id="debug-layer"></canvas>
   </body>
 </html>

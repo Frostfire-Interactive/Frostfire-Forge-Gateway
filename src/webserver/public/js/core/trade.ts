@@ -9,6 +9,7 @@ import Cache from "./cache.js";
 import { itemFrame } from "./itemframe.js";
 import { setupItemTooltip, hideItemTooltip } from "./tooltip.js";
 import { openInventory } from "./input.js";
+import { isSoulbound } from "./consumables.js";
 
 const cache = Cache.getInstance();
 
@@ -82,7 +83,7 @@ function sendTypedCoins() {
  * How many of an item in the bags can be traded: what is held less what is in use (one worn, or
  * one for each bag slot it is in), which is also what the bags show of it.
  */
-function spareOf(name: string): number {
+export function spareOf(name: string): number {
   const held = (cache.inventory || []).find((item: any) => String(item.name).toLowerCase() === name.toLowerCase());
   if (!held) return 0;
   let inUse = 0;
@@ -100,6 +101,11 @@ export function offerItem(name: string) {
   if (!state) return;
   const held = (cache.inventory || []).find((item: any) => String(item.name).toLowerCase() === name.toLowerCase());
   if (!held || state.mine.items.some((item) => item.name.toLowerCase() === name.toLowerCase())) return;
+  if (isSoulbound(held)) {
+    const status = popup?.querySelector(".trade-status") as HTMLElement | null;
+    if (status) status.innerText = `${held.name} is soulbound and cannot be traded.`;
+    return;
+  }
   const coins = coinsPending ? typedCoins() : state.mine.coins;
   coinsPending = false;
   sendOffer([...state.mine.items, { name: held.name, quantity: 1 }], coins);

@@ -15,6 +15,8 @@ const MAX_POINTS = 192;
 const CURL_CHANCE = 0.4;
 /** A frame gap this long (ms) means the weather was not drawn for a while (map change, hidden tab): start clean. */
 const STALE_GAP = 250;
+/** Seconds a streak under way takes to fade out once the wind has stopped. */
+const CALM_FADE = 0.4;
 
 const ANGLES: Record<string, number> = { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 };
 
@@ -140,11 +142,14 @@ export function windStreaks(
     }
   }
 
-  // Streaks already under way finish their run when the wind drops, at the pace of a light breeze.
+  // Streaks already under way when the wind drops go on at the pace of a light breeze, fading out over CALM_FADE
+  // seconds. USER REPORT 2026-10-16 ("Weather effects like wind ... stay around even when the weather has changed"):
+  // they ran their whole path, two or three seconds, after the weather had turned still.
   const speed = Math.min(900, 260 + Math.max(0, windSpeed) * 18);
   ctx.fillStyle = "#ffffff";
   for (const s of streaks) {
     if (!s.active) continue;
+    if (!blowing && (s.alpha -= dt / CALM_FADE) <= 0) { s.active = false; continue; }
     s.head += speed * s.pace * dt;
     if (s.head - s.trail >= (s.count - 1) * STEP) { s.active = false; continue; }
     draw(ctx, s, offX, offY);

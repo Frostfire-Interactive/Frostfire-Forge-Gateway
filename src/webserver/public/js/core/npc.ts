@@ -381,6 +381,10 @@ function createNPC(data: any) {
     vendor: sellsThings(data),
     // Whether it keeps an inn: an innkeeper can be talked to as well.
     innkeeper: data?.innkeeper === true,
+    // A sound NPC: not drawn, not talked to, heard within its radius (npcsounds.ts).
+    sound_npc: data?.sound_npc === true,
+    sound: data?.sound ?? null,
+    sound_radius: Number(data?.sound_radius) || 0,
     hidden: data?.hidden ?? false,
     direction: data.location?.direction || "down",
     sprite_type: data.sprite_type || 'none',
@@ -413,7 +417,7 @@ function createNPC(data: any) {
       }
     },
     show: function (this: typeof npc, context: CanvasRenderingContext2D) {
-      if (!context || this.hidden) return;
+      if (!context || this.hidden || this.sound_npc) return;
       context.globalAlpha = 1;
 
       if (this.layeredAnimation) {
@@ -784,7 +788,7 @@ export function renderNpcInteractBadge(
   if (npcId === null || npcId === undefined) return;
   if (window.matchMedia("(hover: none) and (pointer: coarse)").matches) return;
   const npc = (cache.npcs || []).find((n: any) => Number(n.id) === Number(npcId));
-  if (!npc || npc.hidden) return;
+  if (!npc || npc.hidden || npc.sound_npc) return;
   // Interactable only with gossip to share, quest business, or things to sell.
   if (!hasQuestBusiness(npcId) && !hasNpcGossip(npcId) && !npc.vendor && !npc.innkeeper) return;
   const nx = Number(npc.position?.x);

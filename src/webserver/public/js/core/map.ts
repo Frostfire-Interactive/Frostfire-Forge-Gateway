@@ -225,6 +225,8 @@ export default async function loadMap(metadata: any): Promise<boolean> {
       // the map's sections, when it has them (rectangles in tiles: the cave systems of a world's underworld); the
       // world map shows only the one the player is in (worldmap.ts)
       sections: Array.isArray(metadata?.sections) ? metadata.sections : null,
+      // the map's desert zones, when it has them (outlines in tiles): a sandstorm is only drawn inside them (sandstorm.ts)
+      deserts: Array.isArray(metadata?.deserts) ? metadata.deserts : null,
       // the inside of a building (a house's room): no world map there, and the minimap stays zoomed all the way in
       interior: metadata?.interior === true,
       objectLayers: objectLayers,

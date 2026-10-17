@@ -4,7 +4,8 @@ import {
   calculateWindSpeed
 } from "./windphysics.ts";
 import { windStreaks } from "./windstreaks.ts";
-import { setAmbience } from "./audio.js";
+import { drawSandstorm } from "./sandstorm.ts";
+import { setWeatherSound, playEffect, loadEffect, soundLength } from "./audio.js";
 
 const isMobileDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 const buffer = 200;
@@ -47,6 +48,9 @@ window.visualViewport?.addEventListener("resize", resizeWeatherCanvas);
 
 let cameraOffsetX = 0;
 let cameraOffsetY = 0;
+/** Where the player is, in world px: a sandstorm is only drawn when they stand in a desert. */
+let focusX = 0;
+let focusY = 0;
 
 let lastFrameTime = performance.now();
 const TARGET_FPS = 60;
@@ -426,7 +430,37 @@ function generateBoltSegments(x: number, y: number): Array<{ x: number; y: numbe
   return segments;
 }
 
-function addLightningStrike(worldX: number, worldY: number) {
+/**
+ * USER REQUEST 2026-10-16 (thunder variants: "apply it 1-2 seconds before a lightning would strike and it should not
+ * overlap with another lightning strike. We need to wait at least the length of the audio file being played before
+ * triggering another one"), turned round the same day ("Thunder should actually come after lightning strikes"): a
+ * strike the server sends flashes and draws its bolt at once, and one of the thunder files follows on the Weather track
+ * THUNDER_DELAY_MIN to THUNDER_DELAY_MAX seconds later (1 to 2 seconds "feels too long", the same day). Until that
+ * file has played to its end, every strike that comes is let go (no flash, no sound). A file not loaded yet is taken
+ * as THUNDER_FALLBACK seconds long, so the strikes are spaced out the same when the sound cannot be heard (muted, not
+ * loaded, no sound allowed yet).
+ */
+const THUNDER = ["thunder", "thunder 2", "thunder 3"];
+const THUNDER_DELAY_MIN = 0.2, THUNDER_DELAY_MAX = 0.6, THUNDER_FALLBACK = 4;
+/** performance.now() until which the last thunder plays: no strike before then. */
+let thunderUntil = 0;
+/** The weather last asked for (updateWeatherSound): thunder due after the storm has gone is not played. */
+let currentType: string | null = null;
+
+/** A strike is for one map (`map`, the packet's): one for another map, or come when no storm is shown here, is let go. */
+function addLightningStrike(worldX: number, worldY: number, map?: string) {
+  const here = String((window as any).mapData?.name ?? "").replace(".json", "");
+  if (currentType !== "thunderstorm" || (map && here && map.replace(".json", "") !== here)) return;
+  const now = performance.now();
+  if (now < thunderUntil) return;
+  const name = THUNDER[Math.floor(Math.random() * THUNDER.length)];
+  const delay = (THUNDER_DELAY_MIN + Math.random() * (THUNDER_DELAY_MAX - THUNDER_DELAY_MIN)) * 1000;
+  thunderUntil = now + delay + (soundLength(name) ?? THUNDER_FALLBACK) * 1000;
+  strikeNow(worldX, worldY);
+  setTimeout(() => { if (currentType === "thunderstorm") playEffect(name, { track: "weather" }); }, delay);
+}
+
+function strikeNow(worldX: number, worldY: number) {
   triggerLightning();
   activeBolts.push({
     worldX,
@@ -554,12 +588,20 @@ function weather(type: string, weatherData?: any): void {
     drawBolts();
   }
 
-  windStreaks(weatherCtx, deltaMs, windSpeed, windDirection, cameraOffsetX, cameraOffsetY, width, height, buffer);
+  // (drawn whatever the weather, so it fades out when the weather changes or the player leaves the desert; the sand
+  // takes the place of the wind's white streaks)
+  const sandstorm = drawSandstorm(weatherCtx, {
+    // (a tornado's storm also blows one: the server marks its values, as it tells it as a thunderstorm)
+    wanted: type === "sandstorm" || weatherData?.sandstorm === true, deltaMs, baseWind: Number(baseWindSpeed) || 0, gust: windBurst.getIntensity(), windDirection,
+    cameraX: cameraOffsetX, cameraY: cameraOffsetY, width, height, focusX, focusY,
+  });
+
+  windStreaks(weatherCtx, deltaMs, windSpeed * (1 - sandstorm), windDirection, cameraOffsetX, cameraOffsetY, width, height, buffer);
 }
 
 /**
  * USER REQUEST 2026-10-14 ("Hard Rain.wav" and "Soft Rain.wav" ... "should play according to how much it's raining.
- * Fade the sound in and out"): the sound of the rain, on the Ambience track (audio.ts setAmbience), from the same
+ * Fade the sound in and out"): the sound of the rain, on the Weather track (audio.ts setWeatherSound), from the same
  * amount the rain is drawn by (fallShare: the weather's precipitation). Light rain is the soft loop alone, heavy rain
  * the hard one, and between HARD_FROM and HARD_TO of the full amount the two are crossed (equal power, so the cross
  * is not a dip); the whole is louder the harder it rains, from RAIN_QUIET of the slider up. No rain, snow, freezing
@@ -573,16 +615,69 @@ function rainAmount(type: string | null, weatherData?: any): number {
   if (Number(weatherData?.temperature ?? NaN) < FREEZING) return 0;
   return fallShare(weatherData);
 }
+/**
+ * USER REQUEST 2026-10-16 (wind variants "Gentle Wind", "Gentle Wind 2" and "Regular Wind"): the sound of the wind, on
+ * the Weather track, the same way as the rain, from the weather's wind speed with its gusts (calculateWindSpeed, as
+ * the streaks are drawn). A wind with no direction blows no streaks and makes no sound, like a map without weather.
+ *
+ * Then ("since there are 3 different wind types ... adjust the sound of each also based on wind speed. 6mph which it
+ * currently is, is loud"): each of the three is a band of wind speed, crossed into the next (at equal power) as the
+ * wind rises, mph: WINDS[i].from to WINDS[i].full is the band, the cross is the stretch where two overlap. A breeze is
+ * "Gentle Wind 2" alone (the softest file), a fresh wind "Gentle Wind", a strong one "Regular Wind" (the deepest).
+ * - How loud: (speed / WIND_FULL) ^ WIND_CURVE of the slider, with nothing added under it, so a breeze is quiet and a
+ *   gale full (6 mph 0.15, some 12 dB under what it was; 15 mph 0.38; 25 mph 0.63).
+ * - The three files are played by their average level (audio.ts `even`), not their peak, so a cross is not a jump.
+ * - Its pitch rises with the speed, PITCH_LOW at still air to PITCH_HIGH at WIND_FULL, and the gusts are heard: the
+ *   level glides with WIND_GLIDE seconds, not the rain's slower fade.
+ */
+const WINDS = [
+  { name: "gentle wind 2", from: 0, full: 0 },
+  { name: "gentle wind", from: 6, full: 12 },
+  { name: "regular wind", from: 18, full: 26 },
+];
+const WIND_FULL = 40, WIND_CURVE = 1, PITCH_LOW = 0.85, PITCH_HIGH = 1.15, WIND_GLIDE = 0.35;
+const WIND_DIRECTIONS = ["left", "right", "up", "down"];
+/** How fast the wind blows now with its gust, mph: 0 when it has no direction. */
+function windSpeed(type: string | null, weatherData?: any): number {
+  if (!type) return 0;
+  const direction = String(weatherData?.wind_direction ?? "").trim().toLowerCase();
+  if (!WIND_DIRECTIONS.includes(direction)) return 0;
+  return Math.max(0, calculateWindSpeed(Number(weatherData?.wind_speed) || 0, windBurst.getIntensity()));
+}
+/** Each wind's share at `speed`, 0..1, their squares adding up to 1 (an equal-power cross). */
+function windShares(speed: number): number[] {
+  // How far into each band the wind has come: 1 once past its full, 0 before its from (the first is always 1).
+  const into = WINDS.map((w) => (w.full <= w.from ? 1 : Math.min(1, Math.max(0, (speed - w.from) / (w.full - w.from)))));
+  // A band is heard as far as it has come in and the next one has not: cos and sin of the same cross.
+  return WINDS.map((_, i) => {
+    const t = into[i + 1] ?? 0;
+    return Math.sin((into[i] * Math.PI) / 2) * Math.cos((t * Math.PI) / 2);
+  });
+}
+
 /** Called every frame (renderer.ts updateCamera), with the map's weather or null. */
-function updateRainSound(type: string | null, weatherData?: any): void {
+function updateWeatherSound(type: string | null, weatherData?: any): void {
+  currentType = type;
+  // (the thunder files are fetched while a storm is shown, so the first strike is heard; a file had already is not
+  // fetched again)
+  if (type === "thunderstorm") for (const name of THUNDER) void loadEffect(name);
+
   const amount = rainAmount(type, weatherData);
   const level = amount > 0 ? RAIN_QUIET + (1 - RAIN_QUIET) * amount : 0;
   const t = Math.min(1, Math.max(0, (amount - HARD_FROM) / (HARD_TO - HARD_FROM))), hard = t * t * (3 - 2 * t);
-  setAmbience(SOFT_RAIN, level * Math.cos((hard * Math.PI) / 2));
-  setAmbience(HARD_RAIN, level * Math.sin((hard * Math.PI) / 2));
+  setWeatherSound(SOFT_RAIN, level * Math.cos((hard * Math.PI) / 2));
+  setWeatherSound(HARD_RAIN, level * Math.sin((hard * Math.PI) / 2));
+
+  const speed = windSpeed(type, weatherData);
+  const windLevel = speed > 0 ? Math.pow(Math.min(1, speed / WIND_FULL), WIND_CURVE) : 0;
+  const rate = PITCH_LOW + (PITCH_HIGH - PITCH_LOW) * Math.min(1, speed / WIND_FULL);
+  windShares(speed).forEach((share, i) => setWeatherSound(WINDS[i].name, windLevel * share, { even: true, rate, glide: WIND_GLIDE }));
 }
 
-function updateWeatherCanvas(cameraX: number, cameraY: number): void {
+/** `playerX`, `playerY`: where the player is, in world px (the camera when not given: the map editor's view). */
+function updateWeatherCanvas(cameraX: number, cameraY: number, playerX: number = cameraX, playerY: number = cameraY): void {
+  focusX = playerX;
+  focusY = playerY;
 
   const halfViewportWidth = (window.innerWidth / 2);
   const halfViewportHeight = ((window.visualViewport?.height || window.innerHeight) / 2);
@@ -591,4 +686,4 @@ function updateWeatherCanvas(cameraX: number, cameraY: number): void {
   cameraOffsetY = cameraY - halfViewportHeight - buffer;
 }
 
-export { weather, updateWeatherCanvas, addLightningStrike, updateRainSound };
+export { weather, updateWeatherCanvas, addLightningStrike, updateWeatherSound };

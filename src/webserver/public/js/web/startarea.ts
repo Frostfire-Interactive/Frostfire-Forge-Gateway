@@ -28,7 +28,9 @@
     interface Geometry { ox: number; oy: number; w: number; h: number; panX: number; panY: number; k: number }
 
     /** The window the picture is made for: this screen's, within these bounds. A bigger one scales the picture up. */
-    const VIEW_MIN = [1280, 720];
+    // (a phone's own size: a desktop screen is wider than the least anyway. 2026-10-16, "Optimize the character creator
+    // for mobile": the least was 1280x720, which made a phone's picture twice its screen, at two pixels to one)
+    const VIEW_MIN = [512, 512];
     const VIEW_MAX = [2560, 1440];
     /** The drift: a figure eight through the spawn, these many tiles out each way, once round in PAN_PERIOD_MS. */
     const PAN_TILES_X = 24;

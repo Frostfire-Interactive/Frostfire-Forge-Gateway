@@ -101,6 +101,9 @@ async function createPlayer(data: any) {
     isGuest: data.isGuest || false,
     _adminColorHue: Math.floor(Math.random() * 360),
     targeted: false,
+    // What show() drew under the feet (name, guild, bars, level), in pixels
+    // from renderPosition, so the y-sorted tile layer covers it with the sprite.
+    nameplate: null as null | { left: number; right: number; bottom: number },
     stats: data.stats,
     typing: false,
     typingTimeout: null as NodeJS.Timeout | null,
@@ -681,7 +684,10 @@ async function createPlayer(data: any) {
 
       context.textAlign = "center";
 
-      if (!currentPlayer) return;
+      if (!currentPlayer) {
+        this.nameplate = null;
+        return;
+      }
 
       let nameColor: string | undefined;
 
@@ -748,6 +754,10 @@ async function createPlayer(data: any) {
 
       const guildOffset = this.guild_name ? 16 : 0;
 
+      let plateLeft = context.measureText(data.username).width / 2;
+      let plateRight = plateLeft;
+      let plateBottom = 54 + uiOffset;
+
       if (this.guild_name) {
         context.font = "12px 'Comic Relief'";
         context.fillStyle = "#c9a655";
@@ -763,6 +773,10 @@ async function createPlayer(data: any) {
           this.renderPosition.y + 56 + uiOffset
         );
         context.shadowBlur = 2;
+        const guildHalf = context.measureText(`<${this.guild_name}>`).width / 2;
+        plateLeft = Math.max(plateLeft, guildHalf);
+        plateRight = Math.max(plateRight, guildHalf);
+        plateBottom = 70 + uiOffset;
       }
 
       if (!this.isStealth && !this.isDead && !this.isGhost) {
@@ -832,8 +846,15 @@ async function createPlayer(data: any) {
           context.shadowBlur = 2;
             const offsetX = this.renderPosition.x - 60 - (this.stats.level.toString().length * 5);
           context.fillText(`${this.stats.level}`, offsetX, this.renderPosition.y + 55 + guildOffset + uiOffset);
+
+          plateLeft = Math.max(plateLeft, 60 + this.stats.level.toString().length * 5);
+          plateRight = Math.max(plateRight, 50);
+          plateBottom = Math.max(plateBottom, 59 + guildOffset + uiOffset);
         }
       }
+
+      // Margin for the text stroke and shadow.
+      this.nameplate = { left: plateLeft + 2, right: plateRight + 2, bottom: plateBottom + 2 };
 
       context.shadowColor = "transparent";
       context.shadowBlur = 0;

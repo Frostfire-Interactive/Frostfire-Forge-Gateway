@@ -13,11 +13,14 @@ const NPC_HIT_H = 48;
 const EDITOR_WIDTH = 1120;
 const EDITOR_HEIGHT = 820;
 
-/** Appearance columns, kept together so an in-flight edit can be preserved across a refresh. */
+/** Appearance and sound columns, kept together so an in-flight edit can be preserved across a refresh. */
 const SPRITE_KEYS = [
   "sprite_type", "sprite_body", "sprite_head", "sprite_helmet", "sprite_shoulderguards",
   "sprite_neck", "sprite_hands", "sprite_chest", "sprite_feet", "sprite_legs", "sprite_weapon",
+  "sound_npc", "sound", "sound_radius",
 ];
+/** What a sound NPC plays and how far, as the editor sends it: shown and heard in the world at once. */
+const SOUND_KEYS = ["sound_npc", "sound", "sound_radius"];
 
 class NpcEditor {
   public isActive: boolean = false;
@@ -28,6 +31,8 @@ class NpcEditor {
   private availableSprites: { spriteSheets: Record<string, any>; icons: any[] } = { spriteSheets: {}, icons: [] };
   /** The items there are (name, icon, quality, sell price), for picking what a vendor stocks. */
   private availableItems: any[] = [];
+  /** The audio files of the asset server (its /audios list), for picking what a sound NPC plays. */
+  private availableSounds: string[] = [];
   private selectedParticles: string[] = [];
   private isDirty: boolean = false;
   private hasPendingNew: boolean = false;
@@ -123,6 +128,22 @@ class NpcEditor {
 
     this.loadNpcs();
     this.loadParticleOptions();
+    void this.loadSoundOptions();
+  }
+
+  /** The asset server's audio files, asked for each time the editor opens (one added since is then offered too). */
+  private async loadSoundOptions() {
+    try {
+      const res = await fetch(`${config.ASSET_SERVER_URL}/audios`);
+      if (!res.ok) return;
+      const body = await res.json();
+      this.availableSounds = (Array.isArray(body?.audio) ? body.audio : [])
+        .map((entry: any) => String(entry?.name ?? ""))
+        .filter((name: string) => name);
+      this.sendToEditor({ type: 'npcListUpdate', npcs: this.npcs, sounds: this.availableSounds });
+    } catch {
+      // No list: the editor offers no audio to pick, and says so where it has none.
+    }
   }
 
   private closeEditor() {
@@ -206,6 +227,7 @@ class NpcEditor {
       spriteSheets: this.withAssetUrls(this.availableSprites.spriteSheets),
       icons: this.withAssetUrls(this.availableSprites.icons),
       items: this.availableItems,
+      sounds: this.availableSounds,
       selectedParticles: this.selectedParticles,
       selectedNpc: this.selectedNpc,
       selectedNpcId: this.selectedNpc ? this.selectedNpc.id : null,
@@ -234,6 +256,7 @@ class NpcEditor {
           const liveNpc = cache.npcs.find(function (n) { return n.id === msg.npc.id; });
           if (liveNpc) {
             liveNpc.hidden = msg.npc.hidden;
+            for (const key of SOUND_KEYS) if (msg.npc[key] !== undefined) liveNpc[key] = msg.npc[key];
             if (msg.npc.position) {
               liveNpc.position.direction = msg.npc.position.direction;
               // Where it stands was typed into the editor: the NPC is shown there at once, as when it is dragged.
@@ -574,6 +597,7 @@ class NpcEditor {
       quests: this.availableQuests,
       spriteSheets: this.withAssetUrls(this.availableSprites.spriteSheets),
       icons: this.withAssetUrls(this.availableSprites.icons),
+      sounds: this.availableSounds,
     });
   }
 
@@ -612,6 +636,9 @@ class NpcEditor {
       questsEnded: [],
       vendor_items: [],
       innkeeper: false,
+      sound_npc: false,
+      sound: null,
+      sound_radius: 0,
       sprite_type: "none",
       sprite_body: null, sprite_head: null, sprite_helmet: null,
       sprite_shoulderguards: null, sprite_neck: null, sprite_hands: null,
@@ -697,6 +724,7 @@ class NpcEditor {
       spriteSheets: this.withAssetUrls(this.availableSprites.spriteSheets),
       icons: this.withAssetUrls(this.availableSprites.icons),
       items: this.availableItems,
+      sounds: this.availableSounds,
     });
 
     if (this.pendingSelectId !== null) {

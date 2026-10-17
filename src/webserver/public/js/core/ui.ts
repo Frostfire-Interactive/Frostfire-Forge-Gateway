@@ -34,6 +34,7 @@ const xpBar = document.getElementById("xp-bar") as HTMLDivElement;
 const musicSlider = document.getElementById("music-slider") as HTMLInputElement;
 const effectsSlider = document.getElementById("effects-slider") as HTMLInputElement;
 const ambienceSlider = document.getElementById("ambience-slider") as HTMLInputElement;
+const weatherSlider = document.getElementById("weather-slider") as HTMLInputElement;
 const mutedCheckbox = document.getElementById("muted-checkbox") as HTMLInputElement;
 const overlay = document.getElementById("overlay") as HTMLDivElement;
 const packetsSentReceived = document.getElementById("packets-sent-received") as HTMLDivElement;
@@ -69,6 +70,9 @@ const ghostCanvas = document.getElementById("ghost-layer") as HTMLCanvasElement;
 const ghostCtx = ghostCanvas ? ghostCanvas.getContext("2d") : null;
 const aboveCanvas = document.getElementById("game-above") as HTMLCanvasElement;
 const aboveCtx = aboveCanvas ? aboveCanvas.getContext("2d") : null;
+/** The world's debug drawing, over every other layer of the world (see #debug-layer). */
+const debugLayerCanvas = document.getElementById("debug-layer") as HTMLCanvasElement;
+const debugLayerCtx = debugLayerCanvas ? debugLayerCanvas.getContext("2d") : null;
 const guildContainer = document.getElementById("guild-container") as HTMLDivElement;
 const guildName = document.getElementById("guild-name") as HTMLDivElement;
 const guildRank = document.getElementById("guild-rank") as HTMLDivElement;
@@ -1828,10 +1832,10 @@ if (guildCreateButton) {
 export {
     toggleUI, toggleDebugContainer, handleStatsUI, createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, updatePartyMemberOnlineStatus, updatePartyMemberStats, updateHealthBar, updateStaminaBar, updateAbsorptionBar, updateBuffBar, startSpellCooldown, startPersistentSpellCooldown, startSpellLockout, castSpell, positionText,
     friendsListUI, inventoryUI, spellBookUI, questFrameUI, questLogUI, questTrackerUI, pauseMenu, menuElements, chatInput, canvas, ctx, fpsSlider, healthBar,
-    staminaBar, xpBar, musicSlider, effectsSlider, ambienceSlider, mutedCheckbox, statUI, overlay,
+    staminaBar, xpBar, musicSlider, effectsSlider, ambienceSlider, weatherSlider, mutedCheckbox, statUI, overlay,
     packetsSentReceived, optionsMenu, friendsList, friendsListSearch, onlinecount, progressBar, progressBarContainer,
     inventoryGrid, chatMessages, loadingScreen, usernameLabel, levelLabel, healthLabel, manaLabel, damageLabel, armorLabel, critChanceLabel, critDamageLabel, avoidanceLabel,
-    serverTime, ambience, ambienceCool, sunFlare, weatherCanvas, weatherCtx, lightCanvas, lightCtx, lightDodgeCanvas, lightDodgeCtx, ghostCanvas, ghostCtx, aboveCanvas, aboveCtx, guildContainer, guildName, guildRank, guildMembersList,
+    serverTime, ambience, ambienceCool, sunFlare, weatherCanvas, weatherCtx, lightCanvas, lightCtx, lightDodgeCanvas, lightDodgeCtx, ghostCanvas, ghostCtx, aboveCanvas, aboveCtx, debugLayerCanvas, debugLayerCtx, guildContainer, guildName, guildRank, guildMembersList,
     guildMemberCount, guildMemberInviteInput, guildMemberInviteButton, collisionDebugCheckbox, chunkOutlineDebugCheckbox,
     collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText, collectablesUI, timeOverrideSlider, timeOverrideLabel, timeOverrideCheckbox, timelapseBtn,
     hotbarSlots, saveHotbarConfiguration, loadHotbarConfiguration, equipmentLeftColumn, equipmentRightColumn, equipmentBottomCenter,

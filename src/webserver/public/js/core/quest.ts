@@ -379,9 +379,10 @@ export function canInteractWith(npcId: number): boolean {
   return hasGossip(npcId) || hasQuestBusiness(npcId) || isVendor(npcId) || isInnkeeper(npcId);
 }
 
-export function tryInteractNpc(): void {
-  if (state.nearestNpcId === null || state.nearestNpcId === undefined) return;
-  if (!canInteractWith(state.nearestNpcId)) return;
+/** Talks to the nearest NPC in reach. True when there was one to talk to. */
+export function tryInteractNpc(): boolean {
+  if (state.nearestNpcId === null || state.nearestNpcId === undefined) return false;
+  if (!canInteractWith(state.nearestNpcId)) return false;
   // Talking jumps the gossip chain for an immediate visible response; the
   // per-frame tick keeps it rotating afterwards.
   import("./npc.js").then((m) => {
@@ -393,6 +394,7 @@ export function tryInteractNpc(): void {
   });
   state.lastNpcId = state.nearestNpcId;
   sendRequest({ type: "NPC_INTERACT", data: { npcId: state.nearestNpcId } });
+  return true;
 }
 
 const isTouchDevice = () =>

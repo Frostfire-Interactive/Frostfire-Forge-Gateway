@@ -4,6 +4,7 @@ import { bakedMap, mapDetailPiece, DETAIL_TILES } from "./bakedmap.js";
 import { getCachedImage } from "./images.js";
 import { markerAt, markerIconUrl, markersVersion } from "./mapmarkers.js";
 import { drawMapPicture } from "./mappin.js";
+import { tornadoSpots } from "./tornado.js";
 
 /**
  * Full world map (M): the whole map at once from its baked image (bakedmap.ts: the asset server bakes one pixel per tile
@@ -442,6 +443,14 @@ function draw() {
         ctx.fillStyle = "#cfeeff"; ctx.fillText(place.leadsTo, sx, sy - 10);
       }
     }
+    // tornadoes, where they are now (tornado.ts), over the places and under the player
+    for (const spot of tornadoSpots()) {
+      const tx = spot.x / tw, ty = spot.y / th;
+      if (tx < b.x || ty < b.y || tx >= b.x + b.w || ty >= b.y + b.h) continue;
+      const sx = toX(tx), sy = toY(ty);
+      if (sx < -40 || sy < -40 || sx > w + 40 || sy > h + 40) continue;
+      drawTornadoMark(ctx, sx, sy, labelled);
+    }
     ctx.restore();
     // the player
     const me: any = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
@@ -454,6 +463,35 @@ function draw() {
     }
   }
   raf = requestAnimationFrame(draw);
+}
+
+/**
+ * A tornado on the world map (USER REQUEST 2026-10-17: "I should also be able to track the tornado on the world map"):
+ * the funnel sign, a stack of narrowing bands that sways, standing on where it is, in a red ring that pulses as a
+ * warning; named when the map is zoomed in.
+ */
+function drawTornadoMark(ctx: CanvasRenderingContext2D, x: number, y: number, labelled: boolean) {
+  const now = performance.now() / 1000, pulse = (now * 0.8) % 1;
+  ctx.strokeStyle = `rgba(255, 70, 50, ${(0.85 * (1 - pulse)).toFixed(3)})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x, y - 8, 9 + pulse * 10, 0, Math.PI * 2); ctx.stroke();
+  // the funnel: wide at the top, narrow at the foot, each band swaying a little after the one above
+  const bands = 5;
+  ctx.lineCap = "round";
+  for (let i = 0; i < bands; i++) {
+    const f = i / (bands - 1), bandY = y - 17 + i * 4, half = 9 - f * 6.5;
+    const sway = Math.sin(now * 3 - i * 0.9) * 1.6 * f;
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.85)"; ctx.lineWidth = 4.5;
+    ctx.beginPath(); ctx.moveTo(x - half + sway, bandY); ctx.lineTo(x + half + sway, bandY); ctx.stroke();
+    ctx.strokeStyle = i % 2 ? "#c9cbd1" : "#eef0f4"; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(x - half + sway, bandY); ctx.lineTo(x + half + sway, bandY); ctx.stroke();
+  }
+  if (labelled) {
+    ctx.font = "600 11px sans-serif";
+    ctx.textAlign = "center";
+    ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.8)"; ctx.strokeText("Tornado", x, y - 24);
+    ctx.fillStyle = "#ffb4a8"; ctx.fillText("Tornado", x, y - 24);
+  }
 }
 
 export function isWorldMapOpen(): boolean {

@@ -36,6 +36,11 @@ export function heldItem(name: string | null | undefined): any | null {
 }
 
 /** Whether an item is the home item: the one that takes its player home, and is never used up. */
+/** Whether an item is soulbound: it cannot be traded or mailed. */
+export function isSoulbound(item: any): boolean {
+  return !!item && (item.soulbound === true || Number(item.soulbound) === 1);
+}
+
 export function teleportsHome(item: any): boolean {
   return !!item && item.type === "consumable" && !!item.teleports_home && item.teleports_home !== "0";
 }
