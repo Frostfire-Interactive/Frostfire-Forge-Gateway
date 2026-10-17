@@ -432,6 +432,13 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `CLASS_EDITOR_DELETE` | To server | Class editor | Delete a class |
 | `CLASS_EDITOR_RESULT` | To client | Class editor | Whether a change worked |
 | `CLASS_EDITOR_UPDATED` | To client | Class editor | The class list changed |
+| `TOGGLE_MAILBOX_EDITOR` | To client | Mailbox editor | Open or close the mailbox editor |
+| `MAILBOX_EDITOR_LIST` | To server | Mailbox editor | Ask for the editor's data |
+| `MAILBOX_EDITOR_DATA` | To client | Mailbox editor | The editor's data |
+| `MAILBOX_EDITOR_SAVE` | To server | Mailbox editor | Save a map's mailboxes |
+| `MAILBOX_EDITOR_DELETE` | To server | Mailbox editor | Give a map's mailboxes back to its inns |
+| `MAILBOX_EDITOR_RESULT` | To client | Mailbox editor | Whether a change worked |
+| `MAILBOX_EDITOR_UPDATED` | To client | Mailbox editor | Another admin changed a map's mailboxes |
 | `TOGGLE_LOOT_EDITOR` | To client | Loot editor | Open or close the loot table editor |
 | `LIST_LOOT_TABLES` | To server | Loot editor | Ask for every loot table |
 | `LOOT_TABLE_LIST` | To client | Loot editor | Every loot table |

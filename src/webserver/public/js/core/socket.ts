@@ -92,6 +92,7 @@ import { createInvitationPopup } from "./invites.ts";
 import { showTrade, closeTrade } from "./trade.ts";
 import { showVendor, closeVendor, refreshVendor } from "./vendor.ts";
 import { setMailboxes, showMail, mailSent, setUnreadMail, closeMail, refreshMail } from "./mail.ts";
+import { rememberVisit } from "./visitedmaps.ts";
 import { startItemCooldown, refreshHotbarItems, clearItemCooldowns } from "./consumables.ts";
 import { showNotification } from "./notifications.ts";
 import { updateFriendOnlineStatus } from "./friends.js";
@@ -1821,8 +1822,10 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     case "MAILBOXES": {
       // Where the mailboxes of the map are: in front of its inns.
       setMailboxes(data);
-      // an open mailbox editor asks for the list again (mailboxeditor.ts)
-      (window as any).mailboxEditorRefresh?.();
+      // sent on arriving on a map: the mailbox editor lists the maps visited last
+      rememberVisit(data?.map);
+      // the mailbox editor, once loaded, draws what it has open over them (mailboxeditor.ts)
+      (window as any).mailboxEditorRefresh?.(data);
       break;
     }
     case "MAIL_INBOX": {
@@ -2534,6 +2537,14 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     }
     case "MAILBOX_EDITOR_DATA": {
       import("./mailboxeditor.js").then((m) => m.default.onData(data));
+      break;
+    }
+    case "MAILBOX_EDITOR_RESULT": {
+      import("./mailboxeditor.js").then((m) => m.default.onResult(data));
+      break;
+    }
+    case "MAILBOX_EDITOR_UPDATED": {
+      import("./mailboxeditor.js").then((m) => m.default.onUpdated(data));
       break;
     }
     case "TOGGLE_CLASS_EDITOR": {

@@ -370,6 +370,7 @@ Created by `src/utility/database_setup.ts`. Column lists are shortened to the on
 | `npcs` | NPCs, their position, dialog and sprites. `vendor_items` is what a vendor stocks, as JSON: a list of `{ item, price }` with the price in copper. `innkeeper` (0 or 1) lets players make the NPC's inn their home. | `id`, `name`, `map`, `position`, `dialog`, `quest_giver`, `vendor_items`, `innkeeper` |
 | `particles` | Particle definitions | `name` |
 | `weather` | Weathers. See [Weather](#/engine/weather). | `name`, `temperature`, `humidity`, `wind_speed`, `wind_direction`, `precipitation`, `ambience` |
+| `mailbox_spots` | Mailboxes placed by hand, one row per map. See [Mailbox Editor](#/tools/mailbox-editor). Made at server start when missing. | `map`, `spots` (JSON: `[{"x", "y"}]`) |
 | `classes` | Character classes. See [Class Editor](#/tools/class-editor). Made at server start when missing. | `id`, `name`, `description`, `max_health`, `max_stamina`, `stat_damage`, `stat_armor`, `stat_critical_chance`, `stat_critical_damage`, `stat_avoidance`, `spells` (JSON: `[{"spell", "level"}]`) |
 | `worlds` | Each world and the weather it is set to | `name`, `weather` |
 

@@ -70,6 +70,7 @@ import itemeditor_html from "./public/itemeditor.html";
 import spelleditor_html from "./public/spelleditor.html";
 import weathereditor_html from "./public/weathereditor.html";
 import classeditor_html from "./public/classeditor.html";
+import mailboxeditor_html from "./public/mailboxeditor.html";
 import character_html from "./public/character.html";
 import characters from "../systems/characters";
 import playereditor_html from "./public/playereditor.html";
@@ -283,6 +284,7 @@ const routes = {
   "/spell-editor": spelleditor_html,
   "/weather-editor": weathereditor_html,
   "/class-editor": classeditor_html,
+  "/mailbox-editor": mailboxeditor_html,
   "/character": character_html,
   "/player-editor": playereditor_html,
   "/control-panel": controlpanel_html,
@@ -544,6 +546,7 @@ Bun.serve({
       "/spell-editor": routes["/spell-editor"],
       "/weather-editor": routes["/weather-editor"],
       "/class-editor": routes["/class-editor"],
+      "/mailbox-editor": routes["/mailbox-editor"],
       "/character": routes["/character"],
       "/player-editor": routes["/player-editor"],
       "/control-panel": routes["/control-panel"],

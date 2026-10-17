@@ -33,7 +33,18 @@ const HAZE = "196, 142, 84", HAZE_MAX = 0.4, EDGE_MAX = 0.38;
 const GRAIN_COUNT = isMobileDevice ? 350 : 1400;
 /** A light, a middle and a dark tone: against sand, a grain is seen by being lighter or darker than it. */
 const GRAIN_TONES = ["252, 232, 186", "226, 178, 112", "142, 94, 50"];
-const ANGLES: Record<string, number> = { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 };
+/**
+ * USER REPORT 2026-10-17 ("the particles should only ever move left or right, not up or down because it makes it look
+ * like snow"): the sand blows left with a wind to the left, and right with any other (up, down, none: the real weather's
+ * wind can blow any of them). Its turbulence speeds and slows it along the wind, never up or down.
+ *
+ * USER REPORT 2026-10-17 ("Sandstorm when weather_api is selected flickers"): the dust clouds were placed by the
+ * camera's place in the world plus how far they had drifted, which only grows: on the 10240-tile world, hundreds of
+ * thousands of px, past what the graphics card keeps exactly, so the clouds jumped about. Their pattern repeats, so
+ * each place is taken within one repeat (the same picture, small numbers). A gust thickens the storm and speeds the
+ * sand, eased in and out over GUST_EASE seconds, not as fast as the gust rises (a quick throb in the tint and haze).
+ */
+const GUST_EASE = 1.2;
 
 interface Desert {
   bbox: { x: number; y: number; w: number; h: number };
@@ -113,8 +124,7 @@ class Grain {
   /** 0 far to 1 near: the near ones are larger, quicker and more see-through. */
   depth = 0;
   pace = 1;
-  /** Its speed across the wind and its share more or less along it, px a second: turbulence, a random walk (TURBULENCE). */
-  across = 0;
+  /** Its speed more or less along the wind than the rest, px a second: turbulence, a random walk. */
   along = 0;
   tone = 0;
   /** Its radius, px. */
@@ -123,7 +133,6 @@ class Grain {
   reset(width: number, height: number, anywhere: boolean, angle: number) {
     this.depth = Math.random();
     this.pace = 0.6 + this.depth * 0.9 + Math.random() * 0.2;
-    this.across = 0;
     this.along = 0;
     this.tone = Math.floor(Math.random() * GRAIN_TONES.length);
     this.size = this.depth > NEAR ? 1.8 + Math.random() * 2.2 : 0.9 + Math.random() * 1;
@@ -152,8 +161,8 @@ const DRIFT = 0.45;
 /**
  * USER REPORT 2026-10-16 ("Why do the sand particle bob like they are in water? That's unrealistic"): a mote was swung
  * across the wind on a sine, the same beat over and over. Air does not beat: a mote is now pushed by turbulence, a
- * random walk of its speed across the wind and along it that is pulled back toward none (an Ornstein-Uhlenbeck
- * process). TURB_PULL is how fast it is pulled back (a second), TURB_KICK how hard it is pushed, px a second for each
+ * random walk of its speed along the wind (not across it since 2026-10-17: see GUST_EASE) that is pulled back toward
+ * none (an Ornstein-Uhlenbeck process). TURB_PULL is how fast it is pulled back (a second), TURB_KICK how hard it is pushed, px a second for each
  * mph of wind (plus TURB_STILL), the near motes the most: a mote veers, gets carried off a little, and settles, never
  * twice the same.
  */
@@ -187,6 +196,7 @@ let inside = false;
 let lookedAt = 0;
 let lastDraw = 0;
 let driftA = 0, driftB = 0;
+let gust = 0;
 let lastCameraX = NaN, lastCameraY = NaN;
 let time = 0;
 
@@ -269,12 +279,14 @@ export function drawSandstorm(ctx: CanvasRenderingContext2D, f: SandstormFrame):
 
   const p = presence * presence * (3 - 2 * presence);
   const amount = p * harshness;
-  const thick = Math.min(1, amount * (0.88 + 0.24 * f.gust));
+  gust += (f.gust - gust) * Math.min(1, seconds / GUST_EASE);
+  const thick = Math.min(1, amount * (0.94 + 0.12 * gust));
   const { width, height } = f;
-  const angle = ANGLES[String(f.windDirection ?? "").toLowerCase()] ?? ANGLES.right;
-  const cos = Math.cos(angle), sin = Math.sin(angle);
+  // left or right only: 1 to the right, -1 to the left
+  const cos = String(f.windDirection ?? "").trim().toLowerCase() === "left" ? -1 : 1;
+  const angle = cos > 0 ? 0 : Math.PI;
   // How fast the sand flies, px a second: a 35 mph storm is a blur.
-  const pace = (260 + f.baseWind * 22) * (1 + 0.45 * f.gust);
+  const pace = (260 + f.baseWind * 22) * (1 + 0.3 * gust);
 
   // The camera's move since the last frame: what blows past moves against it, the nearest the most.
   const moveX = Number.isNaN(lastCameraX) ? 0 : f.cameraX - lastCameraX;
@@ -302,19 +314,23 @@ export function drawSandstorm(ctx: CanvasRenderingContext2D, f: SandstormFrame):
   if (!dust) dust = makeDustTexture(isMobileDevice ? 128 : 192);
   const pattern = ctx.createPattern(dust, "repeat");
   if (pattern) {
-    driftA += pace * 0.35 * seconds;
-    driftB += pace * 0.6 * seconds;
+    // (kept small: only where they are within a repeat matters)
+    driftA = (driftA + pace * 0.35 * seconds) % (dust.width * 4.5 * 64);
+    driftB = (driftB + pace * 0.6 * seconds) % (dust.width * 4.8 * 64);
     const layers = isMobileDevice
-      ? [{ drift: driftB, scale: 4, parallax: 0.9, alpha: 0.45, skew: 0 }]
+      ? [{ drift: driftB, scale: 4, parallax: 0.9, alpha: 0.45 }]
       : [
-        { drift: driftA, scale: 4.5, parallax: 0.7, alpha: 0.4, skew: 0.12 },
-        { drift: driftB, scale: 2.4, parallax: 1, alpha: 0.28, skew: -0.08 },
+        { drift: driftA, scale: 4.5, parallax: 0.7, alpha: 0.4 },
+        { drift: driftB, scale: 2.4, parallax: 1, alpha: 0.28 },
       ];
+    const wrap = (v: number, period: number) => ((v % period) + period) % period;
     for (const layer of layers) {
-      // Along the wind, with a slow drift across it, so the billows change shape as they pass one another.
-      const across = Math.sin(time * 0.15 + layer.scale) * 40 + layer.drift * layer.skew;
-      const ox = cos * layer.drift - sin * across - f.cameraX * layer.parallax;
-      const oy = sin * layer.drift + cos * across - f.cameraY * layer.parallax;
+      // Along the wind, swaying slowly a little above and below it, so the billows change shape as they pass one another;
+      // each place taken within one repeat of the pattern (it is the same picture there)
+      const period = dust.width * layer.scale;
+      const sway = Math.sin(time * 0.15 + layer.scale) * 40;
+      const ox = wrap(cos * layer.drift - f.cameraX * layer.parallax, period);
+      const oy = wrap(sway - f.cameraY * layer.parallax, period);
       pattern.setTransform(new DOMMatrix().translate(ox, oy).scale(layer.scale));
       ctx.globalAlpha = Math.min(1, layer.alpha * Math.min(1, thick * 1.5));
       ctx.fillStyle = pattern;
@@ -346,11 +362,11 @@ export function drawSandstorm(ctx: CanvasRenderingContext2D, f: SandstormFrame):
         const g = grains[i];
         if (g.tone !== tone || (g.depth > NEAR ? 1 : 0) !== layer) continue;
         const push = kick * (0.5 + g.depth);
-        g.across = g.across * pull + jolt() * push;
-        g.along = g.along * pull + jolt() * push * 0.6;
-        const run = (pace * DRIFT * g.pace + g.along) * seconds, side = g.across * seconds;
-        g.x += cos * run - sin * side - moveX * (0.4 + g.depth * 0.6);
-        g.y += sin * run + cos * side - moveY * (0.4 + g.depth * 0.6);
+        g.along = g.along * pull + jolt() * push;
+        const run = Math.max(0, pace * DRIFT * g.pace + g.along) * seconds;
+        // along the wind only; the camera's move is what shifts them up or down
+        g.x += cos * run - moveX * (0.4 + g.depth * 0.6);
+        g.y -= moveY * (0.4 + g.depth * 0.6);
         if (g.x < -60 || g.x > width + 60 || g.y < -60 || g.y > height + 60) {
           g.reset(width, height, false, angle);
           continue;
