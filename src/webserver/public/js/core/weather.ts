@@ -438,14 +438,15 @@ function generateBoltSegments(x: number, y: number): Array<{ x: number; y: numbe
  * THUNDER_DELAY_MIN to THUNDER_DELAY_MAX seconds later (1 to 2 seconds "feels too long", the same day). Until that
  * file has played to its end, every strike that comes is let go (no flash, no sound). A file not loaded yet is taken
  * as THUNDER_FALLBACK seconds long, so the strikes are spaced out the same when the sound cannot be heard (muted, not
- * loaded, no sound allowed yet).
+ * loaded, no sound allowed yet). Which thunder is heard is the weather's own (its `sounds`, chosen in the weather
+ * editor): one at random of those whose range holds the weather's precipitation. A weather with none strikes in silence.
  */
-const THUNDER = ["thunder", "thunder 2", "thunder 3"];
 const THUNDER_DELAY_MIN = 0.2, THUNDER_DELAY_MAX = 0.6, THUNDER_FALLBACK = 4;
 /** performance.now() until which the last thunder plays: no strike before then. */
 let thunderUntil = 0;
 /** The weather last asked for (updateWeatherSound): thunder due after the storm has gone is not played. */
 let currentType: string | null = null;
+let currentData: any = null;
 
 /** A strike is for one map (`map`, the packet's): one for another map, or come when no storm is shown here, is let go. */
 function addLightningStrike(worldX: number, worldY: number, map?: string) {
@@ -453,11 +454,13 @@ function addLightningStrike(worldX: number, worldY: number, map?: string) {
   if (currentType !== "thunderstorm" || (map && here && map.replace(".json", "") !== here)) return;
   const now = performance.now();
   if (now < thunderUntil) return;
-  const name = THUNDER[Math.floor(Math.random() * THUNDER.length)];
+  const intensity = fallShare(currentData) * 100;
+  const heard = soundsOf(currentData, "thunder").filter((s) => intensity >= s.from && intensity <= s.to);
+  const thunder = heard.length ? heard[Math.floor(Math.random() * heard.length)] : null;
   const delay = (THUNDER_DELAY_MIN + Math.random() * (THUNDER_DELAY_MAX - THUNDER_DELAY_MIN)) * 1000;
-  thunderUntil = now + delay + (soundLength(name) ?? THUNDER_FALLBACK) * 1000;
+  thunderUntil = now + delay + ((thunder && soundLength(thunder.name)) ?? THUNDER_FALLBACK) * 1000;
   strikeNow(worldX, worldY);
-  setTimeout(() => { if (currentType === "thunderstorm") playEffect(name, { track: "weather" }); }, delay);
+  if (thunder) setTimeout(() => { if (currentType === "thunderstorm") playEffect(thunder.name, { track: "weather", volume: thunder.volume }); }, delay);
 }
 
 function strikeNow(worldX: number, worldY: number) {
@@ -602,13 +605,12 @@ function weather(type: string, weatherData?: any): void {
 /**
  * USER REQUEST 2026-10-14 ("Hard Rain.wav" and "Soft Rain.wav" ... "should play according to how much it's raining.
  * Fade the sound in and out"): the sound of the rain, on the Weather track (audio.ts setWeatherSound), from the same
- * amount the rain is drawn by (fallShare: the weather's precipitation). Light rain is the soft loop alone, heavy rain
- * the hard one, and between HARD_FROM and HARD_TO of the full amount the two are crossed (equal power, so the cross
- * is not a dip); the whole is louder the harder it rains, from RAIN_QUIET of the slider up. No rain, snow, freezing
+ * amount the rain is drawn by (fallShare: the weather's precipitation). Which loops by how much it rains is the
+ * weather's own (its rain sounds, playLoops below; seeded as the soft loop crossed into the hard one from 35 to 75
+ * percent); the whole is louder the harder it rains, from RAIN_QUIET of the slider up. No rain, snow, freezing
  * weather or a map without weather (inside a house) is silence: each loop fades out and stops.
  */
-const SOFT_RAIN = "soft rain", HARD_RAIN = "hard rain";
-const HARD_FROM = 0.35, HARD_TO = 0.75, RAIN_QUIET = 0.45;
+const RAIN_QUIET = 0.45;
 /** How much it rains, 0 (none) to 1 (the full amount). */
 function rainAmount(type: string | null, weatherData?: any): number {
   if (type !== "rainy" && type !== "thunderstorm") return 0;
@@ -621,20 +623,15 @@ function rainAmount(type: string | null, weatherData?: any): number {
  * the streaks are drawn). A wind with no direction blows no streaks and makes no sound, like a map without weather.
  *
  * Then ("since there are 3 different wind types ... adjust the sound of each also based on wind speed. 6mph which it
- * currently is, is loud"): each of the three is a band of wind speed, crossed into the next (at equal power) as the
- * wind rises, mph: WINDS[i].from to WINDS[i].full is the band, the cross is the stretch where two overlap. A breeze is
- * "Gentle Wind 2" alone (the softest file), a fresh wind "Gentle Wind", a strong one "Regular Wind" (the deepest).
+ * currently is, is loud"): each wind sound is a band of wind speed, crossed into the next (at equal power) as the
+ * wind rises. The bands are the weather's own (its wind sounds, playLoops below); the seeded ones are "Gentle Wind 2"
+ * for a breeze, "Gentle Wind" for a fresh wind and "Regular Wind" for a strong one.
  * - How loud: (speed / WIND_FULL) ^ WIND_CURVE of the slider, with nothing added under it, so a breeze is quiet and a
  *   gale full (6 mph 0.15, some 12 dB under what it was; 15 mph 0.38; 25 mph 0.63).
- * - The three files are played by their average level (audio.ts `even`), not their peak, so a cross is not a jump.
+ * - The files are played by their average level (audio.ts `even`), not their peak, so a cross is not a jump.
  * - Its pitch rises with the speed, PITCH_LOW at still air to PITCH_HIGH at WIND_FULL, and the gusts are heard: the
  *   level glides with WIND_GLIDE seconds, not the rain's slower fade.
  */
-const WINDS = [
-  { name: "gentle wind 2", from: 0, full: 0 },
-  { name: "gentle wind", from: 6, full: 12 },
-  { name: "regular wind", from: 18, full: 26 },
-];
 const WIND_FULL = 40, WIND_CURVE = 1, PITCH_LOW = 0.85, PITCH_HIGH = 1.15, WIND_GLIDE = 0.35;
 const WIND_DIRECTIONS = ["left", "right", "up", "down"];
 /** How fast the wind blows now with its gust, mph: 0 when it has no direction. */
@@ -644,34 +641,112 @@ function windSpeed(type: string | null, weatherData?: any): number {
   if (!WIND_DIRECTIONS.includes(direction)) return 0;
   return Math.max(0, calculateWindSpeed(Number(weatherData?.wind_speed) || 0, windBurst.getIntensity()));
 }
-/** Each wind's share at `speed`, 0..1, their squares adding up to 1 (an equal-power cross). */
-function windShares(speed: number): number[] {
-  // How far into each band the wind has come: 1 once past its full, 0 before its from (the first is always 1).
-  const into = WINDS.map((w) => (w.full <= w.from ? 1 : Math.min(1, Math.max(0, (speed - w.from) / (w.full - w.from)))));
-  // A band is heard as far as it has come in and the next one has not: cos and sin of the same cross.
-  return WINDS.map((_, i) => {
-    const t = into[i + 1] ?? 0;
-    return Math.sin((into[i] * Math.PI) / 2) * Math.cos((t * Math.PI) / 2);
+/**
+ * USER REQUEST 2026-10-17 ("Weather sounds are currently hard coded ... browse sounds from the audio folder and add
+ * them to specific weather types in the weather editor ... allow adding multiple (for variant support) and allow
+ * choosing the intensity range they can happen at"): which files the rain, the wind and the thunder are is the
+ * weather's own, chosen in the weather editor and sent with it (`sounds`, the engine's systems/weathersounds.ts).
+ * Each is heard while the weather's intensity is within its range: the rain's and the thunder's is its precipitation
+ * (percent), the wind's its speed with its gust (mph). How loud the whole rain or wind is stays as above.
+ */
+type SoundKind = "rain" | "wind" | "thunder";
+interface WeatherSoundEntry { name: string; from: number; to: number; volume: number }
+
+/** The weather's sounds of one kind, as sent; what is not a sound is left out. */
+function soundsOf(weatherData: any, kind: SoundKind): WeatherSoundEntry[] {
+  const list = weatherData?.sounds?.[kind];
+  if (!Array.isArray(list)) return [];
+  return list
+    .map((s: any) => ({ name: String(s?.name ?? "").trim(), from: Number(s?.from), to: Number(s?.to), volume: Number(s?.volume ?? 1) }))
+    .filter((s: WeatherSoundEntry) => s.name && Number.isFinite(s.from) && Number.isFinite(s.to) && s.to >= s.from)
+    .map((s: WeatherSoundEntry) => ({ ...s, volume: Number.isFinite(s.volume) ? Math.min(1, Math.max(0, s.volume)) : 1 }));
+}
+
+/**
+ * Sounds with the same range are variants: one of them is heard, picked at random when the weather is first shown
+ * (again when another weather, or the same one saved anew, is sent). By kind, then by range: the name picked.
+ */
+let pickedFor: any = null;
+const picked = new Map<string, string>();
+/**
+ * The loops each kind has made heard, by their key: one no longer wanted is asked for silence at every ask after, so it
+ * fades out and is stopped (audio.ts stops a loop only when asked).
+ */
+const sounding: Record<"rain" | "wind", Set<string>> = { rain: new Set(), wind: new Set() };
+
+/**
+ * How much of each range is heard at `x`, 0..1. A range is heard in full inside it and not at all outside. Where two
+ * overlap, one starting inside the other and ending past it, they are crossed over the overlap (at equal power): the
+ * lower fades out from where the higher starts, the higher fades in until the lower ends. Ranges heard together that
+ * are not crossed (one inside another) share at equal power.
+ */
+function rangeShares(ranges: Array<{ from: number; to: number }>, x: number): number[] {
+  const shares = ranges.map((r, i) => {
+    if (x < r.from || x > r.to) return 0;
+    // the end of the overlap with a range that started below this one and ends inside it
+    let fadeInEnd = r.from;
+    // the start of the overlap with a range that starts inside this one and ends above it
+    let fadeOutStart = r.to;
+    ranges.forEach((o, j) => {
+      if (j === i) return;
+      if (o.from < r.from && o.to > r.from && o.to < r.to) fadeInEnd = Math.max(fadeInEnd, o.to);
+      if (o.from > r.from && o.from < r.to && o.to > r.to) fadeOutStart = Math.min(fadeOutStart, o.from);
+    });
+    const fadeIn = fadeInEnd > r.from ? Math.sin((Math.min(1, (x - r.from) / (fadeInEnd - r.from)) * Math.PI) / 2) : 1;
+    const fadeOut = fadeOutStart < r.to ? Math.cos((Math.max(0, (x - fadeOutStart) / (r.to - fadeOutStart)) * Math.PI) / 2) : 1;
+    return fadeIn * fadeOut;
   });
+  const power = shares.reduce((sum, s) => sum + s * s, 0);
+  return power > 1 ? shares.map((s) => s / Math.sqrt(power)) : shares;
+}
+
+/**
+ * Plays a looping kind (rain, wind) at `level` (0..1 of the slider) for the intensity `x`: each range heard as much
+ * as rangeShares says, through the variant picked for it, at the sound's own volume. A loop of this kind heard before
+ * and not wanted now is faded out.
+ */
+function playLoops(kind: "rain" | "wind", weatherData: any, x: number, level: number, opts: { even?: boolean; rate?: number; glide?: number } = {}): void {
+  const byRange = new Map<string, WeatherSoundEntry[]>();
+  for (const s of soundsOf(weatherData, kind)) {
+    const range = `${s.from}|${s.to}`;
+    byRange.set(range, [...(byRange.get(range) ?? []), s]);
+  }
+  const ranges = [...byRange.entries()].map(([range, variants]) => {
+    const key = `${kind}|${range}|${variants.map((v) => v.name).join(",")}`;
+    let name = picked.get(key);
+    if (!name || !variants.some((v) => v.name === name)) picked.set(key, name = variants[Math.floor(Math.random() * variants.length)].name);
+    return variants.find((v) => v.name === name)!;
+  });
+  const shares = level > 0 ? rangeShares(ranges, x) : ranges.map(() => 0);
+  const now = new Set<string>();
+  ranges.forEach((s, i) => {
+    const key = `weather ${kind}:${s.name}`;
+    now.add(key);
+    setWeatherSound(s.name, level * shares[i] * s.volume, { ...opts, key });
+  });
+  for (const key of sounding[kind]) if (!now.has(key)) setWeatherSound(key.slice(key.indexOf(":") + 1), 0, { ...opts, key });
+  for (const key of now) sounding[kind].add(key);
 }
 
 /** Called every frame (renderer.ts updateCamera), with the map's weather or null. */
 function updateWeatherSound(type: string | null, weatherData?: any): void {
   currentType = type;
+  currentData = weatherData ?? null;
+  if (pickedFor !== currentData) {
+    pickedFor = currentData;
+    picked.clear();
+  }
   // (the thunder files are fetched while a storm is shown, so the first strike is heard; a file had already is not
   // fetched again)
-  if (type === "thunderstorm") for (const name of THUNDER) void loadEffect(name);
+  if (type === "thunderstorm") for (const s of soundsOf(weatherData, "thunder")) void loadEffect(s.name);
 
   const amount = rainAmount(type, weatherData);
-  const level = amount > 0 ? RAIN_QUIET + (1 - RAIN_QUIET) * amount : 0;
-  const t = Math.min(1, Math.max(0, (amount - HARD_FROM) / (HARD_TO - HARD_FROM))), hard = t * t * (3 - 2 * t);
-  setWeatherSound(SOFT_RAIN, level * Math.cos((hard * Math.PI) / 2));
-  setWeatherSound(HARD_RAIN, level * Math.sin((hard * Math.PI) / 2));
+  playLoops("rain", weatherData, amount * 100, amount > 0 ? RAIN_QUIET + (1 - RAIN_QUIET) * amount : 0);
 
   const speed = windSpeed(type, weatherData);
   const windLevel = speed > 0 ? Math.pow(Math.min(1, speed / WIND_FULL), WIND_CURVE) : 0;
   const rate = PITCH_LOW + (PITCH_HIGH - PITCH_LOW) * Math.min(1, speed / WIND_FULL);
-  windShares(speed).forEach((share, i) => setWeatherSound(WINDS[i].name, windLevel * share, { even: true, rate, glide: WIND_GLIDE }));
+  playLoops("wind", weatherData, speed, windLevel, { even: true, rate, glide: WIND_GLIDE });
 }
 
 /** `playerX`, `playerY`: where the player is, in world px (the camera when not given: the map editor's view). */
