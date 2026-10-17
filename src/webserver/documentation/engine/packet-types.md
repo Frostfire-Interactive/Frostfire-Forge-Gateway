@@ -439,6 +439,18 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `MAILBOX_EDITOR_DELETE` | To server | Mailbox editor | Give a map's mailboxes back to its inns |
 | `MAILBOX_EDITOR_RESULT` | To client | Mailbox editor | Whether a change worked |
 | `MAILBOX_EDITOR_UPDATED` | To client | Mailbox editor | Another admin changed a map's mailboxes |
+| `GATHER` | To server | Gathering | Gather a node: `{ nodeId }` |
+| `GATHER_NODE_SPAWN` | To client | Gathering | Nodes coming into view: `{ nodes: [{ id, x, y, item, icon }] }` |
+| `GATHER_NODE_DESPAWN` | To client | Gathering | Nodes gone or out of view: `{ ids }` |
+| `TOGGLE_GATHERING_EDITOR` | To client | Gathering editor | Open or close the gathering editor |
+| `GATHERING_EDITOR_LIST` | To server | Gathering editor | Ask for the areas of the map you are on |
+| `GATHERING_EDITOR_SAVE` | To server | Gathering editor | Save an area (a new one without `id`) |
+| `GATHERING_EDITOR_DELETE` | To server | Gathering editor | Delete an area: `{ id }` |
+| `GATHERING_EDITOR_PREVIEW` | To server | Gathering editor | Where nodes of an area as typed would stand |
+| `GATHERING_EDITOR_DATA` | To client | Gathering editor | The areas, the items with their icons, the limits |
+| `GATHERING_EDITOR_PREVIEW_SPOTS` | To client | Gathering editor | The preview: `{ spots, wanted, note }` |
+| `GATHERING_EDITOR_RESULT` | To client | Gathering editor | Whether a save or delete was done |
+| `GATHERING_EDITOR_UPDATED` | To client | Gathering editor | Another admin changed the areas |
 | `TOGGLE_LOOT_EDITOR` | To client | Loot editor | Open or close the loot table editor |
 | `LIST_LOOT_TABLES` | To server | Loot editor | Ask for every loot table |
 | `LOOT_TABLE_LIST` | To client | Loot editor | Every loot table |

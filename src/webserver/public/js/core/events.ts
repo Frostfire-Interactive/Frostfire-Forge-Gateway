@@ -25,6 +25,7 @@ import { createContextMenu, createPartyContextMenu, createGuildContextMenu, crea
 import { isTrading, offerItem } from "./trade.js";
 import { isVendorOpen, sellItem } from "./vendor.js";
 import { isMailOpen, attachItem, openNearestMailbox, mailboxAt } from "./mail.js";
+import { gather, gatherNearest, gatherNodeAt } from "./gathering.js";
 import { playerAt } from "./playerpick.js";
 import { closeRadialMenu } from "./mobileui.js";
 import "./creatureinput.js";
@@ -388,7 +389,8 @@ window.addEventListener("keyup", (e) => {  const activeElement = document.active
     // No loot pickup armed: E talks to the nearest NPC instead, or opens the mailbox the player stands at.
     if (isSelfActionLocked()) return;
     import("./quest.js").then((m) => {
-      if (!m.tryInteractNpc()) openNearestMailbox();
+      // then the mailbox the player stands at, then the nearest gathering node in reach
+      if (!m.tryInteractNpc() && !openNearestMailbox()) gatherNearest();
     });
     return;
   }
@@ -893,9 +895,11 @@ canvas.addEventListener("touchend", (e) => {
     // A tap on a mailbox opens it, when it is not a tap on an NPC; the server says when it is too far.
     // While the mailbox editor is open, a tap on a mailbox picks it.
     if ((window as any).mailboxEditorTap?.(worldX, worldY, TOUCH_TARGET_SLOP)) return;
-    if (!m.tryTapInteractNpcAt(worldX, worldY) && mailboxAt(worldX, worldY, TOUCH_TARGET_SLOP)) {
-      sendRequest({ type: "MAIL_OPEN", data: null });
-    }
+    if (m.tryTapInteractNpcAt(worldX, worldY)) return;
+    // A tap on a gathering node gathers it; the server says when it is too far.
+    const node = gatherNodeAt(worldX, worldY, TOUCH_TARGET_SLOP);
+    if (node) gather(node);
+    else if (mailboxAt(worldX, worldY, TOUCH_TARGET_SLOP)) sendRequest({ type: "MAIL_OPEN", data: null });
   });
 });
 
@@ -1082,6 +1086,13 @@ document.addEventListener("click", (event) => {
 
   if (clickedNpc) {
     cache.targetId = clickedNpc.id;
+    return;
+  }
+
+  // A click on a gathering node gathers it; the server says when it is too far. A tap is the touch handler's (below).
+  const node = !isTouch ? gatherNodeAt(worldX, worldY, slop) : null;
+  if (node) {
+    if (!isSelfActionLocked()) gather(node);
     return;
   }
 

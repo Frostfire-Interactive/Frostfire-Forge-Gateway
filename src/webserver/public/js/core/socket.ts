@@ -92,6 +92,7 @@ import { createInvitationPopup } from "./invites.ts";
 import { showTrade, closeTrade } from "./trade.ts";
 import { showVendor, closeVendor, refreshVendor } from "./vendor.ts";
 import { setMailboxes, showMail, mailSent, setUnreadMail, closeMail, refreshMail } from "./mail.ts";
+import { applyGatherSpawn, applyGatherDespawn, clearGatherNodes } from "./gathering.ts";
 import { rememberVisit } from "./visitedmaps.ts";
 import { startItemCooldown, refreshHotbarItems, clearItemCooldowns } from "./consumables.ts";
 import { showNotification } from "./notifications.ts";
@@ -2459,6 +2460,14 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       applyCreatureSpawn(data);
       break;
     }
+    case "GATHER_NODE_SPAWN": {
+      applyGatherSpawn(data);
+      break;
+    }
+    case "GATHER_NODE_DESPAWN": {
+      applyGatherDespawn(data);
+      break;
+    }
     case "CREATURE_MOVE": {
       applyCreatureMove(data);
       break;
@@ -2545,6 +2554,26 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     }
     case "MAILBOX_EDITOR_UPDATED": {
       import("./mailboxeditor.js").then((m) => m.default.onUpdated(data));
+      break;
+    }
+    case "TOGGLE_GATHERING_EDITOR": {
+      import("./gatheringeditor.js").then((m) => m.default.toggle());
+      break;
+    }
+    case "GATHERING_EDITOR_DATA": {
+      import("./gatheringeditor.js").then((m) => m.default.onData(data));
+      break;
+    }
+    case "GATHERING_EDITOR_PREVIEW_SPOTS": {
+      import("./gatheringeditor.js").then((m) => m.default.onPreview(data));
+      break;
+    }
+    case "GATHERING_EDITOR_RESULT": {
+      import("./gatheringeditor.js").then((m) => m.default.onResult(data));
+      break;
+    }
+    case "GATHERING_EDITOR_UPDATED": {
+      import("./gatheringeditor.js").then((m) => m.default.onUpdated(data));
       break;
     }
     case "TOGGLE_CLASS_EDITOR": {
@@ -2961,6 +2990,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
           if (cache?.pendingPlayers) cache.pendingPlayers.clear();
           clearCreatures();
+          clearGatherNodes();
           if (cache?.npcs) cache.npcs = [];
           if (cache?.projectiles) cache.projectiles = [];
           cache.activeGroundAoeZones = {};

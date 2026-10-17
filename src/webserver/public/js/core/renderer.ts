@@ -10,6 +10,7 @@ import { updateUnitFrames } from "./targetframe.js";
 import { dropDistantTarget } from "./creatureinput.js";
 import { updateSourceParticle } from "./sourceparticles.js";
 import { renderCreatureEditorOverlays, renderThreatPanel } from "./creaturedebug.js";
+import { renderGatherHint, renderGatherPreviewArea, standingGatherNodes } from "./gathering.js";
 let weatherType = null as string | null;
 let currentWeatherData = null as any; // Store full weather object for wind speed
 const cache = Cache.getInstance();
@@ -1480,6 +1481,8 @@ function animationLoop() {
     for (const box of (window as any).mailboxesHere?.(String(window.mapData?.name ?? "")) ?? []) {
       standing.push({ feet: box.y, draw: () => (window as any).drawMailbox?.(scene, box) });
     }
+    // Gathering nodes stand among them too, with the gathering editor's preview spots.
+    for (const node of standingGatherNodes()) standing.push({ feet: node.feet, draw: () => node.draw(scene) });
     // So do tornadoes (tornado.ts): whoever stands in front of one is drawn in front of it (heard from the camera, on the
     // player). Trees and roofs do not hide them: they are painted over those, after the map's upper layers.
     // (on phones, and without the canvas above, they are drawn once only, over the upper layers: twice would be darker)
@@ -1495,6 +1498,7 @@ function animationLoop() {
     });
 
     renderCreatureEditorOverlays(ctx, String(window.mapData?.name ?? "").replace(".json", ""));
+    renderGatherPreviewArea(ctx);
 
     renderLoot(ctx, cameraX, cameraY, canvas.width, canvas.height, cachedPlayerId);
 
@@ -2361,6 +2365,8 @@ function animationLoop() {
   (window as any).renderChestInteractionHint?.(ctx, cameraX, cameraY, canvas.width, canvas.height, (window as any).chestInteractionProgress || 0, cachedPlayerId);
   const talkTo = getNearestNpcId();
   (window as any).renderMailboxHint?.(ctx, talkTo !== null && canInteractWith(talkTo));
+  // and over the gathering node E would gather, when E does nothing else there
+  renderGatherHint(ctx, talkTo !== null && canInteractWith(talkTo));
 
   renderNpcInteractBadge(ctx, cameraX, cameraY, canvas.width, canvas.height, getNearestNpcId());
 
