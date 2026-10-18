@@ -900,7 +900,9 @@ function authenticateConnection(): Promise<void> {
       expiresAt: connectionToken.expiresAt,
       signature: connectionToken.signature,
       useragent: window.navigator.userAgent || "unknown",
-      origin: window.location.origin,
+      // Both are part of the signed ticket: sent back as the Gateway signed them.
+      origin: connectionToken.origin ?? window.location.origin,
+      account: connectionToken.account ?? "",
     };
 
     sendRawFrame(packet.encode(JSON.stringify({

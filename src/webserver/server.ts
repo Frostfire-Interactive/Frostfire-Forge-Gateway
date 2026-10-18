@@ -1,7 +1,7 @@
 const now = performance.now();
 import log from "../modules/logger";
 import sendEmail, { buildEmailBody, buildLinkAction, buildCodeAction, censorEmail } from "../services/email";
-import player from "../systems/player";
+import player, { ensureTokenExpiryColumn, TOKEN_LIFETIME_MS } from "../systems/player";
 import verify, { shuffle } from "../services/verification";
 import { hash, randomBytes, hashGuestPassword } from "../modules/hash";
 import query from "../controllers/sqldatabase";
@@ -137,6 +137,15 @@ function getRequestOrigin(req: Request): { rpId: string; origin: string } {
   const host = req.headers.get("host") || new URL(process.env.DOMAIN || "http://localhost").hostname;
   const proto = req.headers.get("X-Forwarded-Proto") || (process.env.HTTP_USE_SSL === "true" ? "https" : "http");
   return { rpId: host, origin: `${proto}://${host}` };
+}
+
+/**
+ * The token cookie: as long-lived as the token, Lax, and Secure when the site is served over HTTPS. Not
+ * HttpOnly: the game client reads it to authenticate its WebTransport session.
+ */
+function tokenCookie(token: string): string {
+  const secure = process.env.HTTP_USE_SSL === "true" ? "; Secure" : "";
+  return `token=${token}; Path=/; SameSite=Lax; Max-Age=${Math.floor(TOKEN_LIFETIME_MS / 1000)}${secure}`;
 }
 
 function getTokenFromRequest(req: Request): string | null {
@@ -359,32 +368,54 @@ const routes = {
   "/api/gateway/connection-token": {
     GET: async (req: Request) => {
       try {
-        const username = await getUsernameFromToken(req);
-        if (username) {
-          const isPending = await player.isTwoFactorPending(username);
-          if (isPending) {
-            return new Response(JSON.stringify({
-              message: "2FA required"
-            }), {
-              status: 403,
-              headers: { "Content-Type": "application/json" }
-            });
-          }
-          // The engine refuses this account at login too; this is the answer the page can show.
-          if ((await getSubscriptionInfo(username)).loginLocked) {
-            return new Response(JSON.stringify({
-              message: "A subscription is needed to play.",
-              subscription: true
-            }), {
-              status: 403,
-              headers: { "Content-Type": "application/json" }
-            });
-          }
+        // A ticket is for a logged-in account only, one past every login step: the
+        // game server lets the ticket log in that account and no other (see the
+        // engine's src/socket/ticket.ts, which checks the same signed string).
+        const accountToken = getTokenFromRequest(req);
+        const username = accountToken ? await getUsernameFromToken(req) : null;
+        if (!accountToken || !username) {
+          return new Response(JSON.stringify({ message: "Unauthorized" }), {
+            status: 401,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+        const isPending = await player.isTwoFactorPending(username);
+        if (isPending) {
+          return new Response(JSON.stringify({
+            message: "2FA required"
+          }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+        const accountRow = await query("SELECT email_verified, guest_mode FROM accounts WHERE username = ? LIMIT 1", [username]) as any[];
+        // Guests are made and logged in here without an e-mail to verify.
+        if (accountRow[0]?.email_verified !== 1 && accountRow[0]?.guest_mode !== 1) {
+          return new Response(JSON.stringify({
+            message: "Account not verified. Check your email."
+          }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+        // The engine refuses this account at login too; this is the answer the page can show.
+        if ((await getSubscriptionInfo(username)).loginLocked) {
+          return new Response(JSON.stringify({
+            message: "A subscription is needed to play.",
+            subscription: true
+          }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" }
+          });
         }
 
         const token = crypto.randomBytes(32).toString("hex");
         const timestamp = Date.now();
         const expiresAt = timestamp + (60 * 1000);
+        // Signed with the ticket, so the client cannot claim another: the page's own origin, and
+        // the account (the SHA-256 of its token, never the token itself).
+        const origin = getRequestOrigin(req).origin;
+        const account = crypto.createHash("sha256").update(accountToken).digest("hex");
 
         const sharedSecret = process.env.GATEWAY_GAME_SERVER_SECRET;
         if (!sharedSecret) {
@@ -397,14 +428,16 @@ const routes = {
         }
         const signature = crypto
           .createHmac("sha256", sharedSecret)
-          .update(`${token}:${timestamp}:${expiresAt}`)
+          .update(`${token}:${timestamp}:${expiresAt}:${origin}:${account}`)
           .digest("hex");
 
         return new Response(JSON.stringify({
           token,
           timestamp,
           expiresAt,
-          signature
+          signature,
+          origin,
+          account
         }), {
           status: 200,
           headers: { "Content-Type": "application/json" }
@@ -504,6 +537,8 @@ const routes = {
 } as Record<string, any>;
 
 // The subscription columns and tables must exist before a request reads them. Never fails the start.
+// accounts.token_expires before the first login reads it (the engine adds it too).
+await ensureTokenExpiryColumn();
 await startSubscriptions();
 
 // Otherwise guests are removed only when the engine starts. Once an hour, the ones a day old that
@@ -704,7 +739,7 @@ async function createGuestAccount(req: Request) {
 
     log.debug(`Guest account created: ${guest_username} (${ip})`);
 
-    return new Response(JSON.stringify({ message: "Logged in successfully", token: token }), { status: 301, headers: { "Set-Cookie": `token=${token}; Path=/;` } });
+    return new Response(JSON.stringify({ message: "Logged in successfully", token: token }), { status: 301, headers: { "Set-Cookie": tokenCookie(token) } });
 
   } catch (error) {
     log.error(`Failed to create guest account: ${error}`);
@@ -802,7 +837,7 @@ async function register(req: Request, server: any) {
     if (result instanceof Error) {
       return new Response(JSON.stringify({ message: "Failed to send verification email" }), { status: 500 });
     }
-    return new Response(JSON.stringify({ message: "Verification email sent" }), { status: 200, headers: { "Set-Cookie": `token=${token}; Path=/;` } });
+    return new Response(JSON.stringify({ message: "Verification email sent" }), { status: 200, headers: { "Set-Cookie": tokenCookie(token) } });
   } catch (error) {
     return new Response(JSON.stringify({ message: "Failed to register", error: error instanceof Error ? error.message : "Unknown error" }), { status: 500 });
   }
@@ -854,7 +889,7 @@ async function login(req: Request, server: any) {
         return new Response(JSON.stringify({ message: "Failed to send verification email" }), { status: 500 });
       }
       await player.setTwoFactorPending(username, true);
-      return new Response(JSON.stringify({ message: "Account not verified. Check your email.", code: "unverified" }), { status: 200, headers: { "Set-Cookie": `token=${token}; Path=/;` } });
+      return new Response(JSON.stringify({ message: "Account not verified. Check your email.", code: "unverified" }), { status: 200, headers: { "Set-Cookie": tokenCookie(token) } });
     }
 
     if (await isEmail2FARequired(username)) {
@@ -863,17 +898,17 @@ async function login(req: Request, server: any) {
         return new Response(JSON.stringify({ message: "Failed to send verification email" }), { status: 500 });
       }
       await player.setTwoFactorPending(username, true);
-      return new Response(JSON.stringify({ message: "Verification email sent" }), { status: 200, headers: { "Set-Cookie": `token=${token}; Path=/;` } });
+      return new Response(JSON.stringify({ message: "Verification email sent" }), { status: 200, headers: { "Set-Cookie": tokenCookie(token) } });
     }
 
     const has2FA = await getRequiredLoginMethod(username);
 
     if (has2FA) {
       await player.setTwoFactorPending(username, true);
-      return new Response(JSON.stringify({ message: "2FA required", requires2FA: true }), { status: 200, headers: { "Set-Cookie": `token=${token}; Path=/; SameSite=Lax` } });
+      return new Response(JSON.stringify({ message: "2FA required", requires2FA: true }), { status: 200, headers: { "Set-Cookie": tokenCookie(token) } });
     }
 
-    return new Response(JSON.stringify({ message: "Logged in successfully"}), { status: 301, headers: { "Set-Cookie": `token=${token}; Path=/; SameSite=Lax` } });
+    return new Response(JSON.stringify({ message: "Logged in successfully"}), { status: 301, headers: { "Set-Cookie": tokenCookie(token) } });
   } catch (error) {
     log.error(`Failed to authenticate: ${error}`);
     return new Response(JSON.stringify({ message: "Failed to authenticate" }), { status: 500 });

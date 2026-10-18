@@ -2,6 +2,47 @@ import query, { transaction, type TransactionStatement } from "../controllers/sq
 import { verify, randomBytes, verifyGuestPassword } from "../modules/hash";
 import log from "../modules/logger";
 
+// An account token lasts this long from when it was issued, then a new password login is needed. Kept in the
+// account row (token_expires, epoch ms), which the engine checks too. A token with no expiry has expired.
+export const TOKEN_LIFETIME_MS = (Number(process.env.TOKEN_LIFETIME_HOURS) || 24 * 7) * 60 * 60 * 1000;
+
+/** Whether an account row's token is still within its lifetime. */
+export function tokenLive(row: { token_expires?: unknown } | undefined): boolean {
+  const expires = Number(row?.token_expires);
+  return Number.isFinite(expires) && expires > Date.now();
+}
+
+async function hasAccountsColumn(name: string): Promise<boolean> {
+  if (process.env.DATABASE_ENGINE === "sqlite") {
+    const rows = await query<{ sql: string }>("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'accounts'");
+    return new RegExp(`\\b${name}\\b`).test(String(rows[0]?.sql || ""));
+  }
+  const rows = await query<{ count: number }>(
+    "SELECT COUNT(*) AS count FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'accounts' AND COLUMN_NAME = ?",
+    [name]
+  );
+  return Number(rows[0]?.count) > 0;
+}
+
+/**
+ * Start-time step: accounts.token_expires, added if missing (the engine does the same; whichever starts first
+ * does the work). Every login reads it, so it must be there before the first one. Never throws.
+ */
+export async function ensureTokenExpiryColumn(): Promise<boolean> {
+  try {
+    if (await hasAccountsColumn("token_expires")) return true;
+    try {
+      await query("ALTER TABLE accounts ADD COLUMN token_expires BIGINT DEFAULT NULL");
+    } catch (error) {
+      if (!(await hasAccountsColumn("token_expires"))) throw error;
+    }
+    return true;
+  } catch (error: any) {
+    log.error(`accounts.token_expires could not be added, so no login can succeed until it is: ${error?.message || error}`);
+    return false;
+  }
+}
+
 // The tables the engine's guest purge empties of a guest's rows (engine src/systems/player.ts, clear).
 const GUEST_ROW_TABLES = ["inventory", "stats", "clientconfig", "quest_log", "currency", "collectables", "equipment", "learned_spells", "permissions", "friendslist"];
 
@@ -92,11 +133,12 @@ const player = {
       return { sql: `${sql} VALUES ${values}`, values: params };
     };
 
+    const expires = Date.now() + TOKEN_LIFETIME_MS;
     // One transaction: no guest is left with an account and not the rows a login reads.
     await transaction([
       multiInsert(
-        "INSERT INTO accounts (email, username, token, password_hash, ip_address, geo_location, map, position, guest_mode)",
-        (r) => [r.email, r.username, r.token, "guest:benchmark", ip ?? null, geo ?? null, "", "0,0", 1]
+        "INSERT INTO accounts (email, username, token, token_expires, password_hash, ip_address, geo_location, map, position, guest_mode)",
+        (r) => [r.email, r.username, r.token, expires, "guest:benchmark", ip ?? null, geo ?? null, "", "0,0", 1]
       ),
       multiInsert(
         "INSERT INTO stats (username, health, max_health, stamina, max_stamina, xp, max_xp, level, stat_critical_damage, stat_critical_chance)",
@@ -232,8 +274,8 @@ const player = {
   getSessionId: async (token: string) => {
     if (!token) return;
     const response = await query(
-      "SELECT session_id FROM accounts WHERE token = ?",
-      [token]
+      "SELECT session_id FROM accounts WHERE token = ? AND token_expires > ?",
+      [token, Date.now()]
     );
     return response;
   },
@@ -258,8 +300,8 @@ const player = {
     if (!username || !token) return;
 
     const response = await query(
-      "UPDATE accounts SET token = ? WHERE username = ?",
-      [token, username]
+      "UPDATE accounts SET token = ?, token_expires = ? WHERE username = ?",
+      [token, Date.now() + TOKEN_LIFETIME_MS, username]
     );
     if (!response) return;
 
@@ -270,12 +312,13 @@ const player = {
     username = username.toLowerCase();
 
     const response = (await query(
-      "SELECT username, banned, token, password_hash FROM accounts WHERE username = ?",
+      "SELECT username, banned, token, token_expires, password_hash FROM accounts WHERE username = ?",
       [username]
     )) as {
       username: string;
       banned: number;
       token: string;
+      token_expires: number | null;
       password_hash: string;
     }[];
     if (response.length === 0 || response[0].banned === 1) {
@@ -291,7 +334,8 @@ const player = {
       return;
     }
 
-    const token = response[0].token || (await player.setToken(username));
+    // The token is shared by every device the player logs in on, until it expires: then a new one.
+    const token = (response[0].token && tokenLive(response[0]) ? response[0].token : null) || (await player.setToken(username));
 
     log.debug(`User ${username} logged in`);
 
@@ -330,8 +374,8 @@ const player = {
   getUsernameByToken: async (token: string) => {
     if (!token) return;
     const response = await query(
-      "SELECT username FROM accounts WHERE token = ?",
-      [token]
+      "SELECT username FROM accounts WHERE token = ? AND token_expires > ?",
+      [token, Date.now()]
     );
     return response;
   },

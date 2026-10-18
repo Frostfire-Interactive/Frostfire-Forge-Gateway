@@ -52,6 +52,8 @@ const addTwoFactorColumns = async () => {
     { name: "require_totp", type: "TINYINT DEFAULT 0" },
     { name: "require_email_2fa", type: "TINYINT DEFAULT 0" },
     { name: "email_verified", type: "TINYINT DEFAULT 0" },
+    // When the account token stops working (epoch ms).
+    { name: "token_expires", type: "BIGINT DEFAULT NULL" },
   ];
 
   const engine = process.env.DATABASE_ENGINE || "mysql";
