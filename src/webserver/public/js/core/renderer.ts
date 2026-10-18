@@ -4,7 +4,8 @@ import Cache from "./cache.ts";
 import { getParticleSprite, particleBrightness, particlePool, renderNpcInteractBadge, tickNpcGossip } from "./npc.js";
 import { queueGlow } from "./glowqueue.js";
 import { getNearestNpcId, canInteractWith } from "./quest.js";
-import { stepCreatures, drawCreature, drawFloatingTexts, creatureFeetY, parseCreatureTarget, creaturePositionFor, creatures, FEET_FRACTION } from "./creature.js";
+import { stepCreatures, drawCreature, drawFloatingTexts, creatureFeetY, parseCreatureTarget, creaturePositionFor, creatures, FEET_FRACTION, targetArrowFor } from "./creature.js";
+import { drawTargetArrow, TARGET_ARROWS, ARROW_GAP, spriteArtTop } from "./targetmarker.js";
 import { backToFront, PLAYER_FEET, type Standing } from "./depthorder.js";
 import { updateUnitFrames } from "./targetframe.js";
 import { dropDistantTarget } from "./creatureinput.js";
@@ -2316,6 +2317,25 @@ function animationLoop() {
       bubbleCtx.save();
       bubbleCtx.translate(offsetX, offsetY);
       bubbleCtx.imageSmoothingEnabled = false;
+    }
+    // The arrow over the target (targetmarker.ts), over the top tile layers with the icons: a player's just over the
+    // top of its sprite (yourself too, when you target yourself), and above the cast bar (y - 38 to y - 28) while it
+    // casts; a creature's or a corpse's where creature.ts puts it.
+    for (const p of visiblePlayers) {
+      if (!p.targeted || !p.renderPosition) continue;
+      const artTop = spriteArtTop(p.layeredAnimation ?? null, null, p.renderPosition.y) ?? p.renderPosition.y - 28;
+      let tipY = artTop - ARROW_GAP;
+      if (p.castingSpell) tipY = Math.min(tipY, p.renderPosition.y - 40);
+      drawTargetArrow(bubbleCtx, p.renderPosition.x, tipY, TARGET_ARROWS.player);
+    }
+    const targetCreatureId = parseCreatureTarget(cache.targetId);
+    const targetCreature = targetCreatureId === null ? undefined : creatures.get(targetCreatureId);
+    const creatureArrow = targetCreature ? targetArrowFor(targetCreature) : null;
+    if (creatureArrow) {
+      bubbleCtx.save();
+      bubbleCtx.globalAlpha = creatureArrow.alpha;
+      drawTargetArrow(bubbleCtx, creatureArrow.x, creatureArrow.tipY, creatureArrow.palette);
+      bubbleCtx.restore();
     }
     for (const p of visiblePlayers) {
       if (p.showDebuffs) {

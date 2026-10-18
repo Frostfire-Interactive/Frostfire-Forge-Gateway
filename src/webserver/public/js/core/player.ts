@@ -624,53 +624,13 @@ async function createPlayer(data: any) {
 
       const shadowsDisabled = getWeatherType() === "thunderstorm";
 
-      let shadow: { width: number; height: number; fillStyle: string; borderColor: string };
-      if (this.targeted) {
-        shadow = {
-          width: 18,
-          height: 7,
-          fillStyle: "rgba(255, 0, 0, 0.35)",
-          borderColor: "rgba(255, 0, 0, 0.8)"
-        };
-      } else {
-        shadow = {
-          width: 15,
-          height: 5,
-          fillStyle: "rgba(0, 0, 0, 0.35)",
-          borderColor: "transparent"
-        };
-      }
-
       if (!shadowsDisabled) {
-      context.save();
-      context.beginPath();
-      context.ellipse(
-        this.renderPosition.x,
-        this.renderPosition.y + 16,
-        shadow.width,
-        shadow.height,
-        0,
-        0,
-        Math.PI * 2
-      );
-      context.strokeStyle = shadow.borderColor;
-      context.lineWidth = 1;
-      context.stroke();
-
-      context.beginPath();
-      context.ellipse(
-        this.renderPosition.x,
-        this.renderPosition.y + 16,
-        shadow.width,
-        shadow.height,
-        0,
-        0,
-        Math.PI * 2
-      );
-      context.fillStyle = shadow.fillStyle;
-      context.fill();
-      context.closePath();
-      context.restore();
+        context.save();
+        context.beginPath();
+        context.ellipse(this.renderPosition.x, this.renderPosition.y + 16, 15, 5, 0, 0, Math.PI * 2);
+        context.fillStyle = "rgba(0, 0, 0, 0.35)";
+        context.fill();
+        context.restore();
       }
 
       context.globalAlpha = 1;

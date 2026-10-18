@@ -7,6 +7,7 @@ import { formatDuration } from "./tooltip.js";
 import { NUMBER_FONT, fontFor } from "./fonts.js";
 import { config } from "../web/global.js";
 import Cache from "./cache.js";
+import { TARGET_ARROWS, ARROW_GAP, spriteArtTop, type ArrowPalette } from "./targetmarker.js";
 const cache = Cache.getInstance();
 
 export interface CreatureView {
@@ -407,6 +408,36 @@ const STANCE_COLORS: Record<CreatureView["stance"], string> = {
   passive: "#80e080",
 };
 
+/** The target arrow's colours for a creature: grey for a corpse or when someone else tagged it, else by its stance, as its name is. */
+function arrowPalette(c: CreatureView): ArrowPalette {
+  if (c.state === "dead" || c.tap === "other") return TARGET_ARROWS.tapped;
+  if (c.stance === "aggressive") return TARGET_ARROWS.hostile;
+  if (c.stance === "passive") return TARGET_ARROWS.friendly;
+  return TARGET_ARROWS.neutral;
+}
+
+/**
+ * Where the target arrow goes over a creature, and how: its tip just over the head (over the cast bar
+ * while it casts), or over the skeleton of a corpse. Drawn by the renderer over the top tile layers.
+ */
+export function targetArrowFor(c: CreatureView): { x: number; tipY: number; palette: ArrowPalette; alpha: number } | null {
+  // Not drawn yet (its sprite is loading, or it is out of view): nothing over it either.
+  if (!c.shownAt) return null;
+  let tipY: number;
+  if (c.state === "dead") {
+    tipY = c.renderY - 10 - CORPSE_SKELETON_SIZE / 2 - ARROW_GAP;
+  } else {
+    const metrics = spriteMetrics(c);
+    const headY = metrics ? groundLine(c, metrics) - metrics.height : c.renderY + 8 - bodyRadius(c);
+    // Just over the top of the art itself: a sprite's frame is often far taller than what is drawn in it.
+    const artTop = spriteArtTop(c.anim, c.staticImage, c.renderY, c.scale > 0 ? c.scale : 1) ?? headY;
+    tipY = artTop - ARROW_GAP;
+    // Clear of the cast bar (drawCastBar: headY - 6 down to headY + 4) while it casts.
+    if (c.cast) tipY = Math.min(tipY, headY - 8);
+  }
+  return { x: c.renderX, tipY, palette: arrowPalette(c), alpha: fadeOf(c) };
+}
+
 let lastRenderAt = 0;
 
 /**
@@ -550,7 +581,7 @@ const CORPSE_SKELETON_SIZE = 56;
  * place of its sprite. It stays as long as the server keeps the corpse (so it
  * can still be looted), then disappears with it.
  */
-function drawCreatureCorpse(ctx: CanvasRenderingContext2D, c: CreatureView, targeted: boolean): void {
+function drawCreatureCorpse(ctx: CanvasRenderingContext2D, c: CreatureView): void {
   const img = getCachedImage(getSkeletonSpriteUrl());
   if (!img.complete || img.naturalWidth === 0) return;
   const fit = Math.min(1, CORPSE_SKELETON_SIZE / Math.max(img.naturalWidth, img.naturalHeight));
@@ -563,17 +594,6 @@ function drawCreatureCorpse(ctx: CanvasRenderingContext2D, c: CreatureView, targ
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   ctx.globalAlpha = fade;
-  // A targeted corpse gets the same red ring as a living target, under the skeleton.
-  if (targeted) {
-    const rx = w * 0.5;
-    ctx.beginPath();
-    ctx.ellipse(x, y - 10 + h * 0.3, rx, rx * 0.4, 0, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255, 0, 0, 0.35)";
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255, 0, 0, 0.8)";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  }
   // Same placement as player skeletons (skeletons.ts).
   ctx.drawImage(img, Math.round(x - w / 2), Math.round(y - h / 2 - 10), w, h);
   if (c.lootable) drawLootSparkles(ctx, c, x, y - 10, w, fade);
@@ -647,7 +667,7 @@ export function creatureFeetY(c: CreatureView): number {
 
 export function drawCreature(ctx: CanvasRenderingContext2D, c: CreatureView, playerLevel: number, targeted: boolean): void {
   if (c.state === "dead") {
-    drawCreatureCorpse(ctx, c, targeted);
+    drawCreatureCorpse(ctx, c);
     return;
   }
   const radius = bodyRadius(c);
@@ -665,23 +685,11 @@ export function drawCreature(ctx: CanvasRenderingContext2D, c: CreatureView, pla
   const groundY = groundLine(c, metrics);
   const groundRx = metrics ? Math.max(radius, 10 * (c.scale || 1)) : radius;
 
-  // Same as players (player.ts show()): a dark shadow, which a target swaps
-  // for a slightly larger red ring - never both.
-  if (targeted) {
-    const rx = groundRx * 1.2;
-    ctx.beginPath();
-    ctx.ellipse(cx, groundY, rx, rx * 0.4, 0, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255, 0, 0, 0.35)";
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255, 0, 0, 0.8)";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  } else {
-    ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
-    ctx.beginPath();
-    ctx.ellipse(cx, groundY, groundRx, groundRx * 0.4, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  // Same as players (player.ts show()): a dark shadow. A target has an arrow over its head (targetArrowFor).
+  ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+  ctx.beginPath();
+  ctx.ellipse(cx, groundY, groundRx, groundRx * 0.4, 0, 0, Math.PI * 2);
+  ctx.fill();
 
   // Sprite if loaded, otherwise the placeholder body.
   const spriteHeight = drawCreatureSprite(ctx, c);
