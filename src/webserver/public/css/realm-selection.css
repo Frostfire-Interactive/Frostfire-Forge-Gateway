@@ -191,6 +191,11 @@
     --tone: var(--frost);
 }
 
+.realm-status.pvp {
+    --tone: var(--orange);
+    text-transform: none;
+}
+
 .realm-latency {
     color: var(--text-muted);
     font-family: var(--font-mono);

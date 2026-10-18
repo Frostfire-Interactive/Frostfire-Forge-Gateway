@@ -133,11 +133,15 @@ function renderServers(): void {
             ? `${clientPing}ms`
             : (status === 'offline' ? 'offline' : '<span class="realm-measuring">measuring...</span>');
 
-        // Build status badges (whitelist first, then status)
+        // Build status badges (whitelist, PvP, then status)
         const statusBadges = [];
 
         if (server.whitelisted) {
             statusBadges.push(`<div class="realm-status whitelist">whitelist</div>`);
+        }
+
+        if (server.pvp) {
+            statusBadges.push(`<div class="realm-status pvp">PvP</div>`);
         }
 
         statusBadges.push(`<div class="realm-status ${statusClass}">${statusText}</div>`);

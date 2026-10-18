@@ -42,6 +42,10 @@ export interface CreatureView {
   // Loaded client-side from spriteLayers.
   anim: any | null;
   staticImage: HTMLImageElement | null;
+  /** When its sprite started loading (performance.now()), until it has; 0 once loaded, failed, or with none to load. */
+  loadingSince: number;
+  /** When it was first drawn (performance.now()), for its fade in; 0 until then. */
+  shownAt: number;
   // Client-side interpolation between server positions.
   renderX: number;
   renderY: number;
@@ -79,41 +83,87 @@ export function setAutoAttackingId(id: number | null): void {
   autoAttackingId = id;
 }
 
+/** px: a creature sent again further than this from where it is drawn is put straight there, not slid across. */
+const SNAP_DISTANCE = 48;
+/** ms: a sprite still loading after this long is given up on, and the creature is drawn without it. */
+const SPRITE_WAIT_MS = 4000;
+
 export function applyCreatureSpawn(data: any): void {
   const list = Array.isArray(data?.creatures) ? data.creatures : [];
   for (const c of list) {
     if (typeof c?.id !== "number") continue;
     const existing = creatures.get(c.id);
     const view = c as CreatureView;
-    view.renderX = existing ? existing.renderX : c.x;
-    view.renderY = existing ? existing.renderY : c.y;
+    const now = performance.now();
+    // Keep an already-loaded sprite when the same creature is re-sent.
+    const sameSprite = !!existing && existing.templateId === view.templateId && existing.sprite === view.sprite;
+    // The same creature sent again slides on from where it is drawn. A new one, one that respawned, or one far from
+    // there (it walked while out of view) starts where the server says it is: it is not drawn somewhere else first.
+    const slide = !!existing && sameSprite
+      && (existing.state === "dead") === (view.state === "dead")
+      && Math.hypot(existing.renderX - c.x, existing.renderY - c.y) <= SNAP_DISTANCE;
+    view.renderX = slide ? existing!.renderX : c.x;
+    view.renderY = slide ? existing!.renderY : c.y;
     view.fromX = view.renderX;
     view.fromY = view.renderY;
-    view.lerpStart = performance.now();
-    const now = performance.now();
+    view.lerpStart = now;
+    // One that slides on is already there; one put down somewhere new fades in again.
+    view.shownAt = slide ? existing!.shownAt : 0;
     view.cast = c.casting
       ? { spell: c.casting.spell, startedAt: now - (c.casting.durationMs - c.casting.remainingMs), endsAt: now + c.casting.remainingMs }
       : null;
     view.auras = Array.isArray(c.auras) ? c.auras : [];
     view.aurasAt = now;
-    // Keep an already-loaded sprite when the same creature is re-sent.
-    const sameSprite = existing && existing.templateId === view.templateId && existing.sprite === view.sprite;
-    view.anim = sameSprite ? existing.anim : null;
-    view.staticImage = sameSprite ? existing.staticImage : null;
+    view.anim = sameSprite ? existing!.anim : null;
+    view.staticImage = sameSprite ? existing!.staticImage : null;
+    view.loadingSince = sameSprite ? existing!.loadingSince : hasSpriteToLoad(view) ? now : 0;
     creatures.set(c.id, view);
     if (!sameSprite) void loadCreatureSprite(view);
   }
 }
 
+function hasSpriteToLoad(c: CreatureView): boolean {
+  return !!c.spriteLayers && c.spriteType !== "none" && !!c.sprite && !spriteFailures.has(c.sprite);
+}
+
+/**
+ * A living creature is not drawn while its sprite loads: it would show as the
+ * placeholder body first, and then change. It shows once the sprite is there,
+ * or failed, or has taken too long.
+ */
+function waitingForSprite(c: CreatureView, now: number): boolean {
+  return c.state !== "dead" && c.loadingSince > 0 && now - c.loadingSince < SPRITE_WAIT_MS;
+}
+
 const spriteFailures = new Set<string>();
 
 async function loadCreatureSprite(c: CreatureView): Promise<void> {
+  try {
+    await loadSprite(c);
+  } finally {
+    c.loadingSince = 0;
+    const now = holderOf(c);
+    if (now) now.loadingSince = 0;
+  }
+}
+
+/**
+ * The creature as it is held now, when it still has the sprite `c` was loading:
+ * the server may have sent it again meanwhile, and the copy it sent is the one drawn.
+ */
+function holderOf(c: CreatureView): CreatureView | null {
+  const now = creatures.get(c.id);
+  return now && now.templateId === c.templateId && now.sprite === c.sprite ? now : null;
+}
+
+async function loadSprite(c: CreatureView): Promise<void> {
   const layers = c.spriteLayers;
-  if (!layers || c.spriteType === "none" || !c.sprite || spriteFailures.has(c.sprite)) return;
+  if (!hasSpriteToLoad(c)) return;
   try {
     if (c.spriteType === "static" && layers.body?.imageUrl) {
       const image = await createCachedImage(layers.body.imageUrl);
-      if (creatures.get(c.id) === c) c.staticImage = image;
+      const now = holderOf(c);
+      if (now) now.staticImage = image;
       return;
     }
     if (c.spriteType === "animated" && layers.body) {
@@ -131,11 +181,12 @@ async function loadCreatureSprite(c: CreatureView): Promise<void> {
         layers.weapon || null,
         animationNameFor(c)
       );
-      if (creatures.get(c.id) === c) c.anim = anim;
+      const now = holderOf(c);
+      if (now) now.anim = anim;
     }
   } catch (error) {
     // Fall back to the placeholder body; don't retry a broken sheet every spawn.
-    spriteFailures.add(c.sprite);
+    spriteFailures.add(c.sprite!);
     console.error(`Creature sprite ${c.sprite} failed to load:`, error);
   }
 }
@@ -185,12 +236,8 @@ export function applyCreatureState(data: any): void {
   if (!c) return;
   c.state = data.state;
   c.victimId = data.victimId ?? null;
-  if (c.state === "dead") {
-    // A corpse is not a target: drop it so its ring and frame go away. Looting
-    // is a right-click on the skeleton and does not need a target.
-    if (parseCreatureTarget(cache.targetId) === c.id) cache.targetId = null;
-    if (autoAttackingId === c.id) autoAttackingId = null;
-  }
+  // A corpse stays targeted (its frame says "Dead"); only the attack on it stops.
+  if (c.state === "dead" && autoAttackingId === c.id) autoAttackingId = null;
 }
 
 export function applyCreatureHealth(data: any): void {
@@ -320,8 +367,11 @@ export function applyCreatureCombatText(data: any): void {
 export function creatureAt(worldX: number, worldY: number, corpses = false, slop = 0): CreatureView | null {
   let best: CreatureView | null = null;
   let bestDist = Infinity;
+  const now = performance.now();
   for (const c of creatures.values()) {
     if ((c.state === "dead") !== corpses) continue;
+    // Not drawn yet, so not there to be clicked.
+    if (waitingForSprite(c, now)) continue;
     const radius = 24 * (c.scale || 1) + slop;
     const d = Math.hypot(worldX - c.renderX, worldY - c.renderY);
     if (d <= radius && d < bestDist) {
@@ -376,7 +426,11 @@ export function stepCreatures(isInView: (x: number, y: number) => boolean): Crea
       if (c.anim.currentAnimationName !== wanted) void changeLayeredAnimation(c.anim, wanted);
       updateLayeredAnimation(c.anim, deltaSeconds);
     }
-    if (isInView(c.renderX, c.renderY)) inView.push(c);
+    if (waitingForSprite(c, now)) continue;
+    if (!isInView(c.renderX, c.renderY)) continue;
+    // The fade in starts the first time it is drawn.
+    if (!c.shownAt) c.shownAt = now;
+    inView.push(c);
   }
   return inView;
 }
@@ -496,7 +550,7 @@ const CORPSE_SKELETON_SIZE = 56;
  * place of its sprite. It stays as long as the server keeps the corpse (so it
  * can still be looted), then disappears with it.
  */
-function drawCreatureCorpse(ctx: CanvasRenderingContext2D, c: CreatureView): void {
+function drawCreatureCorpse(ctx: CanvasRenderingContext2D, c: CreatureView, targeted: boolean): void {
   const img = getCachedImage(getSkeletonSpriteUrl());
   if (!img.complete || img.naturalWidth === 0) return;
   const fit = Math.min(1, CORPSE_SKELETON_SIZE / Math.max(img.naturalWidth, img.naturalHeight));
@@ -505,23 +559,77 @@ function drawCreatureCorpse(ctx: CanvasRenderingContext2D, c: CreatureView): voi
   const x = c.renderX;
   const y = c.renderY;
 
+  const fade = fadeOf(c);
   ctx.save();
   ctx.imageSmoothingEnabled = false;
+  ctx.globalAlpha = fade;
+  // A targeted corpse gets the same red ring as a living target, under the skeleton.
+  if (targeted) {
+    const rx = w * 0.5;
+    ctx.beginPath();
+    ctx.ellipse(x, y - 10 + h * 0.3, rx, rx * 0.4, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255, 0, 0, 0.35)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255, 0, 0, 0.8)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
   // Same placement as player skeletons (skeletons.ts).
   ctx.drawImage(img, Math.round(x - w / 2), Math.round(y - h / 2 - 10), w, h);
-
-  if (c.lootable) {
-    // Pulsing gold sparkle marks corpses the local player can loot.
-    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 250);
-    ctx.fillStyle = `rgba(255, 215, 90, ${0.35 + pulse * 0.45})`;
-    for (let i = 0; i < 4; i++) {
-      const a = performance.now() / 600 + (i * Math.PI) / 2;
-      ctx.beginPath();
-      ctx.arc(x + Math.cos(a) * (w / 2 + 4), y - 10 + Math.sin(a) * (h / 3), 2 + pulse * 1.5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
+  if (c.lootable) drawLootSparkles(ctx, c, x, y - 10, w, fade);
   ctx.restore();
+}
+
+/** How many sparkles rise from a lootable corpse at once, and how long each takes to rise and fade. */
+const LOOT_SPARKLES = 7;
+const LOOT_SPARKLE_MS = 1600;
+/** How far a sparkle rises before it is gone. */
+const LOOT_SPARKLE_RISE = 30;
+
+/**
+ * "You can loot this": small gold sparkles that rise from the corpse and fade.
+ * Each one's spot and timing come from the creature's id and the clock, so
+ * nothing is kept between frames.
+ */
+function drawLootSparkles(ctx: CanvasRenderingContext2D, c: CreatureView, x: number, y: number, width: number, fade: number): void {
+  const now = performance.now();
+  for (let i = 0; i < LOOT_SPARKLES; i++) {
+    // A fixed spread per sparkle; every cycle it starts again a little to one side.
+    const seed = Math.sin((c.id + 1) * 12.9898 + i * 78.233) * 43758.5453;
+    const offset = seed - Math.floor(seed);
+    const t = ((now + offset * LOOT_SPARKLE_MS + (i * LOOT_SPARKLE_MS) / LOOT_SPARKLES) % LOOT_SPARKLE_MS) / LOOT_SPARKLE_MS;
+    const cycle = Math.floor((now + offset * LOOT_SPARKLE_MS + (i * LOOT_SPARKLE_MS) / LOOT_SPARKLES) / LOOT_SPARKLE_MS);
+    const lane = Math.sin((cycle + 1) * 3.7 + i * 1.9);
+    const sx = x + lane * width * 0.35 + Math.sin(t * Math.PI * 2 + i) * 2;
+    const sy = y + 8 - t * LOOT_SPARKLE_RISE;
+    // Fades in quickly, out slowly, and twinkles on the way up.
+    const alpha = Math.min(1, t * 6) * (1 - t) * (0.7 + 0.3 * Math.sin(now * 0.02 + i * 2));
+    const size = 1.5 + (1 - t) * 2;
+    ctx.globalAlpha = Math.max(0, alpha) * fade;
+    ctx.fillStyle = "#fff6c0";
+    ctx.strokeStyle = "#ffcc33";
+    ctx.lineWidth = 1;
+    // A four-pointed star: a thin cross with a bright centre.
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - size * 2);
+    ctx.lineTo(sx, sy + size * 2);
+    ctx.moveTo(sx - size * 2, sy);
+    ctx.lineTo(sx + size * 2, sy);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(sx, sy, size * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = fade;
+}
+
+/** ms: how long a creature takes to fade in when it first shows. */
+const FADE_IN_MS = 400;
+
+/** How far a creature has faded in, 0 to 1: everything of it is drawn this much. */
+function fadeOf(c: CreatureView): number {
+  if (!c.shownAt) return 1;
+  return Math.min(1, Math.max(0, (performance.now() - c.shownAt) / FADE_IN_MS));
 }
 
 /** Radius of the placeholder body drawn while a creature has no sprite. */
@@ -539,15 +647,17 @@ export function creatureFeetY(c: CreatureView): number {
 
 export function drawCreature(ctx: CanvasRenderingContext2D, c: CreatureView, playerLevel: number, targeted: boolean): void {
   if (c.state === "dead") {
-    drawCreatureCorpse(ctx, c);
+    drawCreatureCorpse(ctx, c, targeted);
     return;
   }
   const radius = bodyRadius(c);
   // Server anchor matches players: horizontal centre, footprint below y.
   const cx = c.renderX;
   const cy = c.renderY + 8;
+  const fade = fadeOf(c);
 
   ctx.save();
+  ctx.globalAlpha = fade;
 
   // Ground markers go under the creature's feet and are drawn before the
   // sprite, so nothing is painted over the creature itself.
@@ -584,7 +694,7 @@ export function drawCreature(ctx: CanvasRenderingContext2D, c: CreatureView, pla
     ctx.fill();
     ctx.stroke();
   }
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = fade;
 
   // Bars and icons sit above the drawn sprite, so they follow scaled creatures.
   // Measured from the feet so bars clear the head of a tall or scaled sprite.

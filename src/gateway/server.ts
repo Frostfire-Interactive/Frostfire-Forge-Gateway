@@ -239,7 +239,7 @@ const serverConfig: any = {
     if (url.pathname === "/register" && req.method === "POST") {
       try {
         const body = await req.json();
-        const { id, host, publicHost, port, wtPort, wtEnabled, useSSL, maxConnections, authKey, description, whitelisted } = body;
+        const { id, host, publicHost, port, wtPort, wtEnabled, useSSL, maxConnections, authKey, description, whitelisted, pvp } = body;
 
         if (authKey !== config.authKey) {
           console.warn(`[Gateway] Registration attempt with invalid auth key from ${host}`);
@@ -271,7 +271,8 @@ const serverConfig: any = {
           lastHeartbeat: Date.now(),
           activeConnections: existingServer?.activeConnections || 0,
           maxConnections: maxConnections || 1000,
-          whitelisted: whitelisted === true
+          whitelisted: whitelisted === true,
+          pvp: pvp === true
         };
 
         gameServers.set(id, server);
@@ -535,6 +536,7 @@ const serverConfig: any = {
           maxConnections: s.maxConnections,
           latency: s.latency || 0,
           whitelisted: s.whitelisted || false,
+          pvp: s.pvp || false,
           status: !isHealthy ? 'offline' : (isFull ? 'full' : 'online')
         };
       });

@@ -207,13 +207,45 @@ function getParticleSprite(color: string, radius: number, glowIntensity: number,
   return sprite;
 }
 
+/** ms: a sprite still loading after this long is given up on, and the NPC is drawn without it. */
+const NPC_SPRITE_WAIT_MS = 4000;
+/** ms: how long an NPC takes to fade in once its sprite is there. */
+const NPC_FADE_IN_MS = 400;
+
+/**
+ * An NPC is not drawn while its sprite loads: it would show as the stand-in
+ * box at its corner first, then jump to its sprite. It shows once the sprite is
+ * there, or failed, or has taken too long, and then fades in.
+ */
+function npcWaitingForSprite(npc: any, now: number): boolean {
+  return npc.spriteLoadingSince > 0 && now - npc.spriteLoadingSince < NPC_SPRITE_WAIT_MS;
+}
+
+/** How far an NPC has faded in, 0 to 1. The fade starts the first time it is drawn. */
+function npcFade(npc: any, now: number): number {
+  if (!npc.shownAt) npc.shownAt = now;
+  return Math.min(1, Math.max(0, (now - npc.shownAt) / NPC_FADE_IN_MS));
+}
+
+/** How far an NPC has faded in, 0 to 1, without starting the fade: for the light its particles cast (lightmap.ts). */
+export function npcFadeOf(npc: any, now: number = performance.now()): number {
+  if (npcWaitingForSprite(npc, now)) return 0;
+  if (!npc?.shownAt) return 1;
+  return Math.min(1, Math.max(0, (now - npc.shownAt) / NPC_FADE_IN_MS));
+}
+
 async function reinitNpcSprite(npc: any) {
   npc.layeredAnimation = null;
   npc.staticImage = null;
+  // Only the latest load is kept: an NPC changed in the editor while its last sprite was loading gets the new one.
+  const load = (npc.spriteLoad = (npc.spriteLoad || 0) + 1);
+  const layers = npc.spriteLayers;
+  const loads = (npc.sprite_type === 'animated' && !!layers) || (npc.sprite_type === 'static' && !!layers?.body?.imageUrl);
+  npc.spriteLoadingSince = loads ? performance.now() : 0;
+  npc.shownAt = 0;
   try {
-    const layers = npc.spriteLayers;
     if (npc.sprite_type === 'animated' && layers) {
-      npc.layeredAnimation = await initializeLayeredAnimation(
+      const anim = await initializeLayeredAnimation(
         null,
         layers.body || null,
         layers.head || null,
@@ -227,11 +259,15 @@ async function reinitNpcSprite(npc: any) {
         layers.weapon || null,
         `idle_${npc.direction || 'down'}`
       );
+      if (npc.spriteLoad === load) npc.layeredAnimation = anim;
     } else if (npc.sprite_type === 'static' && layers?.body?.imageUrl) {
-      npc.staticImage = await createCachedImage(layers.body.imageUrl);
+      const image = await createCachedImage(layers.body.imageUrl);
+      if (npc.spriteLoad === load) npc.staticImage = image;
     }
   } catch (e) {
     console.error("Error loading NPC sprite:", e);
+  } finally {
+    if (npc.spriteLoad === load) npc.spriteLoadingSince = 0;
   }
 }
 
@@ -397,6 +433,8 @@ function createNPC(data: any) {
     },
     particles: data.particles || [],
     dialogue: function (this: typeof npc, context: CanvasRenderingContext2D) {
+      // Nothing of it shows before its sprite does (show below).
+      if (npcWaitingForSprite(this, performance.now())) return;
       const text = formatNpcText(this.dialog);
       if (text) {
         if (text.trim() !== "") {
@@ -418,7 +456,10 @@ function createNPC(data: any) {
     },
     show: function (this: typeof npc, context: CanvasRenderingContext2D) {
       if (!context || this.hidden || this.sound_npc) return;
-      context.globalAlpha = 1;
+      const now = performance.now();
+      if (npcWaitingForSprite(this, now)) return;
+      // Drawn this much while it fades in; everything below is, name and quest marker too.
+      context.globalAlpha = npcFade(this, now);
 
       if (this.layeredAnimation) {
         const layers = getVisibleLayersSorted(this.layeredAnimation);
@@ -446,9 +487,11 @@ function createNPC(data: any) {
           Math.round(this.position.x - img.width / 2),
           Math.round(this.position.y - img.height / 2)
         );
-      } else {
-        if (!npcImage) return;
+      } else if (npcImage) {
         context.drawImage(npcImage, this.position.x, this.position.y, npcImage.width, npcImage.height);
+      } else {
+        context.globalAlpha = 1;
+        return;
       }
 
       if ((this as any).name?.trim()) {
@@ -502,8 +545,13 @@ function createNPC(data: any) {
           context.restore();
         }
       }
+      context.globalAlpha = 1;
     },
     updateParticle: async (particle: Particle, npc: any, context: CanvasRenderingContext2D, deltaTime: number) => {
+      // Its particles wait for its sprite too, and fade in with it (show above).
+      const shownNow = performance.now();
+      if (npcWaitingForSprite(npc, shownNow)) return;
+      const fade = npcFade(npc, shownNow);
 
       if (!npc.particleArrays) {
         npc.particleArrays = {};
@@ -547,9 +595,9 @@ function createNPC(data: any) {
         const sx =npc.position.x + 16 + Number(particle.localposition?.x || 0);
         const sy = npc.position.y + 24 + Number(particle.localposition?.y || 0);
         context.globalCompositeOperation = sprite.blend;
-        context.globalAlpha = particle.opacity ?? 1;
+        context.globalAlpha = (particle.opacity ?? 1) * fade;
         context.drawImage(sprite.canvas, sx - sprite.half, sy - sprite.half, sprite.half * 2, sprite.half * 2);
-        if ((particle.glow_intensity || 0) > 0) queueGlow(context.getTransform(), sprite.canvas, sx - sprite.half, sy - sprite.half, sprite.half * 2, sprite.half * 2, particle.opacity ?? 1);
+        if ((particle.glow_intensity || 0) > 0) queueGlow(context.getTransform(), sprite.canvas, sx - sprite.half, sy - sprite.half, sprite.half * 2, sprite.half * 2, (particle.opacity ?? 1) * fade);
         context.globalCompositeOperation = 'source-over';
         context.globalAlpha = 1;
         return;
@@ -724,6 +772,7 @@ function createNPC(data: any) {
         } else {
           alpha = particleOpacity;
         }
+        alpha *= fade;
 
         context.globalAlpha = alpha;
         // the light map draws glowing particles again above the ambience overlay (lightmap.ts), at this fade

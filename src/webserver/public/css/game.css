@@ -1902,7 +1902,7 @@ body.timelapse-active .ui-hidden-in-timelapse {
   appearance: none;
 }
 
-#muted-checkbox {
+#muted-checkbox, #auto-loot-checkbox {
   width: 18px;
   height: 18px;
   cursor: pointer;
@@ -3339,6 +3339,130 @@ input[type=range]:disabled {
   #trade-window h2 {
     margin-bottom: 0;
   }
+}
+
+/* What is on a creature's corpse (js/core/creatureloot.ts): the vendor window's paper and rows. A click on a row
+   takes that one thing; the X closes it. */
+#creature-loot-popup {
+  position: fixed;
+  z-index: 1003;
+  top: 50%;
+  left: 50%;
+  width: 280px;
+  max-width: calc(100vw - 16px);
+  box-sizing: border-box;
+  transform: translate(-50%, -50%);
+  padding: 26px 22px 22px;
+  background: url("../img/ui/ui-book.png") no-repeat;
+  background-size: 100% 100%;
+  border-radius: 6px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-family: 'Comic Relief', sans-serif;
+  color: #FFF1DA;
+}
+
+#creature-loot-popup h2 {
+  margin: 0;
+  font-family: 'Comic Relief';
+  font-size: 1.4em;
+  font-weight: 600;
+  text-align: center;
+  color: #FFF1DA;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+  letter-spacing: 0.5px;
+}
+
+#creature-loot-popup .menu-close-button {
+  top: 14px;
+  right: 14px;
+  width: 24px;
+  height: 24px;
+  font-size: 0.95em;
+}
+
+#creature-loot-popup .creature-loot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 50vh;
+  padding: 6px;
+  overflow-y: auto;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+#creature-loot-popup .creature-loot-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+#creature-loot-popup .creature-loot-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 241, 218, 0.35);
+  border-radius: 2px;
+}
+
+#creature-loot-popup .creature-loot-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  width: 100%;
+  min-height: 42px;
+  margin: 0;
+  padding: 4px 8px 4px 5px;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  color: #FFF1DA;
+  font-family: 'Comic Relief', sans-serif;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+#creature-loot-popup .creature-loot-row:hover,
+#creature-loot-popup .creature-loot-row:focus-visible {
+  border-color: rgba(255, 215, 0, 0.7);
+  background: rgba(0, 0, 0, 0.45);
+  outline: none;
+}
+
+#creature-loot-popup .creature-loot-row:active {
+  background: rgba(139, 112, 48, 0.45);
+}
+
+/* The name takes the room there is, and is cut short before it pushes the count out. */
+#creature-loot-popup .creature-loot-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+#creature-loot-popup .creature-loot-count {
+  flex: none;
+  font-family: 'Alfa Slab One', sans-serif;
+  font-size: 12px;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 1);
+}
+
+#creature-loot-popup .creature-loot-coins {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding-left: 3px;
+  font-family: 'Alfa Slab One', sans-serif;
+  font-size: 13px;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 1);
 }
 
 /* Buying from and selling to an NPC (js/core/vendor.ts): the vendor's goods, or what the player

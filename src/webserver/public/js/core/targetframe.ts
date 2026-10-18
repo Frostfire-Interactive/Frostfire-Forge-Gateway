@@ -34,6 +34,8 @@ interface UnitView {
   anim: any | null;
   /** Single image for static-sprite creatures. */
   image: HTMLImageElement | null;
+  /** A corpse: the health bar is empty and says "Dead". */
+  dead?: boolean;
 }
 
 /** Same thresholds as the player health bars elsewhere in the HUD. */
@@ -132,7 +134,7 @@ class UnitFrame {
     const portraitId = `${view.id}|${view.anim?.layers?.armor_helmet?.spriteSheet?.name ?? ""}`;
     if (this.portraitFor !== portraitId && this.drawPortrait(view)) this.portraitFor = portraitId;
 
-    const key = `${view.id}|${view.name}|${view.level}|${view.levelColor}|${view.health}|${view.maxHealth}|${view.absorb}|${view.stamina}|${view.maxStamina}`;
+    const key = `${view.id}|${view.name}|${view.level}|${view.levelColor}|${view.health}|${view.maxHealth}|${view.absorb}|${view.stamina}|${view.maxStamina}|${view.dead ? 1 : 0}`;
     if (key === this.lastKey) return;
     this.lastKey = key;
 
@@ -143,14 +145,14 @@ class UnitFrame {
       el["uf-level"].style.color = view.levelColor;
     }
 
-    const pct = view.maxHealth > 0 ? clamp01(view.health / view.maxHealth) : 0;
+    const pct = !view.dead && view.maxHealth > 0 ? clamp01(view.health / view.maxHealth) : 0;
     const fill = el["uf-health-fill"];
     if (fill) {
       fill.style.setProperty("--health-scale", String(pct));
       fill.className = `uf-health-fill ui ${healthClass(pct)}`;
     }
     el["uf-absorb"]?.style.setProperty("--absorb-scale", String(view.maxHealth > 0 ? clamp01(view.absorb / view.maxHealth) : 0));
-    if (el["uf-health-text"]) el["uf-health-text"].textContent = view.maxHealth > 0 ? `${view.health} / ${view.maxHealth}` : "";
+    if (el["uf-health-text"]) el["uf-health-text"].textContent = view.dead ? "Dead" : view.maxHealth > 0 ? `${view.health} / ${view.maxHealth}` : "";
 
     // Players have mana; creatures do not, and the frame lays out differently.
     const hasMana = view.stamina !== null && view.maxStamina > 0;
@@ -173,7 +175,7 @@ function creatureView(playerLevel: number): UnitView | null {
   const id = parseCreatureTarget(cache.targetId);
   if (id === null) return null;
   const c = creatures.get(id);
-  if (!c || c.state === "dead") return null;
+  if (!c) return null;
   const skull = c.rank === "boss" || c.level - playerLevel >= 10;
   const elite = c.rank === "elite" || c.rank === "rare_elite" || c.rank === "boss";
   return {
@@ -188,6 +190,7 @@ function creatureView(playerLevel: number): UnitView | null {
     maxStamina: 0,
     anim: c.anim,
     image: c.staticImage,
+    dead: c.state === "dead",
   };
 }
 

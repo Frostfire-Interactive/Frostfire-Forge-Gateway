@@ -50,7 +50,7 @@ class LootEditorBridge {
   private tables: LootTable[] = [];
   private selectedTableId: number | null = null;
   private selectedTableData: LootTable | null = null;
-  /** The game window's own list of items, by name: what the item search looks through. */
+  /** Every item the server has, by name, passed on by the game window: what the item search looks through. */
   private itemsByName: Map<string, any> = new Map();
   /** The tables have been listed at least once. */
   private ready = false;
@@ -522,7 +522,7 @@ class LootEditorBridge {
   }
 
   /**
-   * The field that adds an item to the open table: the game window's items are
+   * The field that adds an item to the open table: the server's items are
    * searched as it is typed in and the matches listed under it. Picking one
    * adds it as one item that always drops; its numbers are then edited in its row.
    */
@@ -586,8 +586,7 @@ class LootEditorBridge {
         list.appendChild(row);
         shownCount++;
       }
-      // Only what the game window has seen can be found: it holds the items of the admin's own character.
-      if (shownCount === 0) list.appendChild(el("div", "tl-suggest-none", "No item you are carrying has that in its name. Only the items in your own inventory can be found here."));
+      if (shownCount === 0) list.appendChild(el("div", "tl-suggest-none", "No item has that in its name."));
       if (more > 0) list.appendChild(el("div", "tl-suggest-none", `${count(more, "more match", "more matches")}. Type more of the name.`));
       show(true);
     };

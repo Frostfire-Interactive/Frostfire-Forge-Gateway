@@ -36,6 +36,8 @@ const effectsSlider = document.getElementById("effects-slider") as HTMLInputElem
 const ambienceSlider = document.getElementById("ambience-slider") as HTMLInputElement;
 const weatherSlider = document.getElementById("weather-slider") as HTMLInputElement;
 const mutedCheckbox = document.getElementById("muted-checkbox") as HTMLInputElement;
+/** Settings: take a corpse's loot at once, without the loot window (creatureloot.ts). */
+const autoLootCheckbox = document.getElementById("auto-loot-checkbox") as HTMLInputElement;
 const overlay = document.getElementById("overlay") as HTMLDivElement;
 const packetsSentReceived = document.getElementById("packets-sent-received") as HTMLDivElement;
 const optionsMenu = document.getElementById("options-menu-container") as HTMLDivElement;
@@ -1832,7 +1834,7 @@ if (guildCreateButton) {
 export {
     toggleUI, toggleDebugContainer, handleStatsUI, createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, updatePartyMemberOnlineStatus, updatePartyMemberStats, updateHealthBar, updateStaminaBar, updateAbsorptionBar, updateBuffBar, startSpellCooldown, startPersistentSpellCooldown, startSpellLockout, castSpell, positionText,
     friendsListUI, inventoryUI, spellBookUI, questFrameUI, questLogUI, questTrackerUI, pauseMenu, menuElements, chatInput, canvas, ctx, fpsSlider, healthBar,
-    staminaBar, xpBar, musicSlider, effectsSlider, ambienceSlider, weatherSlider, mutedCheckbox, statUI, overlay,
+    staminaBar, xpBar, musicSlider, effectsSlider, ambienceSlider, weatherSlider, mutedCheckbox, autoLootCheckbox, statUI, overlay,
     packetsSentReceived, optionsMenu, friendsList, friendsListSearch, onlinecount, progressBar, progressBarContainer,
     inventoryGrid, chatMessages, loadingScreen, usernameLabel, levelLabel, healthLabel, manaLabel, damageLabel, armorLabel, critChanceLabel, critDamageLabel, avoidanceLabel,
     serverTime, ambience, ambienceCool, sunFlare, weatherCanvas, weatherCtx, lightCanvas, lightCtx, lightDodgeCanvas, lightDodgeCtx, ghostCanvas, ghostCtx, aboveCanvas, aboveCtx, debugLayerCanvas, debugLayerCtx, guildContainer, guildName, guildRank, guildMembersList,

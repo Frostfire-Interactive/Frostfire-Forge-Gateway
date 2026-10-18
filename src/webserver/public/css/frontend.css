@@ -19,6 +19,7 @@
     --frost-soft: rgba(56, 189, 248, 0.1);
     --ember: #f59e0b;
     --ember-soft: rgba(245, 158, 11, 0.1);
+    --orange: #fb923c;
     --danger: #f87171;
     --danger-soft: rgba(248, 113, 113, 0.1);
     --danger-solid: #dc2626;
@@ -52,6 +53,7 @@
     --frost-soft: rgba(2, 132, 199, 0.07);
     --ember: #b45309;
     --ember-soft: rgba(180, 83, 9, 0.07);
+    --orange: #c2410c;
     --danger: #dc2626;
     --danger-soft: rgba(220, 38, 38, 0.06);
     --shadow: 0 24px 60px -24px rgba(15, 23, 42, 0.28);

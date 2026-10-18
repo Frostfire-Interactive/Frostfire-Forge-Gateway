@@ -1,7 +1,9 @@
 // Targeting for server-authoritative creatures.
 // Mouse: left click targets, right click targets and starts auto-attack.
 // Touch: tap targets; tap the current target again to auto-attack; tap a
-// lootable corpse to loot it (touch has no right click).
+// corpse to target it, and to loot it when it has loot (touch has no right click).
+// Corpses can be targeted with either click; a left click (or E beside it,
+// events.ts) also loots one.
 import { sendRequest, getIsLoaded } from "./socket.js";
 import { isSelfActionLocked } from "./death.js";
 import Cache from "./cache.js";
@@ -10,6 +12,7 @@ import "./renderer.js";
 import { canvas } from "./ui.js";
 import { creatures, creatureAt, creatureTargetKey, getAutoAttackingId, parseCreatureTarget, setAutoAttackingId } from "./creature.js";
 import creatureEditor from "./creatureeditor.js";
+import { lootCorpse } from "./creatureloot.js";
 import "./skeletons.js";
 import { screenToWorld } from "./worldzoom.js";
 
@@ -106,7 +109,8 @@ document.addEventListener(
       return;
     }
     const world = worldFromEvent(event);
-    const creature = creatureAt(world.x, world.y, false, CLICK_SLOP);
+    // A living creature first, then a corpse: both can be targeted.
+    const creature = creatureAt(world.x, world.y, false, CLICK_SLOP) ?? creatureAt(world.x, world.y, true, CLICK_SLOP);
     if (!creature) {
       if (parseCreatureTarget(cache.targetId) !== null) {
         cache.targetId = null;
@@ -118,6 +122,8 @@ document.addEventListener(
     clearPlayerTargets();
     if (parseCreatureTarget(cache.targetId) !== creature.id) stopCreatureAutoAttack();
     cache.targetId = creatureTargetKey(creature.id);
+    // A left click on a corpse with loot for this player loots it too.
+    if (creature.state === "dead" && creature.lootable) lootCorpse(creature.id);
   },
   true
 );
@@ -135,11 +141,14 @@ document.addEventListener(
     }
     const creature = creatureAt(world.x, world.y, false, CLICK_SLOP);
     if (!creature) {
+      // A corpse is only targeted: it is looted with a left click or E.
       const corpse = creatureAt(world.x, world.y, true, CLICK_SLOP);
-      if (corpse?.lootable) {
+      if (corpse) {
         event.preventDefault();
         event.stopPropagation();
-        sendRequest({ type: "CREATURE_LOOT", data: { id: corpse.id } });
+        clearPlayerTargets();
+        stopCreatureAutoAttack();
+        cache.targetId = creatureTargetKey(corpse.id);
       }
       return;
     }
@@ -202,10 +211,14 @@ document.addEventListener(
       return;
     }
 
+    // A tapped corpse is targeted, and looted when there is loot on it for this player.
     const corpse = creatureAt(world.x, world.y, true, TOUCH_SLOP);
-    if (corpse?.lootable) {
+    if (corpse) {
       lastTouchTapAt = Date.now();
-      sendRequest({ type: "CREATURE_LOOT", data: { id: corpse.id } });
+      clearPlayerTargets();
+      stopCreatureAutoAttack();
+      cache.targetId = creatureTargetKey(corpse.id);
+      if (corpse.lootable) lootCorpse(corpse.id);
     }
     // Empty ground: left to the normal click, which clears the target.
   },

@@ -11,6 +11,7 @@ import { dropDistantTarget } from "./creatureinput.js";
 import { updateSourceParticle } from "./sourceparticles.js";
 import { renderCreatureEditorOverlays, renderThreatPanel } from "./creaturedebug.js";
 import { renderGatherHint, renderGatherPreviewArea, standingGatherNodes } from "./gathering.js";
+import { renderCorpseLootHint, updateCreatureLootProximity } from "./creatureloot.js";
 let weatherType = null as string | null;
 let currentWeatherData = null as any; // Store full weather object for wind speed
 const cache = Cache.getInstance();
@@ -1143,6 +1144,7 @@ function animationLoop() {
   (window as any).updateQuestFrameProximity?.(px, py);
   (window as any).updateVendorProximity?.(px, py);
   (window as any).updateMailProximity?.(px, py);
+  updateCreatureLootProximity(px, py);
   // footsteps: the sound of the tile under the player's feet, a step at a time while walking
   updateTileSounds(currentPlayer);
 
@@ -1474,7 +1476,7 @@ function animationLoop() {
       });
     }
     for (const c of stepCreatures(isInView)) {
-      if (c.state === "dead") drawCreature(scene, c, playerLevel, false);
+      if (c.state === "dead") drawCreature(scene, c, playerLevel, c.id === targetedCreature);
       else standing.push({ feet: creatureFeetY(c), draw: () => drawCreature(scene, c, playerLevel, c.id === targetedCreature) });
     }
     // Mailboxes stand among them, at their foot.
@@ -2309,9 +2311,15 @@ function animationLoop() {
       p.showDamageNumbers(ctx);
     }
 
+    // Buff/debuff icons and the stun stars stand over the top tile layers too, the same way as the chat bubbles above.
+    if (bubbleCtx !== ctx) {
+      bubbleCtx.save();
+      bubbleCtx.translate(offsetX, offsetY);
+      bubbleCtx.imageSmoothingEnabled = false;
+    }
     for (const p of visiblePlayers) {
       if (p.showDebuffs) {
-        p.showDebuffs(ctx);
+        p.showDebuffs(bubbleCtx);
       }
       // Render stunned indicator above stunned players
       if (Array.isArray(p.activeEffects)) {
@@ -2321,25 +2329,26 @@ function animationLoop() {
           const sx = p.renderPosition?.x ?? p.position.x;
           const frameH = 64;
           const sy = (p.renderPosition?.y ?? p.position.y) - frameH / 2 + 4;
-          ctx.save();
+          bubbleCtx.save();
           for (let i = 0; i < 3; i++) {
             const angle = (now * 0.002 + i * Math.PI * 2 / 3) % (Math.PI * 2);
             const radius = 10;
             const sx2 = sx + Math.cos(angle) * radius;
             const sy2 = sy + Math.sin(angle) * radius * 0.6;
             const starSize = 3 + Math.sin(now * 0.005 + i) * 1;
-            ctx.fillStyle = '#ffd700';
-            ctx.beginPath();
-            ctx.arc(sx2, sy2, starSize, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = '#ff8c00';
-            ctx.lineWidth = 1;
-            ctx.stroke();
+            bubbleCtx.fillStyle = '#ffd700';
+            bubbleCtx.beginPath();
+            bubbleCtx.arc(sx2, sy2, starSize, 0, Math.PI * 2);
+            bubbleCtx.fill();
+            bubbleCtx.strokeStyle = '#ff8c00';
+            bubbleCtx.lineWidth = 1;
+            bubbleCtx.stroke();
           }
-          ctx.restore();
+          bubbleCtx.restore();
         }
       }
     }
+    if (bubbleCtx !== ctx) bubbleCtx.restore();
 
     for (const p of visiblePlayers) {
       if (p.id !== cachedPlayerId) {
@@ -2374,12 +2383,14 @@ function animationLoop() {
   renderLootInteractionHint(ctx, cameraX, cameraY, canvas.width, canvas.height, (window as any)._lootPickupProgress || 0, cachedPlayerId);
 
   (window as any).renderChestInteractionHint?.(ctx, cameraX, cameraY, canvas.width, canvas.height, (window as any).chestInteractionProgress || 0, cachedPlayerId);
-  const talkTo = getNearestNpcId();
-  (window as any).renderMailboxHint?.(ctx, talkTo !== null && canInteractWith(talkTo));
+  // E loots a corpse beside the player before anything else, so then only the corpse has the E badge.
+  const corpseNear = renderCorpseLootHint(ctx);
+  const talkTo = corpseNear ? null : getNearestNpcId();
+  (window as any).renderMailboxHint?.(ctx, corpseNear || (talkTo !== null && canInteractWith(talkTo)));
   // and over the gathering node E would gather, when E does nothing else there
-  renderGatherHint(ctx, talkTo !== null && canInteractWith(talkTo));
+  renderGatherHint(ctx, corpseNear || (talkTo !== null && canInteractWith(talkTo)));
 
-  renderNpcInteractBadge(ctx, cameraX, cameraY, canvas.width, canvas.height, getNearestNpcId());
+  renderNpcInteractBadge(ctx, cameraX, cameraY, canvas.width, canvas.height, talkTo);
 
   // Screen-space editor panel (resets the transform itself).
   renderThreatPanel(ctx);

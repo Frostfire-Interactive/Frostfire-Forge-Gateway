@@ -73,9 +73,10 @@ function leaveGame(): void {
  * Shows a notification. `autoClose`: it closes by itself; one that does not stands until it is
  * closed, or until the next standing one takes its place (the connection's attempts follow each
  * other in one notification, not a pile of them). `reconnect`: the game is left once it has been
- * shown for its time, whether or not it was closed.
+ * shown for its time, whether or not it was closed. `fill`: draws the text itself (a coloured item
+ * name, say); `message` is still what it is known and read out by.
  */
-export function showNotification(message: string, autoClose: boolean = true, reconnect: boolean = false): void {
+export function showNotification(message: string, autoClose: boolean = true, reconnect: boolean = false, fill?: (body: HTMLDivElement) => void): void {
   const text = String(message ?? "");
   const lasts = BASE_MS + text.length * PER_CHARACTER_MS;
   if (reconnect) window.setTimeout(leaveGame, lasts);
@@ -99,6 +100,7 @@ export function showNotification(message: string, autoClose: boolean = true, rec
   const body = document.createElement("div");
   body.className = "game-notification-text ui";
   body.innerText = text;
+  fill?.(body);
   const close = document.createElement("button");
   close.type = "button";
   close.className = "game-notification-close ui";

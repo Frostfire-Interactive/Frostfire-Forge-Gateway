@@ -112,6 +112,7 @@ import {
   ambienceSlider,
   weatherSlider,
   mutedCheckbox,
+  autoLootCheckbox,
   statUI,
   packetsSentReceived,
   onlinecount,
@@ -2767,10 +2768,17 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     }
     case "CREATURE_LOOTABLE": {
       applyCreatureLootable(data);
+      if (data?.lootable === false && typeof data?.id === "number") {
+        import("./creatureloot.js").then(({ closeCreatureLoot }) => closeCreatureLoot(data.id));
+      }
       break;
     }
     case "CREATURE_XP": {
       applyCreatureXp(data, cachedPlayerId);
+      break;
+    }
+    case "LOOT_RECEIVED": {
+      import("./creatureloot.js").then(({ showLootReceived }) => showLootReceived(data));
       break;
     }
     case "CREATURE_LOOT_CONTENTS": {
@@ -2788,6 +2796,8 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       if (targetedCreature !== null && removed.includes(targetedCreature)) {
         cache.targetId = null;
       }
+      // A corpse that is gone takes its loot window with it.
+      if (removed.length) import("./creatureloot.js").then(({ closeCreatureLoot }) => removed.forEach(closeCreatureLoot));
       break;
     }
     case "MOVEXY": {
@@ -4116,7 +4126,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     case "LOOT_TABLE_LIST": {
       const d = data;
       if (!d?.tables) break;
-      import('./looteditor.js').then((module) => { module.default.handleTableList(d.tables); });
+      import('./looteditor.js').then((module) => { module.default.handleTableList(d.tables, d.items); });
       break;
     }
     case "LOOT_EDITOR_RESULT": {
@@ -4295,6 +4305,8 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       document.getElementById(
         "muted-checkbox"
       )!.innerText = `Muted: ${mutedCheckbox.checked}`;
+      // (a server from before the Auto loot setting sends none: off)
+      if (autoLootCheckbox) autoLootCheckbox.checked = config.auto_loot === true;
 
       if (config.hotbar_config) {
         loadHotbarConfiguration(config.hotbar_config);

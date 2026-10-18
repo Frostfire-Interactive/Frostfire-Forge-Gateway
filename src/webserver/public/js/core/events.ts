@@ -6,7 +6,7 @@ import Cache from "./cache.js";
 // breaks with any other order: "Cannot read properties of undefined (reading 'addEventListener')")
 import "./renderer.js";
 const cache = Cache.getInstance();
-import { chatInput, pauseMenu, optionsMenu, fpsSlider, musicSlider, effectsSlider, ambienceSlider, weatherSlider, mutedCheckbox, canvas, ctx, friendsList } from "./ui.js";
+import { chatInput, pauseMenu, optionsMenu, fpsSlider, musicSlider, effectsSlider, ambienceSlider, weatherSlider, mutedCheckbox, autoLootCheckbox, canvas, ctx, friendsList } from "./ui.js";
 import { showItemTooltip, hideItemTooltip } from "./tooltip.js";
 import { getUserHasInteracted, setUserHasInteracted, setControllerConnected, getLastSentDirection, setLastSentDirection,
     getLastTypingPacket, setLastTypingPacket, getContextMenuKeyTriggered, setContextMenuKeyTriggered, blacklistedKeys, movementKeys,
@@ -26,6 +26,7 @@ import { isTrading, offerItem } from "./trade.js";
 import { isVendorOpen, sellItem } from "./vendor.js";
 import { isMailOpen, attachItem, openNearestMailbox, mailboxAt } from "./mail.js";
 import { gather, gatherNearest, gatherNodeAt } from "./gathering.js";
+import { lootNearestCorpse } from "./creatureloot.js";
 import { playerAt } from "./playerpick.js";
 import { closeRadialMenu } from "./mobileui.js";
 import "./creatureinput.js";
@@ -386,8 +387,10 @@ window.addEventListener("keyup", (e) => {  const activeElement = document.active
       (window as any)._lootPickupProgress = 0;
       return;
     }
-    // No loot pickup armed: E talks to the nearest NPC instead, or opens the mailbox the player stands at.
+    // No loot pickup armed: E loots the corpse beside the player, or talks to the nearest NPC instead, or opens the
+    // mailbox the player stands at.
     if (isSelfActionLocked()) return;
+    if (lootNearestCorpse()) return;
     import("./quest.js").then((m) => {
       // then the mailbox the player stands at, then the nearest gathering node in reach
       if (!m.tryInteractNpc() && !openNearestMailbox()) gatherNearest();
@@ -660,7 +663,7 @@ weatherSlider.addEventListener("input", () => {
   )!.innerText = `Weather: (${weatherSlider.value})`;
 });
 
-[fpsSlider, musicSlider, effectsSlider, ambienceSlider, weatherSlider, mutedCheckbox].forEach(element => {
+[fpsSlider, musicSlider, effectsSlider, ambienceSlider, weatherSlider, mutedCheckbox, autoLootCheckbox].forEach(element => {
   element.addEventListener("change", () => {
     sendRequest({
       type: "CLIENTCONFIG",
@@ -671,6 +674,7 @@ weatherSlider.addEventListener("input", () => {
             ambience_volume: parseInt(ambienceSlider.value) || 0,
             weather_volume: parseInt(weatherSlider.value) || 0,
             muted: mutedCheckbox.checked,
+            auto_loot: autoLootCheckbox.checked,
           } as ConfigData,
     });
   });

@@ -354,6 +354,7 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `CREATURE_LOOT` | To server | Creatures | Open a creature's corpse |
 | `CREATURE_LOOT_CONTENTS` | To client | Creatures | What the corpse holds |
 | `CREATURE_LOOT_TAKE` | To server | Creatures | Take loot from a corpse |
+| `LOOT_RECEIVED` | To client | Creatures | An item taken from a corpse, with its quality, for the notification |
 | `CREATURE_XP` | To client | Creatures | XP gained from a kill |
 | `CREATURE_CAST` | To client | Creatures | A creature started casting |
 | `CREATURE_CAST_END` | To client | Creatures | A creature's cast ended |

@@ -1,7 +1,7 @@
 import { lightCanvas, lightCtx, lightDodgeCanvas, lightDodgeCtx } from "./ui.js";
 import { getNightFactor, getAmbientLevel } from "./ambience.js";
 import Cache from "./cache.js";
-import { particleBrightness } from "./npc.js";
+import { particleBrightness, npcFadeOf } from "./npc.js";
 import { takeGlows } from "./glowqueue.js";
 import { spillPixels, exactGain } from "./spilllight.js";
 
@@ -356,7 +356,8 @@ export function renderLightMap(game: HTMLCanvasElement, base: DOMMatrix, offsetX
     // plus its size; Intensity only makes it brighter.
     const reach = Number(best.glow_radius) > 0 ? Number(best.glow_radius) : Math.max(6, size);
     const radius = size + reach * 2;
-    const intensity = Math.min(1, Math.min(0.7, 0.04 * glow) * particleBrightness(best)) * night;
+    // (an NPC's light fades in with it, npc.ts)
+    const intensity = Math.min(1, Math.min(0.7, 0.04 * glow) * particleBrightness(best)) * night * npcFadeOf(src, now);
     if (intensity <= 0.001) continue;
 
     if (sx + radius < viewL || sx - radius > viewR ||

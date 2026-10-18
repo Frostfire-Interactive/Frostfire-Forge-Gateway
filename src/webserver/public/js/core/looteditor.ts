@@ -55,8 +55,11 @@ class LootEditor {
     if (!this.bridgeReady) { this.bridgeReady = true; while (this.messageQueue.length) this.editorWindow!.postMessage(this.messageQueue.shift()!, "*"); }
   }
 
+  /** Every item the server has, by name, sent with the table list: what the editor's item search looks through. */
+  private catalogue: Map<string, any> = new Map();
+
   private getItemCache(): Map<string, any> {
-    return (window as any).itemsByName || new Map();
+    return this.catalogue.size ? this.catalogue : (window as any).itemsByName || new Map();
   }
 
   private syncToBridge() {
@@ -81,8 +84,9 @@ class LootEditor {
 
   private loadTables() { this.sendToServer("LIST_LOOT_TABLES", null); }
 
-  public handleTableList(tables: any[]) {
+  public handleTableList(tables: any[], items?: any[]) {
     this.tables = tables || [];
+    if (Array.isArray(items)) this.catalogue = new Map(items.filter((i) => i?.name).map((i) => [i.name, i]));
     if (this.isActive && this.editorWindow) {
       this.sendToEditor({ type: "tableListUpdate", tables: this.tables, itemCache: this.getItemCache() });
     }

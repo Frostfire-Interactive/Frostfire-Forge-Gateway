@@ -17,6 +17,7 @@ interface GameServer {
   ramUsage?: number;
   latency?: number;
   whitelisted?: boolean;
+  pvp?: boolean;
 }
 
 interface ClientSession {
