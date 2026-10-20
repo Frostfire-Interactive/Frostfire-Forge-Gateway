@@ -227,6 +227,8 @@ export default async function loadMap(metadata: any): Promise<boolean> {
       sections: Array.isArray(metadata?.sections) ? metadata.sections : null,
       // the map's desert zones, when it has them (outlines in tiles): a sandstorm is only drawn inside them (sandstorm.ts)
       deserts: Array.isArray(metadata?.deserts) ? metadata.deserts : null,
+      // and its snow zones: a blizzard is only drawn inside them (blizzard.ts)
+      snowfields: Array.isArray(metadata?.snowfields) ? metadata.snowfields : null,
       // the inside of a building (a house's room): no world map there, and the minimap stays zoomed all the way in
       interior: metadata?.interior === true,
       objectLayers: objectLayers,

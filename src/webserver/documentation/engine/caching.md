@@ -307,7 +307,7 @@ for (const username of new Set(accounts)) {
 |------|-------|
 | Per player rows | `accounts`, `stats`, `inventory`, `equipment`, `bags`, `currency`, `collectables`, `friends`, `permissions`, `learned_spells`, `quest_log`, `quest_progress` |
 | Other rows | `account_ids`, `spell_usage` |
-| Tables | `parties`, `guilds`, `loot_tables`, `permission_types`, `account_names`, `stored_spells` |
+| Tables | `parties`, `guilds`, `guild_ranks`, `guild_members`, `loot_tables`, `permission_types`, `account_names`, `stored_spells` |
 
 :::note Worker threads do not cache
 The login workers import the same systems on their own threads, where a write on the main thread could never reach them. `datacache` checks `Bun.isMainThread`: off the main thread every read goes straight to the database.

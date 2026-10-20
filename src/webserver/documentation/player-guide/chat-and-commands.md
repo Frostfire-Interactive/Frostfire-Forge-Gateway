@@ -36,6 +36,7 @@ Channels, whispers and commands work exactly as described below.
 | Say | Players on the same map as you | Just type and press Enter |
 | Party | Everyone in your party, wherever they are | `/p` or `/party` |
 | Guild | Every online member of your guild | `/g` or `/guild` |
+| Officer | Online guild members whose rank may hear officer chat | `/o` or `/officer` |
 | Whisper | One player | `/w` or `/whisper` followed by their name |
 
 Say messages also appear in a speech bubble over your character. Each channel has its own colour in the chat box so you can tell them apart.
@@ -75,7 +76,13 @@ Commands start with a slash. These are the commands every player can use:
 | `/guild <message>` | `/g` | Sends a message to your guild | `/g Good evening all` |
 | `/whisper <player> <message>` | `/w` | Sends a private message to an online player | `/w Aria thank you!` |
 | `/invite <player>` | none | Invites an online player to your party | `/invite Aria` |
-| `/ginvite <player>` | none | Invites an online player to your guild. Guild Master only. | `/ginvite Aria` |
+| `/ginvite <player>` | none | Invites an online player to your guild. Needs a rank that may invite. | `/ginvite Aria` |
+| `/officer <message>` | `/o` | Sends a message to officer chat | `/o Raid plan is up` |
+| `/gpromote <player>` | none | Moves a lower-ranked member up one rank | `/gpromote Aria` |
+| `/gdemote <player>` | none | Moves a lower-ranked member down one rank | `/gdemote Aria` |
+| `/gremove <player>` | none | Removes a lower-ranked member from the guild | `/gremove Aria` |
+| `/gmotd <text>` | none | Sets the guild message of the day | `/gmotd Raid at eight` |
+| `/gleader <player>` | none | Makes another member Guild Master. Guild Master only. | `/gleader Aria` |
 | `/ignore <player>` | none | Stops you seeing anything a player says or sends you | `/ignore Grumble` |
 | `/unignore <player>` | none | Lets you hear a player again | `/unignore Grumble` |
 | `/ignorelist` | none | Shows who you are ignoring | `/ignorelist` |

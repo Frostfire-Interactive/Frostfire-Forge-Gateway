@@ -5,6 +5,7 @@ import {
 } from "./windphysics.ts";
 import { windStreaks } from "./windstreaks.ts";
 import { drawSandstorm } from "./sandstorm.ts";
+import { drawBlizzard } from "./blizzard.ts";
 import { setWeatherSound, playEffect, loadEffect, soundLength } from "./audio.js";
 
 const isMobileDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
@@ -599,7 +600,15 @@ function weather(type: string, weatherData?: any): void {
     cameraX: cameraOffsetX, cameraY: cameraOffsetY, width, height, focusX, focusY,
   });
 
-  windStreaks(weatherCtx, deltaMs, windSpeed * (1 - sandstorm), windDirection, cameraOffsetX, cameraOffsetY, width, height, buffer);
+  // The blizzard, the same way in the snow zones (blizzard.ts): a tornado's storm and any wind of the real weather blow
+  // one (the server marks those); it falls as much as the weather's precipitation says, and blows with none.
+  const blizzard = drawBlizzard(weatherCtx, {
+    wanted: type === "blizzard" || weatherData?.blizzard === true, deltaMs, baseWind: Number(baseWindSpeed) || 0, gust: windBurst.getIntensity(), windDirection,
+    fall: Math.min(1, Math.max(0, Number(weatherData?.precipitation) || 0) / 100),
+    cameraX: cameraOffsetX, cameraY: cameraOffsetY, width, height, focusX, focusY,
+  });
+
+  windStreaks(weatherCtx, deltaMs, windSpeed * (1 - Math.max(sandstorm, blizzard)), windDirection, cameraOffsetX, cameraOffsetY, width, height, buffer);
 }
 
 /**

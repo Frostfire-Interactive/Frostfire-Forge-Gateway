@@ -6,6 +6,7 @@ import { invalidateChunk as invalidateChunkMobile } from "./glmap-mobile/index.j
 import { MOBILE_RENDERER } from "./renderpath.js";
 import { panEditorCamera } from "./renderer.js";
 import { TilePreviewCache } from "./tilepreviewcache.js";
+import { getTileSounds, loadTileSounds, onTileSounds, tilesetKey } from "./tilesounds.js";
 
 declare global {
   interface Window {
@@ -127,6 +128,10 @@ class TileEditor {
   constructor() {
     this.setupEventListeners();
     this.setupMessageListener();
+    // The Sounds tab shows the footstep sounds set on tiles as they are now, after anyone's save
+    onTileSounds((tileSounds) => {
+      if (this.bridgeReady && this.editorWindow) this.editorWindow.postMessage({ type: 'tileSoundsUpdate', tileSounds }, '*');
+    });
   }
 
   private setupEventListeners() {
@@ -350,6 +355,11 @@ class TileEditor {
     if (el) el.remove();
   }
 
+  /** The server refused a New map: the editor window says why and lets it be tried again. */
+  public createMapFailed(message: string) {
+    if (this.bridgeReady && this.editorWindow) this.editorWindow.postMessage({ type: 'createMapFailed', message }, '*');
+  }
+
   private sendToEditor(msg: any) {
     if (this.bridgeReady && this.editorWindow) {
       this.editorWindow.postMessage(msg, '*');
@@ -418,6 +428,14 @@ class TileEditor {
         case 'tilesetSelect':
           this.currentTilesetIndex = msg.index;
           break;
+        case 'createMap':
+          // New map: made blank on the server, which then moves this player onto it (CREATE_MAP_FAILED otherwise)
+          sendRequest({ type: 'CREATE_MAP', data: msg.map });
+          break;
+        case 'tileSoundsSave':
+          // The Sounds tab: tiles given a sound, saved for every map at once (the server answers with TILE_SOUNDS)
+          sendRequest({ type: 'SAVE_TILE_SOUNDS', data: { changes: msg.changes } });
+          break;
         case 'command':
           switch (msg.name) {
             case 'undo': this.undo(); break;
@@ -453,6 +471,7 @@ class TileEditor {
 
   private syncEditorState() {
     if (!window.mapData || !this.editorWindow) return;
+    loadTileSounds();
 
     this.sendToEditor({
       type: 'init',
@@ -464,8 +483,10 @@ class TileEditor {
         tileheight: t.tileheight,
         imagewidth: t.imagewidth,
         imageheight: t.imageheight,
-        tiles: t.tiles
+        tiles: t.tiles,
+        key: tilesetKey(t)
       })),
+      tileSounds: getTileSounds(),
       tool: this.currentTool,
       selectedLayer: this.selectedLayer,
       selectedObject: this.selectedObject,

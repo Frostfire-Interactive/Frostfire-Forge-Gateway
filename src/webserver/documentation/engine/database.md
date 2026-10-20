@@ -388,7 +388,9 @@ Created by `src/utility/database_setup.ts`. Column lists are shortened to the on
 | `player_home` | Each player's home. `npc_id` is the innkeeper it was set at (empty: none, the world's spawn is used), `offset_x` and `offset_y` are where the player stood from that NPC, and `used_at` is when they last went home, in milliseconds (0: never). The hour between uses is counted from it. | `username`, `npc_id`, `offset_x`, `offset_y`, `used_at` |
 | `trade_log` | Every trade two players completed. `a_gave` and `b_gave` are JSON: the items and coins each handed over. | `id`, `player_a`, `player_b`, `a_gave`, `b_gave`, `created_at` |
 | `parties` | Parties: the leader and the member list | `id`, `leader`, `members` |
-| `guilds` | Guilds, their members, bank and rank permissions | `id`, `name`, `leader`, `members`, `bank`, `rank_permissions` |
+| `guilds` | Guilds: the leader and the message of the day. `members` is the comma list from before guild ranks, read only by the setup step that moves old guilds to `guild_members`. | `id`, `name`, `leader`, `motd`, `members`, `bank`, `rank_permissions` |
+| `guild_ranks` | Each guild's ranks, 2 to 8. Rank 0 is the Guild Master; `permissions` is a bit set. | `guild_id`, `rank_index`, `name`, `permissions` |
+| `guild_members` | Who is in which guild, one row per player, with their rank and notes | `username`, `guild_id`, `rank_index`, `public_note`, `officer_note`, `joined_at` |
 
 ### Creatures
 

@@ -17,7 +17,7 @@ For the player-facing version of this page see [Chat and Commands](#/player-guid
 | `/guild <message>` | `/g` | Server | Sends a message to your guild |
 | `/whisper <username> <message>` | `/w` | Server | Sends a private message to one online player |
 | `/invite <username>` | none | Server | Invites an online player to your party |
-| `/ginvite <username>` | none | Server | Invites an online player to your guild. Guild leader only |
+| `/ginvite <username>` | none | Server | Invites an online player to your guild. Needs a rank with the Invite permission |
 | `/ignore <username>` | none | Server | Stops you receiving anything from a player |
 | `/unignore <username>` | none | Server | Takes a player off your ignore list |
 | `/ignorelist` | none | Server | Lists who you ignore |
@@ -135,12 +135,12 @@ The `onPartyInvite` event is emitted by the `INVITE_PARTY` packet, which the par
 /ginvite <username>
 ```
 
-Invites an online player to your guild. Only the guild leader may use it.
+Invites an online player to your guild. Only a member whose rank has the Invite permission may use it.
 
 | Problem | Answer |
 |---------|--------|
 | You are not in a guild | `You are not in a guild` |
-| You are not the leader | `You are not the guild leader` |
+| Your rank may not invite | `You do not have permission to do that.` |
 | No username given | `Usage: /ginvite <username>` |
 | You named yourself | `You cannot invite yourself to your guild.` |
 | Target is offline | `Player <username> is not online.` |

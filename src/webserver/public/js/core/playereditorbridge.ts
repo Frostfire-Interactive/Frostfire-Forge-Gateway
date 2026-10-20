@@ -970,7 +970,7 @@ class PlayerEditorBridge {
     const pair = el("div", "pl-pair");
     main.appendChild(pair);
 
-    const guild = this.section(pair, "guild", "Guild", s.guild ? `${s.guild.name} · led by ${shown(s.guild.leader)}` : "");
+    const guild = this.section(pair, "guild", "Guild", s.guild ? `${s.guild.name}${s.guild.rank ? ` · ${s.guild.rank}` : ""} · led by ${shown(s.guild.leader)}` : "");
     if (s.guild) {
       const g = s.guild;
       const total = count(g.members.length, "member");

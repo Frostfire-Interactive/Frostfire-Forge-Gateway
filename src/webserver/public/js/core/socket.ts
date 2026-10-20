@@ -152,6 +152,7 @@ import parseAPNG from "../libs/apng_parser.js";
 import { getCookie } from "./cookies.ts";
 import { createCachedImage } from "./images.ts";
 import { encodeFrame, FrameDecoder, decodeCloseReason } from "./wtframing.ts";
+import { setTileSounds } from "./tilesounds.ts";
 
 let socket: WebTransport;
 let streamWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
@@ -361,6 +362,11 @@ function systemChatLine(box: HTMLElement, data: any, channel: "party" | "guild")
   stamp.textContent = `${new Date().toLocaleTimeString()} `;
   const said = document.createElement("span");
   said.className = `${channel}-message`;
+  // The guild's message of the day at login: its own, stronger look so it reads on the chat background. Known by the
+  // engine's motd flag, or by its wording from an engine that does not send the flag yet (system lines come only from
+  // the server, so no player can make one).
+  const isMotd = !!data?.motd || (channel === "guild" && String(data?.message ?? "").startsWith("Guild Message of the Day: "));
+  if (isMotd) said.classList.add("guild-motd");
   const id = Number(data?.achievementId);
   if (data?.achievement && Number.isFinite(id)) {
     said.append(`${String(data.who ?? "")} has completed `);
@@ -1346,6 +1352,16 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       (window as any).tileEditor?.onSyncReady();
       break;
     }
+    case "CREATE_MAP_FAILED": {
+      // The map editor's New map was refused: its window shows why (the notice in the game says it too)
+      (window as any).tileEditor?.createMapFailed(String(data?.message ?? ""));
+      break;
+    }
+    case "TILE_SOUNDS": {
+      // The footstep sounds set in the map editor's Sounds tab, all of them, after someone saved (tilesounds.ts)
+      setTileSounds(data?.tilesets);
+      break;
+    }
     case "CAST_SPELL": {
       if (!data || !data.spell || (!data.time && data.time !== 0) || !data.id) return;
       castSpell(data.id, data.spell, data.time);
@@ -1960,6 +1976,10 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       if (currentPlayer) {
         currentPlayer.guild = data.members || [];
         currentPlayer.guild_name = data.guild_name || null;
+        currentPlayer.guild_ranks = data.ranks || [];
+        currentPlayer.guild_roster = data.roster || [];
+        currentPlayer.guild_motd = data.motd || "";
+        currentPlayer.guild_rank = typeof data.my_rank === "number" ? data.my_rank : null;
         createGuildUI(currentPlayer.guild, currentPlayer.guild_name);
       }
       break;
@@ -4849,25 +4869,18 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         break;
       }
 
-      cache.players.forEach((player) => {
-        if (player.id === data.id) {
-          player.chat = data.message;
-          player.chatType = "guild";
-
-          setTimeout(() => {
-            const currentPlayer = Array.from(cache.players).find(p => p.id === data.id);
-            if (currentPlayer?.chat === data.message && currentPlayer?.chatType === "guild") {
-              currentPlayer.chat = "";
-              currentPlayer.chatType = "global";
-            }
-          }, 7000 + data.message.length * 35);
-        }
-      });
-
+      // Guild chat is only for the chat window: no bubble over the speaker in the world.
       if (data.message?.trim() !== "" && data.username) {
         const username =
           data?.username?.charAt(0)?.toUpperCase() + data?.username?.slice(1);
         playerChatLine(chatMessages, "guild-username", username, "guild-message", data, false);
+      }
+      break;
+    }
+    case "OFFICER_CHAT": {
+      if (data.message?.trim() !== "" && data.username) {
+        const username = data.username.charAt(0).toUpperCase() + data.username.slice(1);
+        playerChatLine(chatMessages, "officer-username", username, "officer-message", data, false);
       }
       break;
     }

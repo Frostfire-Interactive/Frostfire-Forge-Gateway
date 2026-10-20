@@ -43,6 +43,18 @@ const guildContextActions: Record<string, { only_self: boolean, allowed_self: bo
       });
     }
   },
+  'promote-guild-member': {
+    label: 'Promote',
+    allowed_self: false,
+    only_self: false,
+    handler: (username) => sendRequest({ type: "GUILD_PROMOTE", data: { username } }),
+  },
+  'demote-guild-member': {
+    label: 'Demote',
+    allowed_self: false,
+    only_self: false,
+    handler: (username) => sendRequest({ type: "GUILD_DEMOTE", data: { username } }),
+  },
   'leave-guild': {
     label: 'Leave Guild',
     allowed_self: true,

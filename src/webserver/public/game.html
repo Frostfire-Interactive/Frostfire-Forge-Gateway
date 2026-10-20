@@ -357,8 +357,47 @@
           <div id="guild-member-count" class="ui"></div>
           <div id="guild-name" class="ui"></div>
           <div id="guild-rank" class="ui"></div>
+          <div id="guild-motd-row" class="ui">
+            <div id="guild-motd" class="ui"></div>
+            <button type="button" id="guild-motd-edit" class="guild-button ui">Edit</button>
+          </div>
+          <button type="button" id="guild-ranks-button" class="guild-button ui">Ranks</button>
           <div id="guild-header-separator" class="ui"></div>
           <div id="guild-members-list" class="ui"></div>
+          <div id="guild-member-panel" class="ui" style="display:none">
+            <div class="guild-panel-header ui"><span id="guild-member-panel-name" class="guild-panel-title ui"></span><button type="button" id="guild-member-panel-close" class="guild-panel-close ui">X</button></div>
+            <div id="guild-member-panel-rank" class="ui"></div>
+            <label class="guild-label ui">Public note</label>
+            <input type="text" id="guild-member-public-note" class="guild-input ui" maxlength="31" autocomplete="off" spellcheck="false">
+            <label id="guild-member-officer-label" class="guild-label ui">Officer note</label>
+            <input type="text" id="guild-member-officer-note" class="guild-input ui" maxlength="31" autocomplete="off" spellcheck="false">
+            <div class="guild-panel-buttons ui">
+              <button type="button" id="guild-member-save-notes" class="guild-button ui">Save</button>
+              <button type="button" id="guild-member-promote" class="guild-button ui">Promote</button>
+              <button type="button" id="guild-member-demote" class="guild-button ui">Demote</button>
+              <button type="button" id="guild-member-kick" class="guild-button ui">Kick</button>
+              <button type="button" id="guild-member-leader" class="guild-button ui">Make Leader</button>
+            </div>
+          </div>
+          <div id="guild-ranks-panel" class="ui" style="display:none">
+            <div class="guild-panel-header ui"><span class="guild-panel-title ui">Ranks</span><button type="button" id="guild-ranks-close" class="guild-panel-close ui">X</button></div>
+            <div class="guild-ranks-body ui">
+              <div class="guild-ranks-side ui">
+                <div id="guild-ranks-list" class="ui"></div>
+                <div class="guild-panel-buttons ui">
+                  <button type="button" id="guild-rank-add" class="guild-button ui">Add</button>
+                  <button type="button" id="guild-rank-delete" class="guild-button ui">Delete</button>
+                </div>
+              </div>
+              <div class="guild-ranks-editor ui">
+                <input type="text" id="guild-rank-name" class="guild-input ui" maxlength="20" autocomplete="off" spellcheck="false">
+                <div id="guild-rank-permissions" class="ui"></div>
+                <div class="guild-panel-buttons ui">
+                  <button type="button" id="guild-rank-save" class="guild-button ui">Save</button>
+                </div>
+              </div>
+            </div>
+          </div>
           <div id="guild-create-section" class="ui">
             <label id="guild-create-label" class="guild-label ui">Create Guild</label>
             <input type="text" id="guild-create-input" class="guild-input ui" placeholder="Guild Name" autocomplete="off" spellcheck="false">

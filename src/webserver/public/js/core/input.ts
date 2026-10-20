@@ -428,11 +428,24 @@ addEventListener("keypress", (event: KeyboardEvent) => {
           event.preventDefault();
           chatInput.value = "";
           chatInput.dataset.mode = "guild";
-          chatInput.style.color = "#a855f7";
+          chatInput.style.color = "#66ff66";
 
           chatInput.placeholder = "[Guild] Type here...";
 
-          chatInput.style.setProperty('--chat-placeholder-color', '#a855f7');
+          chatInput.style.setProperty('--chat-placeholder-color', '#66ff66');
+        }
+        break;
+      case inputValue === "/officer" || inputValue === "/o":
+
+        if (event.key === " ") {
+          event.preventDefault();
+          chatInput.value = "";
+          chatInput.dataset.mode = "officer";
+          chatInput.style.color = "#c6ff4a";
+
+          chatInput.placeholder = "[Officer] Type here...";
+
+          chatInput.style.setProperty('--chat-placeholder-color', '#c6ff4a');
         }
         break;
       case inputValue === "/say" || inputValue === "/s":

@@ -589,9 +589,10 @@ export interface DialogParts {
 
 /**
  * A wide dialog with a title and a close button, to fill in: a picker, a
- * longer form. Escape, the close button and a click outside all close it.
+ * longer form. Escape, the close button and a click outside all close it
+ * (with keepOnOutsideClick, only Escape and the buttons).
  */
-export function openDialog(title: string, opts: { onClose?: () => void } = {}): DialogParts {
+export function openDialog(title: string, opts: { onClose?: () => void; keepOnOutsideClick?: boolean } = {}): DialogParts {
   const dialog = el("dialog", "tl-dialog tl-dialog-wide");
   const heading = el("h2", "tl-dialog-title", title);
   heading.id = "tl-dialog-wide-title";
@@ -617,7 +618,8 @@ export function openDialog(title: string, opts: { onClose?: () => void } = {}): 
     opts.onClose?.();
   };
   shut.addEventListener("click", close);
-  dialog.addEventListener("click", (e) => {
+  // keepOnOutsideClick: a form that would lose what was typed stays open; only its buttons and Escape close it
+  if (!opts.keepOnOutsideClick) dialog.addEventListener("click", (e) => {
     if (e.target === dialog) close();
   });
   dialog.addEventListener("close", close);

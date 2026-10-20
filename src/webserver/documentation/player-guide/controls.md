@@ -80,7 +80,7 @@ The keys are fixed. There is no key binding screen at the moment.
 | Right-click a defeated creature that has loot for you | Open its loot window |
 | Right-click a player | Open the player menu |
 | Right-click a party member's frame | Kick (leader), or leave the party on your own frame |
-| Right-click a name in the guild window | Kick (Guild Master), or leave the guild on your own name |
+| Right-click a name in the guild window | Kick (Guild Master only; other ranks that may kick use the member's panel), or leave the guild on your own name |
 | Right-click a name in the friends list | Remove that friend |
 | Right-click one of your buffs | Cancel that buff |
 | Left-click a hotbar slot | Cast that spell |

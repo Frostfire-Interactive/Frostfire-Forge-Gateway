@@ -11,6 +11,40 @@
   user-select: none;
 }
 
+/*
+ * The game windows' scrollbar: a thin bar in the gold of the window frames. Every game window that
+ * scrolls and has no bar of its own gets it here; the windows' own rules below draw the same bar. :where() gives
+ * this no weight, so any rule for a particular list still wins. Tool panels (the entity editor, ee-*, and the debug
+ * menu) keep their own look.
+ */
+:where(.ui:not([class*="ee-"]):not(#debug-container):not(#debug-container *))::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+:where(.ui:not([class*="ee-"]):not(#debug-container):not(#debug-container *))::-webkit-scrollbar-track {
+  background: rgba(101, 59, 29, 0.35);
+  border-radius: 4px;
+}
+
+:where(.ui:not([class*="ee-"]):not(#debug-container):not(#debug-container *))::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #ffab25 0%, #e08900 100%);
+  border-radius: 4px;
+  border: 1px solid #b87100;
+}
+
+:where(.ui:not([class*="ee-"]):not(#debug-container):not(#debug-container *))::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #ffc25e 0%, #ffab25 100%);
+}
+
+/* Browsers without the bar styles above (Firefox) get the same colours. */
+@supports not selector(::-webkit-scrollbar) {
+  :where(.ui:not([class*="ee-"]):not(#debug-container):not(#debug-container *)) {
+    scrollbar-width: thin;
+    scrollbar-color: #e08900 rgba(101, 59, 29, 0.35);
+  }
+}
+
 @font-face {
   font-family: 'Comic Relief';
   src: url('../fonts/ComicRelief-Regular.ttf') format('truetype');
@@ -262,18 +296,18 @@ body {
 }
 
 #inventory #grid::-webkit-scrollbar-track {
-  background: rgba(139, 112, 48, 0.2);
+  background: rgba(101, 59, 29, 0.35);
   border-radius: 4px;
 }
 
 #inventory #grid::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #8b7030 0%, #6b5520 100%);
+  background: linear-gradient(180deg, #ffab25 0%, #e08900 100%);
   border-radius: 4px;
-  border: 1px solid rgba(107, 85, 32, 0.8);
+  border: 1px solid #b87100;
 }
 
 #inventory #grid::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #9b8040 0%, #7b6530 100%);
+  background: linear-gradient(180deg, #ffc25e 0%, #ffab25 100%);
 }
 
 #inventory #grid .slot {
@@ -361,14 +395,15 @@ body {
   background: url("../img/ui/ui-guild.png");
   background-repeat: no-repeat;
   background-size: 100% 100%;
-  width: 416px;
-  height: 400px;
+  /* The 416 x 400 picture drawn at 1.25: header bar y 52-99, page y 111-441 x 44-476, bottom cartouche x 186-334 y 452-488. Text keeps its size. */
+  width: 520px;
+  height: 500px;
 }
 
 #guild-member-count {
   position: absolute;
-  top: 52px;
-  left: 45px;
+  top: 63px;
+  left: 56px;
   font-size: 0.85em;
   color: #FFF1DA;
   font-family: 'Comic Relief';
@@ -377,9 +412,12 @@ body {
 
 #guild-name {
   position: absolute;
-  top: 50px;
-  left: 30px;
-  right: 30px;
+  top: 58px;
+  left: 110px;
+  right: 110px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   text-align: center;
   font-size: 1.1em;
   font-family: 'Comic Relief';
@@ -388,12 +426,18 @@ body {
   text-shadow: 2px 2px 3px rgba(0, 0, 0, 0.8);
 }
 
+/* Own rank, centred under the guild name. */
 #guild-rank {
   position: absolute;
-  bottom: 20px;
-  right: 78px;
-  opacity: 0;
-  font-size: 0.85em;
+  top: 87px;
+  left: 110px;
+  right: 110px;
+  text-align: center;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.75em;
   color: #FFF1DA;
   font-family: 'Comic Relief';
   text-shadow: 2px 2px 3px rgba(0, 0, 0, 0.8);
@@ -401,41 +445,58 @@ body {
 
 #guild-header-separator {
   position: absolute;
-  top: 80px;
-  left: 40px;
-  right: 40px;
+  top: 186px;
+  left: 56px;
+  right: 56px;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(147, 111, 85, 0.6), transparent);
+  background: rgba(147, 111, 85, 0.7);
 }
 
 #guild-members-list {
   font-size: 0.8em;
   position: absolute;
-  top: 130px;
-  left: 40px;
-  right: 40px;
-  bottom: 65px;
+  top: 192px;
+  left: 50px;
+  right: 50px;
+  bottom: 64px;
   overflow-y: auto;
   overflow-x: hidden;
 }
 
-#guild-members-list::-webkit-scrollbar {
+/* Every scrolling part of the guild window: the same bar as the options menu (.pause-content). */
+#guild-members-list::-webkit-scrollbar,
+#guild-member-panel::-webkit-scrollbar,
+#guild-ranks-panel::-webkit-scrollbar,
+#guild-ranks-list::-webkit-scrollbar,
+#guild-rank-permissions::-webkit-scrollbar {
   width: 4px;
 }
 
-#guild-members-list::-webkit-scrollbar-track {
-  background: rgba(139, 112, 48, 0.2);
+#guild-members-list::-webkit-scrollbar-track,
+#guild-member-panel::-webkit-scrollbar-track,
+#guild-ranks-panel::-webkit-scrollbar-track,
+#guild-ranks-list::-webkit-scrollbar-track,
+#guild-rank-permissions::-webkit-scrollbar-track {
+  background: rgba(101, 59, 29, 0.35);
   border-radius: 4px;
 }
 
-#guild-members-list::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #8b7030 0%, #6b5520 100%);
+#guild-members-list::-webkit-scrollbar-thumb,
+#guild-member-panel::-webkit-scrollbar-thumb,
+#guild-ranks-panel::-webkit-scrollbar-thumb,
+#guild-ranks-list::-webkit-scrollbar-thumb,
+#guild-rank-permissions::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #ffab25 0%, #e08900 100%);
   border-radius: 4px;
-  border: 1px solid rgba(107, 85, 32, 0.8);
+  border: 1px solid #b87100;
 }
 
-#guild-members-list::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #9b8040 0%, #7b6530 100%);
+#guild-members-list::-webkit-scrollbar-thumb:hover,
+#guild-member-panel::-webkit-scrollbar-thumb:hover,
+#guild-ranks-panel::-webkit-scrollbar-thumb:hover,
+#guild-ranks-list::-webkit-scrollbar-thumb:hover,
+#guild-rank-permissions::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #ffc25e 0%, #ffab25 100%);
 }
 
 .guild-member {
@@ -483,16 +544,17 @@ body {
 
 #guild-leave-button {
   position: absolute;
-  bottom: 10px;
+  bottom: 15px;
   left: 50%;
   transform: translateX(-50%);
-  height: 28px;
+  height: 30px;
   /* Fixed width matching the bottom cartouche inset, so Disband and Leave
      render identically. */
-  width: 120px;
+  width: 146px;
   padding: 0;
+  box-sizing: border-box;
   text-align: center;
-  line-height: 24px;
+  line-height: 26px;
   background: linear-gradient(180deg, #a85555 0%, #8f4545 100%);
   border: 2px solid #7a3838;
   border-radius: 4px;
@@ -522,9 +584,9 @@ body {
 
 #guild-invite-input-container {
   position: absolute;
-  top: 100px;
-  left: 45px;
-  right: 45px;
+  top: 146px;
+  left: 56px;
+  right: 56px;
   display: flex;
   gap: 6px;
 }
@@ -607,9 +669,9 @@ body {
 
 #guild-create-section {
   position: absolute;
-  top: 100px;
-  left: 45px;
-  right: 45px;
+  top: 125px;
+  left: 56px;
+  right: 56px;
 }
 
 /* Redundant now that the panel header carries the title. */
@@ -621,14 +683,14 @@ body {
    leave/disband button. Hover/active preserve the centering transform. */
 #guild-create-button {
   position: absolute;
-  bottom: 10px;
+  bottom: 15px;
   left: 50%;
   transform: translateX(-50%);
-  width: 120px;
-  height: 28px;
+  width: 146px;
+  height: 30px;
   padding: 0;
   text-align: center;
-  line-height: 24px;
+  line-height: 26px;
 }
 
 #guild-create-button:hover {
@@ -637,6 +699,336 @@ body {
 
 #guild-create-button:active {
   transform: translateX(-50%) translateY(0px);
+}
+
+/* Guild ranks: MOTD line under the header, Ranks button opposite the member count, and the member and rank
+   panels drawn over the member list (the window is a fixed picture, so everything in it is placed). */
+#guild-motd-row {
+  position: absolute;
+  top: 117px;
+  left: 56px;
+  right: 56px;
+  height: 24px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+#guild-motd {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.75em;
+  opacity: 0.9;
+  color: #FFF1DA;
+  font-family: 'Comic Relief';
+  text-shadow: 2px 2px 3px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#guild-motd .guild-input {
+  height: 22px;
+  margin: 0;
+  padding: 0 6px;
+  font-size: 0.9em;
+}
+
+#guild-motd-row .guild-button,
+#guild-ranks-button,
+.guild-panel-buttons .guild-button {
+  width: auto;
+  height: 24px;
+  padding: 0 10px;
+  font-size: 0.75em;
+  flex-shrink: 0;
+}
+
+#guild-ranks-button {
+  position: absolute;
+  top: 62px;
+  right: 56px;
+}
+
+/* The MOTD's Edit / Save button sits a little lower than the line's centre. */
+#guild-motd-edit {
+  position: relative;
+  top: 2px;
+}
+
+.guild-member-rank,
+.guild-member-note {
+  font-size: 0.8em;
+  opacity: 0.75;
+  color: #FFF1DA;
+  font-family: 'Comic Relief';
+  text-shadow: 2px 2px 3px rgba(0, 0, 0, 0.8);
+  margin-left: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A column of its own, each rank centred in it, so short and long rank names line up. */
+.guild-member-rank {
+  flex: 0 0 90px;
+  text-align: center;
+}
+
+.guild-member-note {
+  flex: 0 1 35%;
+  min-width: 0;
+}
+
+.guild-member {
+  cursor: pointer;
+  padding-left: 6px;
+  padding-right: 6px;
+  border-radius: 3px;
+}
+
+/* The member under the pointer, as a rank row under it. */
+.guild-member:hover {
+  background: rgba(135, 81, 43, 0.45);
+}
+
+/* The member and rank panels: a page laid over the window's own page, in the picture's colours (page #a77c5d,
+   light edge #c3997c, dark edge #653b1d, gold #ffab25), with the same text look as the member list. */
+#guild-member-panel,
+#guild-ranks-panel {
+  position: absolute;
+  top: 114px;
+  left: 48px;
+  right: 48px;
+  bottom: 62px;
+  z-index: 2;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 10px;
+  /* Every line in these panels is the member list's separator colour (.guild-member). */
+  border: 1px solid rgba(147, 111, 85, 0.7);
+  border-radius: 4px;
+  background: #a77c5d;
+  -webkit-box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45);
+  color: #FFF1DA;
+  font-family: 'Comic Relief';
+  font-size: 0.85em;
+  text-shadow: 2px 2px 3px rgba(0, 0, 0, 0.8);
+  box-sizing: border-box;
+}
+
+.guild-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(147, 111, 85, 0.7);
+}
+
+.guild-panel-title {
+  font-size: 1.1em;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  /* Room inside the clipped box for the text's shadow (2px down and right, 3px blur), so it is not cut off. */
+  line-height: 1.3;
+  padding: 0 5px 5px 0;
+  margin-bottom: -5px;
+}
+
+/* The panels' X: the windows' own close button (.panel-close), placed in the panel's header. */
+.guild-panel-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin: 0;
+  outline: none;
+  background: linear-gradient(180deg, #a85555 0%, #8f4545 100%);
+  color: #FFF1DA;
+  font-family: 'Comic Relief';
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 4px;
+  border: 2px solid #7a3838;
+  cursor: pointer;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  -webkit-box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.2);
+}
+
+.guild-panel-close:hover {
+  background: linear-gradient(180deg, #b86565 0%, #a85555 100%);
+}
+
+#guild-member-panel .guild-label {
+  font-size: 0.9em;
+  margin-bottom: 4px;
+}
+
+#guild-member-panel-rank {
+  opacity: 0.85;
+  margin-bottom: 10px;
+}
+
+#guild-member-panel .guild-input {
+  height: 30px;
+  margin-bottom: 10px;
+}
+
+.guild-input:disabled {
+  opacity: 0.6;
+}
+
+.guild-panel-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* Ranks: the list on the left with Add and Delete under it, the chosen rank's name and permissions on the right. */
+.guild-ranks-body {
+  display: flex;
+  gap: 10px;
+  height: 262px;
+}
+
+.guild-ranks-side {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 140px;
+  min-height: 0;
+}
+
+.guild-ranks-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.guild-ranks-side .guild-panel-buttons,
+.guild-ranks-editor .guild-panel-buttons {
+  flex-wrap: nowrap;
+  margin-top: 8px;
+}
+
+.guild-ranks-side .guild-panel-buttons .guild-button {
+  flex: 1 1 0;
+  padding: 0 4px;
+}
+
+.guild-ranks-editor .guild-panel-buttons {
+  justify-content: flex-end;
+}
+
+#guild-ranks-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid rgba(147, 111, 85, 0.7);
+  border-radius: 3px;
+  background: rgba(101, 59, 29, 0.3);
+}
+
+.guild-rank-row {
+  padding: 5px 8px;
+  text-align: center;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-bottom: 1px solid rgba(147, 111, 85, 0.7);
+}
+
+.guild-rank-row:hover {
+  background: rgba(135, 81, 43, 0.45);
+}
+
+/* The chosen rank. Its border is a plain row's: the item quality class `.selected` would draw a white outline. */
+.guild-rank-row.selected,
+.guild-rank-row.selected:hover {
+  background: #c3997c;
+  border: 0;
+  border-bottom: 1px solid rgba(147, 111, 85, 0.7);
+  -webkit-box-shadow: inset 3px 0 0 #ffab25;
+  box-shadow: inset 3px 0 0 #ffab25;
+}
+
+#guild-rank-name {
+  height: 30px;
+  margin: 0 0 8px 0;
+  flex-shrink: 0;
+}
+
+#guild-rank-permissions {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+}
+
+.guild-permission {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 2px;
+  font-size: 0.85em;
+  font-weight: 600;
+  cursor: pointer;
+  /* Lighter than the panel's shadow: these lines are small and many. */
+  text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.5);
+}
+
+/* Permission boxes: the same box as the options menu's checkboxes (#muted-checkbox, #auto-loot-checkbox). */
+.guild-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #6b8a6b;
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+  border-radius: 3px;
+  -webkit-box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.guild-checkbox:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.guild-permission:has(.guild-checkbox:disabled) {
+  cursor: default;
+}
+
+.guild-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* A disabled button does not answer the pointer: it keeps its resting look. */
+.guild-button:disabled:hover,
+.guild-button:disabled:active {
+  background: linear-gradient(180deg, #6b8a6b 0%, #5a7a5a 100%);
+  transform: none;
+  -webkit-box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.3);
 }
 
 #friends-list-container {
@@ -788,9 +1180,19 @@ body {
   width: 4px;
 }
 
+#friends-list::-webkit-scrollbar-track {
+  background: rgba(101, 59, 29, 0.35);
+  border-radius: 4px;
+}
+
 #friends-list::-webkit-scrollbar-thumb {
-  background: #A57D60;
-  border-radius: 2px;
+  background: linear-gradient(180deg, #ffab25 0%, #e08900 100%);
+  border-radius: 4px;
+  border: 1px solid #b87100;
+}
+
+#friends-list::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #ffc25e 0%, #ffab25 100%);
 }
 
 .book-panel {
@@ -1148,11 +1550,17 @@ body {
 }
 
 #chat-messages::-webkit-scrollbar-thumb {
-  background: #653B1D;
+  background: linear-gradient(180deg, #ffab25 0%, #e08900 100%);
+  border-radius: 4px;
+}
+
+#chat-messages::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #ffc25e 0%, #ffab25 100%);
 }
 
 #chat-messages::-webkit-scrollbar-track {
-  background: #A77C5D;
+  background: rgba(101, 59, 29, 0.35);
+  border-radius: 4px;
 }
 
 #chat-messages .message {
@@ -1174,10 +1582,25 @@ body {
     font-weight: 600;
 }
 
-/* Guild chat, in the colour of the guild tag under names (player.ts), so it is told apart from everyone's chat. */
+/* Guild chat: bright green with a black shadow, readable on the chat background (the typing colour in input.ts is the same). */
 .guild-username, .guild-message {
-    color: #c9a655;
+    color: #66ff66;
     font-weight: 600;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+/* The guild message of the day at login (socket.ts systemChatLine): guild chat's green, a little bolder. */
+#chat-messages .message .guild-motd {
+    color: #66ff66;
+    font-weight: 700;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+/* Officer chat: a bright yellow-green, told apart from guild chat's green and readable on the tan chat background. */
+.officer-username, .officer-message {
+    color: #c6ff4a;
+    font-weight: 600;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.9);
 }
 
 /* An achievement named in chat ("<name> has completed [<achievement>]", or an [achievement] linked in a line, itemlinks.ts): opens your achievements window at it. */
@@ -1856,18 +2279,18 @@ body.timelapse-active .ui-hidden-in-timelapse {
 }
 
 #options-menu-selections-container::-webkit-scrollbar-track {
-  background: rgba(139, 112, 48, 0.2);
+  background: rgba(101, 59, 29, 0.35);
   border-radius: 4px;
 }
 
 #options-menu-selections-container::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #8b7030 0%, #6b5520 100%);
+  background: linear-gradient(180deg, #ffab25 0%, #e08900 100%);
   border-radius: 4px;
-  border: 1px solid rgba(107, 85, 32, 0.8);
+  border: 1px solid #b87100;
 }
 
 #options-menu-selections-container::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #9b8040 0%, #7b6530 100%);
+  background: linear-gradient(180deg, #ffc25e 0%, #ffab25 100%);
 }
 
 .settings-row {
@@ -1910,6 +2333,9 @@ body.timelapse-active .ui-hidden-in-timelapse {
   margin: 0;
   padding: 0;
   flex-shrink: 0;
+  border-radius: 3px;
+  -webkit-box-shadow: 1px 2px 3px rgba(0, 0, 0, 0.6);
+  box-shadow: 1px 2px 3px rgba(0, 0, 0, 0.6);
 }
 
 #fps-slider::-webkit-slider-thumb, #music-slider::-webkit-slider-thumb, #effects-slider::-webkit-slider-thumb, #ambience-slider::-webkit-slider-thumb, #weather-slider::-webkit-slider-thumb {
@@ -2077,18 +2503,18 @@ body.timelapse-active .ui-hidden-in-timelapse {
 }
 
 .pause-content::-webkit-scrollbar-track {
-  background: rgba(139, 112, 48, 0.2);
+  background: rgba(101, 59, 29, 0.35);
   border-radius: 4px;
 }
 
 .pause-content::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #8b7030 0%, #6b5520 100%);
+  background: linear-gradient(180deg, #ffab25 0%, #e08900 100%);
   border-radius: 4px;
-  border: 1px solid rgba(107, 85, 32, 0.8);
+  border: 1px solid #b87100;
 }
 
 .pause-content::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #9b8040 0%, #7b6530 100%);
+  background: linear-gradient(180deg, #ffc25e 0%, #ffab25 100%);
 }
 
 .pause-section {
@@ -2219,8 +2645,8 @@ body.timelapse-active .ui-hidden-in-timelapse {
 
 /* The guild's frame is drawn inside its picture, with room round it: its corner is further in. */
 #guild-container > .panel-close {
-  top: 10px;
-  right: 12px;
+  top: 12px;
+  right: 15px;
 }
 
 /*
@@ -3399,9 +3825,19 @@ input[type=range]:disabled {
   width: 4px;
 }
 
+#creature-loot-popup .creature-loot-list::-webkit-scrollbar-track {
+  background: rgba(101, 59, 29, 0.35);
+  border-radius: 4px;
+}
+
 #creature-loot-popup .creature-loot-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 241, 218, 0.35);
-  border-radius: 2px;
+  background: linear-gradient(180deg, #ffab25 0%, #e08900 100%);
+  border-radius: 4px;
+  border: 1px solid #b87100;
+}
+
+#creature-loot-popup .creature-loot-list::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #ffc25e 0%, #ffab25 100%);
 }
 
 #creature-loot-popup .creature-loot-row {
@@ -3547,9 +3983,19 @@ input[type=range]:disabled {
   width: 4px;
 }
 
+#vendor-window .vendor-list::-webkit-scrollbar-track {
+  background: rgba(101, 59, 29, 0.35);
+  border-radius: 4px;
+}
+
 #vendor-window .vendor-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 241, 218, 0.35);
-  border-radius: 2px;
+  background: linear-gradient(180deg, #ffab25 0%, #e08900 100%);
+  border-radius: 4px;
+  border: 1px solid #b87100;
+}
+
+#vendor-window .vendor-list::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #ffc25e 0%, #ffab25 100%);
 }
 
 #vendor-window .vendor-row {
@@ -4108,7 +4554,8 @@ input[type=range]:disabled {
   justify-content: center;
 }
 
-#confirm-disband {
+#confirm-disband,
+#confirm-guild-leader {
   width: 100px;
   height: 32px;
   border: none;
@@ -4127,20 +4574,23 @@ input[type=range]:disabled {
   transition: all 0.2s ease;
 }
 
-#confirm-disband:hover {
+#confirm-disband:hover,
+#confirm-guild-leader:hover {
   background: linear-gradient(180deg, #6aa06a 0%, #5a8f5a 100%);
   transform: translateY(-2px);
   -webkit-box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.3);
   box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.3);
 }
 
-#confirm-disband:active {
+#confirm-disband:active,
+#confirm-guild-leader:active {
   transform: translateY(0px);
   -webkit-box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(0, 0, 0, 0.3);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
-#cancel-disband {
+#cancel-disband,
+#cancel-guild-leader {
   width: 100px;
   height: 32px;
   border: none;
@@ -4159,14 +4609,16 @@ input[type=range]:disabled {
   transition: all 0.2s ease;
 }
 
-#cancel-disband:hover {
+#cancel-disband:hover,
+#cancel-guild-leader:hover {
   background: linear-gradient(180deg, #b86565 0%, #a85555 100%);
   transform: translateY(-2px);
   -webkit-box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.3);
   box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.3);
 }
 
-#cancel-disband:active {
+#cancel-disband:active,
+#cancel-guild-leader:active {
   transform: translateY(0px);
   -webkit-box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(0, 0, 0, 0.3);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -4815,7 +5267,9 @@ body.ios-device #confirm-graveyard-revive,
 body.ios-device #confirm-delete-item,
 body.ios-device #cancel-delete-item,
 body.ios-device #confirm-disband,
-body.ios-device #cancel-disband {
+body.ios-device #cancel-disband,
+body.ios-device #confirm-guild-leader,
+body.ios-device #cancel-guild-leader {
   text-shadow: 0.5px 0.5px 1px rgba(0,0,0,0.4);
 }
 
@@ -7477,8 +7931,20 @@ body.ios-device #mobile-chat-peek .message {
 #quest-frame-left::-webkit-scrollbar-thumb, #quest-frame-right .quest-scroll::-webkit-scrollbar-thumb,
 #quest-log-left::-webkit-scrollbar-thumb, #quest-log-right .quest-scroll::-webkit-scrollbar-thumb,
 #quest-tracker::-webkit-scrollbar-thumb {
-  background: #A57D60;
-  border-radius: 2px;
+  background: linear-gradient(180deg, #ffab25 0%, #e08900 100%);
+  border-radius: 4px;
+  border: 1px solid #b87100;
+}
+#quest-frame-left::-webkit-scrollbar-track, #quest-frame-right .quest-scroll::-webkit-scrollbar-track,
+#quest-log-left::-webkit-scrollbar-track, #quest-log-right .quest-scroll::-webkit-scrollbar-track,
+#quest-tracker::-webkit-scrollbar-track {
+  background: rgba(101, 59, 29, 0.35);
+  border-radius: 4px;
+}
+#quest-frame-left::-webkit-scrollbar-thumb:hover, #quest-frame-right .quest-scroll::-webkit-scrollbar-thumb:hover,
+#quest-log-left::-webkit-scrollbar-thumb:hover, #quest-log-right .quest-scroll::-webkit-scrollbar-thumb:hover,
+#quest-tracker::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #ffc25e 0%, #ffab25 100%);
 }
 .quest-title {
   font-size: 16px;
@@ -7852,8 +8318,26 @@ body.ios-device #mobile-chat-peek .message {
 #mail-window .mail-send::-webkit-scrollbar-thumb,
 #mail-window .mail-body::-webkit-scrollbar-thumb,
 #mail-window .mail-suggest::-webkit-scrollbar-thumb {
-  background: rgba(255, 241, 218, 0.35);
-  border-radius: 2px;
+  background: linear-gradient(180deg, #ffab25 0%, #e08900 100%);
+  border-radius: 4px;
+  border: 1px solid #b87100;
+}
+
+#mail-window .mail-list::-webkit-scrollbar-track,
+#mail-window .mail-read::-webkit-scrollbar-track,
+#mail-window .mail-send::-webkit-scrollbar-track,
+#mail-window .mail-body::-webkit-scrollbar-track,
+#mail-window .mail-suggest::-webkit-scrollbar-track {
+  background: rgba(101, 59, 29, 0.35);
+  border-radius: 4px;
+}
+
+#mail-window .mail-list::-webkit-scrollbar-thumb:hover,
+#mail-window .mail-read::-webkit-scrollbar-thumb:hover,
+#mail-window .mail-send::-webkit-scrollbar-thumb:hover,
+#mail-window .mail-body::-webkit-scrollbar-thumb:hover,
+#mail-window .mail-suggest::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #ffc25e 0%, #ffab25 100%);
 }
 
 #mail-window .mail-row {
@@ -8107,7 +8591,7 @@ body.ios-device #mobile-chat-peek .message {
 #mail-window .mail-suggest {
   position: absolute;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 241, 218, 0.35) transparent;
+  scrollbar-color: #e08900 rgba(101, 59, 29, 0.35);
   top: calc(100% + 2px);
   left: 0;
   right: 0;
@@ -8533,9 +9017,17 @@ body.ios-device #mail-window .mail-postage-amount {
 #achievements-list::-webkit-scrollbar {
   width: 4px;
 }
+#achievements-list::-webkit-scrollbar-track {
+  background: rgba(101, 59, 29, 0.35);
+  border-radius: 4px;
+}
 #achievements-list::-webkit-scrollbar-thumb {
-  background: #A57D60;
-  border-radius: 2px;
+  background: linear-gradient(180deg, #ffab25 0%, #e08900 100%);
+  border-radius: 4px;
+  border: 1px solid #b87100;
+}
+#achievements-list::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #ffc25e 0%, #ffab25 100%);
 }
 .achievement-row {
   display: flex;

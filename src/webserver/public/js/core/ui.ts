@@ -1197,6 +1197,12 @@ function createGuildUI(guildMembers: string[], guildNameValue: string | null) {
     const leaveButton = document.getElementById("guild-leave-button");
     if (leaveButton) leaveButton.style.display = "none";
 
+    if (guildMotdInput) endGuildMotdEdit(false);
+    for (const id of ["guild-motd-row", "guild-ranks-button", "guild-member-panel", "guild-ranks-panel"]) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = "none";
+    }
+
     const existingMembers = guildMembersList.querySelectorAll(".guild-member");
     existingMembers.forEach(member => guildMembersList.removeChild(member));
     return;
@@ -1220,8 +1226,14 @@ function createGuildUI(guildMembers: string[], guildNameValue: string | null) {
   const isLeader = guildMembers.length > 0
     && guildMembers[0].toLowerCase() === currentPlayer?.username?.toLowerCase();
 
+  const roster: Array<{ username: string; rank: number; public_note: string; officer_note?: string }> =
+    currentPlayer?.guild_roster?.length ? currentPlayer.guild_roster : guildMembers.map((username, i) => ({ username, rank: i === 0 ? 0 : 1, public_note: "" }));
+  const ranks: Array<{ index: number; name: string; permissions: number }> = currentPlayer?.guild_ranks || [];
+  const rankName = (index: number) => ranks.find((rank) => rank.index === index)?.name || (index === 0 ? "Guild Master" : "Member");
+
   if (guildRank) {
-    guildRank.textContent = isLeader ? "Guild Master" : "Member";
+    const myRank = currentPlayer?.guild_rank;
+    guildRank.textContent = typeof myRank === "number" ? rankName(myRank) : "";
     guildRank.style.display = "block";
   }
 
@@ -1231,7 +1243,7 @@ function createGuildUI(guildMembers: string[], guildNameValue: string | null) {
   }
 
   if (guildMemberInviteInput && guildMemberInviteButton) {
-    if (isLeader) {
+    if (guildCan(GuildBit.INVITE)) {
       guildMemberInviteInput.style.display = "block";
       guildMemberInviteButton.style.display = "block";
     } else {
@@ -1239,6 +1251,24 @@ function createGuildUI(guildMembers: string[], guildNameValue: string | null) {
       guildMemberInviteButton.style.display = "none";
     }
   }
+
+  const motdRow = document.getElementById("guild-motd-row");
+  if (motdRow) motdRow.style.display = "";
+  const motd = document.getElementById("guild-motd");
+  // While the MOTD is being edited its text box stays: an update must not drop what is being typed.
+  if (motd && !guildMotdInput) {
+    motd.textContent = currentPlayer?.guild_motd || "No message of the day";
+    motd.title = currentPlayer?.guild_motd || "";
+  }
+  const motdEdit = document.getElementById("guild-motd-edit");
+  if (motdEdit) {
+    const mayEdit = guildCan(GuildBit.SET_MOTD);
+    if (!mayEdit && guildMotdInput) endGuildMotdEdit(false);
+    motdEdit.style.display = mayEdit ? "block" : "none";
+  }
+  const ranksButton = document.getElementById("guild-ranks-button");
+  if (ranksButton) ranksButton.style.display = currentPlayer?.guild_rank === 0 ? "block" : "none";
+  refreshOpenGuildPanels();
 
   const leaveButton = document.getElementById("guild-leave-button");
   if (leaveButton) {
@@ -1251,56 +1281,174 @@ function createGuildUI(guildMembers: string[], guildNameValue: string | null) {
     }
   }
 
-  const existingElements = Array.from(
-    guildMembersList.querySelectorAll(".guild-member-username")
-  );
+  // Rebuilt from the roster each time, sorted by rank then name. Sorting a COPY keeps currentPlayer.guild
+  // leader-first, which the context-menu leader checks (guild[0] === leader) rely on.
+  guildMembersList.querySelectorAll(".guild-member").forEach((el) => el.remove());
+  const sorted = [...roster].sort((a, b) => a.rank - b.rank || a.username.toLowerCase().localeCompare(b.username.toLowerCase()));
+  const cache = Cache.getInstance();
+  for (const entry of sorted) {
+    const lowerName = entry.username.toLowerCase();
+    const row = document.createElement("div");
+    row.className = "guild-member ui";
+    row.dataset.username = lowerName;
 
-  const existingNames = new Map<string, HTMLElement>();
-  existingElements.forEach(el => {
-    const name = el.textContent?.toLowerCase();
-    if (name) {
-      const container = el.closest(".guild-member") as HTMLElement;
-      if (container) {
-        existingNames.set(name, container);
-      }
-    }
-  });
+    const name = document.createElement("div");
+    name.className = "guild-member-username ui";
+    name.innerText = entry.username.charAt(0).toUpperCase() + entry.username.slice(1);
 
-  const desiredNames = new Set(guildMembers.map(name => name.toLowerCase()));
+    const rank = document.createElement("div");
+    rank.className = "guild-member-rank ui";
+    rank.innerText = rankName(entry.rank);
 
-  for (const [name, el] of existingNames.entries()) {
-    if (!desiredNames.has(name)) {
-      guildMembersList.removeChild(el);
-    }
+    const note = document.createElement("div");
+    note.className = "guild-member-note ui";
+    note.innerText = entry.public_note || "";
+
+    const status = document.createElement("span");
+    status.className = "guild-member-status ui";
+    status.classList.add(cache.onlinePlayers.has(lowerName) ? "guild-online" : "guild-offline");
+
+    row.append(name, rank, note, status);
+    row.addEventListener("click", () => openGuildMemberPanel(entry.username));
+    guildMembersList.appendChild(row);
+  }
+}
+
+// Permission bits (engine systems/guildranks.ts). The client only uses them to hide buttons; the server decides.
+const GuildBit = {
+  INVITE: 1 << 4, KICK: 1 << 5, PROMOTE: 1 << 6, DEMOTE: 1 << 7, SET_MOTD: 1 << 8,
+  EDIT_PUBLIC_NOTE: 1 << 9, VIEW_OFFICER_NOTE: 1 << 10, EDIT_OFFICER_NOTE: 1 << 11,
+};
+const GUILD_PERMISSION_LABELS: Array<[number, string]> = [
+  [1 << 0, "Hear guild chat"], [1 << 1, "Talk in guild chat"],
+  [1 << 2, "Hear officer chat"], [1 << 3, "Talk in officer chat"],
+  [1 << 4, "Invite"], [1 << 5, "Kick"], [1 << 6, "Promote"], [1 << 7, "Demote"],
+  [1 << 8, "Set MOTD"], [1 << 9, "Edit public notes"],
+  [1 << 10, "See officer notes"], [1 << 11, "Edit officer notes"],
+];
+
+function guildSelf(): any {
+  const cache = Cache.getInstance();
+  return Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
+}
+
+function guildCan(bit: number): boolean {
+  const me = guildSelf();
+  if (!me || me.guild_rank === null || me.guild_rank === undefined) return false;
+  if (me.guild_rank === 0) return true;
+  const rank = (me.guild_ranks || []).find((r: any) => r.index === me.guild_rank);
+  return !!rank && (rank.permissions & bit) === bit;
+}
+
+let guildPanelMember: string | null = null;
+let guildPanelRank: number | null = null;
+
+function openGuildMemberPanel(username: string) {
+  guildPanelMember = username.toLowerCase();
+  const panel = document.getElementById("guild-member-panel");
+  if (panel) panel.style.display = "block";
+  fillGuildMemberPanel();
+}
+
+function fillGuildMemberPanel() {
+  const panel = document.getElementById("guild-member-panel");
+  const me = guildSelf();
+  if (!panel || !guildPanelMember || !me) return;
+  const entry = (me.guild_roster || []).find((r: any) => r.username.toLowerCase() === guildPanelMember);
+  if (!entry) { panel.style.display = "none"; guildPanelMember = null; return; }
+  const self = entry.username.toLowerCase() === me.username?.toLowerCase();
+  const below = typeof me.guild_rank === "number" && entry.rank > me.guild_rank;
+  const lowest = Math.max(0, ...((me.guild_ranks || []).map((r: any) => r.index)));
+  const show = (id: string, on: boolean) => { const el = document.getElementById(id); if (el) el.style.display = on ? "" : "none"; };
+
+  (document.getElementById("guild-member-panel-name") as HTMLElement).innerText = entry.username.charAt(0).toUpperCase() + entry.username.slice(1);
+  (document.getElementById("guild-member-panel-rank") as HTMLElement).innerText =
+    (me.guild_ranks || []).find((r: any) => r.index === entry.rank)?.name || "";
+
+  const publicNote = document.getElementById("guild-member-public-note") as HTMLInputElement;
+  const officerNote = document.getElementById("guild-member-officer-note") as HTMLInputElement;
+  publicNote.value = entry.public_note || "";
+  publicNote.disabled = !(self || (below && guildCan(GuildBit.EDIT_PUBLIC_NOTE)));
+  const seesOfficer = "officer_note" in entry;
+  show("guild-member-officer-label", seesOfficer);
+  show("guild-member-officer-note", seesOfficer);
+  officerNote.value = entry.officer_note || "";
+  officerNote.disabled = !((self || below) && guildCan(GuildBit.EDIT_OFFICER_NOTE));
+  show("guild-member-save-notes", !publicNote.disabled || (seesOfficer && !officerNote.disabled));
+
+  show("guild-member-promote", below && guildCan(GuildBit.PROMOTE) && entry.rank - 1 > me.guild_rank);
+  show("guild-member-demote", below && guildCan(GuildBit.DEMOTE) && entry.rank < lowest);
+  show("guild-member-kick", below && guildCan(GuildBit.KICK));
+  show("guild-member-leader", me.guild_rank === 0 && !self);
+}
+
+function openGuildRanksPanel() {
+  const panel = document.getElementById("guild-ranks-panel");
+  if (panel) panel.style.display = "block";
+  if (guildPanelRank === null) guildPanelRank = 1;
+  fillGuildRanksPanel();
+}
+
+function fillGuildRanksPanel() {
+  const panel = document.getElementById("guild-ranks-panel");
+  const me = guildSelf();
+  if (!panel || panel.style.display === "none" || !me) return;
+  if (me.guild_rank !== 0) { panel.style.display = "none"; return; }
+  const ranks: any[] = me.guild_ranks || [];
+  if (!ranks.some((r) => r.index === guildPanelRank)) guildPanelRank = ranks[ranks.length - 1]?.index ?? 0;
+
+  const list = document.getElementById("guild-ranks-list") as HTMLElement;
+  list.replaceChildren();
+  for (const rank of ranks) {
+    const row = document.createElement("div");
+    row.className = "guild-rank-row ui" + (rank.index === guildPanelRank ? " selected" : "");
+    row.innerText = rank.name;
+    row.addEventListener("click", () => { guildPanelRank = rank.index; fillGuildRanksPanel(); });
+    list.appendChild(row);
   }
 
-  // Sort a COPY for display. Sorting in place would mutate currentPlayer.guild
-  // (passed by reference), breaking leader-first ordering that the context-menu
-  // leader checks (guild[0] === leader) rely on.
-  const sortedMembers = [...guildMembers].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  const selected = ranks.find((r) => r.index === guildPanelRank);
+  (document.getElementById("guild-rank-name") as HTMLInputElement).value = selected?.name || "";
+  const boxes = document.getElementById("guild-rank-permissions") as HTMLElement;
+  boxes.replaceChildren();
+  for (const [bit, label] of GUILD_PERMISSION_LABELS) {
+    const line = document.createElement("label");
+    line.className = "guild-permission ui";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.className = "guild-checkbox ui";
+    box.dataset.bit = String(bit);
+    box.checked = selected?.index === 0 || ((selected?.permissions ?? 0) & bit) === bit;
+    box.disabled = selected?.index === 0;
+    line.append(box, document.createTextNode(label));
+    boxes.appendChild(line);
+  }
+  const lowest = Math.max(...ranks.map((r) => r.index));
+  const del = document.getElementById("guild-rank-delete") as HTMLButtonElement;
+  del.disabled = ranks.length <= 2 || (me.guild_roster || []).some((m: any) => m.rank === lowest);
+  (document.getElementById("guild-rank-add") as HTMLButtonElement).disabled = ranks.length >= 8;
+}
 
-  for (const member of sortedMembers) {
-    const lowerName = member.toLowerCase();
-    if (!existingNames.has(lowerName)) {
-      const memberElement = document.createElement("div");
-      memberElement.className = "guild-member ui";
-      memberElement.dataset.username = lowerName;
+// A panel whose input or checkbox has focus is not refilled (that would overwrite what is being typed); it is
+// marked stale and refilled once focus leaves its inputs.
+const guildPanelFills: Array<[string, () => void]> = [
+  ["guild-member-panel", fillGuildMemberPanel],
+  ["guild-ranks-panel", fillGuildRanksPanel],
+];
+const guildPanelStale = new Set<string>();
 
-      const usernameElement = document.createElement("div");
-      usernameElement.className = "guild-member-username ui";
-      usernameElement.innerText = member.charAt(0).toUpperCase() + member.slice(1);
+function typingInPanel(panel: HTMLElement | null, el: Element | null): boolean {
+  return !!panel && el instanceof HTMLInputElement && panel.contains(el);
+}
 
-      const statusElement = document.createElement("span");
-      statusElement.className = "guild-member-status ui";
-
-      const cache = Cache.getInstance();
-      const isOnline = cache.onlinePlayers.has(lowerName);
-      statusElement.classList.add(isOnline ? "guild-online" : "guild-offline");
-
-      memberElement.appendChild(usernameElement);
-      memberElement.appendChild(statusElement);
-      guildMembersList.appendChild(memberElement);
+function refreshOpenGuildPanels() {
+  for (const [id, fill] of guildPanelFills) {
+    if (typingInPanel(document.getElementById(id), document.activeElement)) {
+      guildPanelStale.add(id);
+      continue;
     }
+    guildPanelStale.delete(id);
+    fill();
   }
 }
 
@@ -1778,6 +1926,143 @@ if (guildMemberInviteButton) {
       data: { id: targetPlayer.id },
     });
     guildMemberInviteInput.value = "";
+  });
+}
+
+// Member panel, MOTD and rank editor. Panels close only by their X.
+const byId = (id: string) => document.getElementById(id) as HTMLElement | null;
+
+byId("guild-member-panel-close")?.addEventListener("click", () => { guildPanelMember = null; byId("guild-member-panel")!.style.display = "none"; });
+byId("guild-ranks-close")?.addEventListener("click", () => { byId("guild-ranks-panel")!.style.display = "none"; });
+byId("guild-ranks-button")?.addEventListener("click", () => openGuildRanksPanel());
+
+byId("guild-member-promote")?.addEventListener("click", () => { if (guildPanelMember) sendRequest({ type: "GUILD_PROMOTE", data: { username: guildPanelMember } }); });
+byId("guild-member-demote")?.addEventListener("click", () => { if (guildPanelMember) sendRequest({ type: "GUILD_DEMOTE", data: { username: guildPanelMember } }); });
+byId("guild-member-kick")?.addEventListener("click", () => { if (guildPanelMember) sendRequest({ type: "KICK_GUILD_MEMBER", data: { username: guildPanelMember } }); });
+// Handing over the guild asks first, in the same popup as Disband: the old Guild Master cannot take it back.
+byId("guild-member-leader")?.addEventListener("click", () => {
+  const target = guildPanelMember;
+  if (!target) return;
+  document.getElementById("guild-confirm-popup")?.remove();
+
+  const name = target.charAt(0).toUpperCase() + target.slice(1);
+  const popup = document.createElement("div");
+  popup.id = "guild-confirm-popup";
+  popup.className = "popup";
+  const title = document.createElement("h2");
+  title.textContent = "Make Leader";
+  const text = document.createElement("p");
+  text.textContent = `Make ${name} the Guild Master? You will become an Officer.`;
+  const buttons = document.createElement("div");
+  buttons.className = "button-container";
+  const confirm = document.createElement("button");
+  confirm.id = "confirm-guild-leader";
+  confirm.textContent = "Confirm";
+  const cancel = document.createElement("button");
+  cancel.id = "cancel-guild-leader";
+  cancel.textContent = "Cancel";
+  buttons.append(confirm, cancel);
+  popup.append(title, text, buttons);
+  document.body.appendChild(popup);
+
+  confirm.addEventListener("click", () => {
+    sendRequest({ type: "GUILD_TRANSFER_LEADER", data: { username: target } });
+    popup.remove();
+  });
+  cancel.addEventListener("click", () => popup.remove());
+});
+byId("guild-member-save-notes")?.addEventListener("click", () => {
+  if (!guildPanelMember) return;
+  const publicNote = byId("guild-member-public-note") as HTMLInputElement;
+  const officerNote = byId("guild-member-officer-note") as HTMLInputElement;
+  // Only a note that was changed is sent.
+  const entry = (guildSelf()?.guild_roster || []).find((r: any) => r.username.toLowerCase() === guildPanelMember);
+  if (!publicNote.disabled && publicNote.value.trim() !== (entry?.public_note ?? "")) {
+    sendRequest({ type: "GUILD_SET_NOTE", data: { username: guildPanelMember, note: publicNote.value, officer: false } });
+  }
+  if (!officerNote.disabled && officerNote.style.display !== "none" && officerNote.value.trim() !== (entry?.officer_note ?? "")) {
+    sendRequest({ type: "GUILD_SET_NOTE", data: { username: guildPanelMember, note: officerNote.value, officer: true } });
+  }
+});
+
+// Edit turns the MOTD into a text box and itself into Save; Save sends it and turns back. Escape leaves without saving.
+let guildMotdInput: HTMLInputElement | null = null;
+
+function endGuildMotdEdit(save: boolean) {
+  const motd = byId("guild-motd");
+  const button = byId("guild-motd-edit");
+  if (save && guildMotdInput) sendRequest({ type: "GUILD_SET_MOTD", data: { motd: guildMotdInput.value } });
+  guildMotdInput = null;
+  if (motd) motd.textContent = guildSelf()?.guild_motd || "No message of the day";
+  if (button) button.textContent = "Edit";
+}
+
+byId("guild-motd-edit")?.addEventListener("click", () => {
+  if (guildMotdInput) {
+    endGuildMotdEdit(true);
+    return;
+  }
+  const motd = byId("guild-motd");
+  if (!motd) return;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.maxLength = 128;
+  input.className = "guild-input ui";
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  input.value = guildSelf()?.guild_motd || "";
+  guildMotdInput = input;
+  motd.replaceChildren(input);
+  (byId("guild-motd-edit") as HTMLElement).textContent = "Save";
+  input.focus();
+  input.addEventListener("keydown", (event) => {
+    // Kept from the game's keys (Enter would open chat): Enter saves as the button does, Escape leaves.
+    if (event.key !== "Enter" && event.key !== "Escape") return;
+    event.stopPropagation();
+    event.preventDefault();
+    endGuildMotdEdit(event.key === "Enter");
+  });
+});
+
+byId("guild-rank-save")?.addEventListener("click", () => {
+  if (guildPanelRank === null) return;
+  const name = (byId("guild-rank-name") as HTMLInputElement).value;
+  let permissions = 0;
+  byId("guild-rank-permissions")?.querySelectorAll<HTMLInputElement>("input[type=checkbox]").forEach((box) => { if (box.checked) permissions |= Number(box.dataset.bit); });
+  sendRequest({ type: "GUILD_EDIT_RANK", data: guildPanelRank === 0 ? { index: 0, name } : { index: guildPanelRank, name, permissions } });
+});
+byId("guild-rank-add")?.addEventListener("click", () => {
+  // The name box still shows the selected rank's name unless something new was typed into it.
+  const typed = (byId("guild-rank-name") as HTMLInputElement).value.trim();
+  const selected = (guildSelf()?.guild_ranks || []).find((r: any) => r.index === guildPanelRank);
+  const name = !typed || typed === selected?.name ? "New Rank" : typed;
+  sendRequest({ type: "GUILD_ADD_RANK", data: { name } });
+});
+byId("guild-rank-delete")?.addEventListener("click", () => sendRequest({ type: "GUILD_DELETE_RANK", data: {} }));
+
+// Enter in a note or the rank name saves, Escape leaves the box; neither reaches the game (which would focus chat).
+for (const [inputId, saveId] of [
+  ["guild-member-public-note", "guild-member-save-notes"],
+  ["guild-member-officer-note", "guild-member-save-notes"],
+  ["guild-rank-name", "guild-rank-save"],
+]) {
+  const input = byId(inputId) as HTMLInputElement | null;
+  input?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== "Escape") return;
+    event.stopPropagation();
+    event.preventDefault();
+    if (event.key === "Enter") byId(saveId)?.click();
+    input.blur();
+  });
+}
+
+// A panel left stale while its inputs had focus is refilled once focus moves out of its inputs.
+for (const [id, fill] of guildPanelFills) {
+  const panel = byId(id);
+  panel?.addEventListener("focusout", (event) => {
+    if (!guildPanelStale.has(id) || typingInPanel(panel, event.relatedTarget as Element | null)) return;
+    guildPanelStale.delete(id);
+    fill();
   });
 }
 

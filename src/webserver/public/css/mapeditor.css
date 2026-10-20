@@ -48,6 +48,21 @@
 .me-tools .tl-seg-item[aria-checked="true"] .tl-kbd { border-color: var(--accent-line); color: var(--accent-text); }
 .me-toolbar .tl-btn .me-key { margin-left: 2px; }
 
+/* The two tabs at the start of the toolbar, Paint and Sounds, then the bar of the one in view. */
+.me-views .tl-seg-item { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; }
+.me-views .tl-seg-item[aria-checked="true"] { background: var(--accent-soft); color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.me-toolbar-set { display: contents; }
+.me-toolbar-set[hidden] { display: none; }
+/* The Sounds tab: the chosen sound on its button (a long name is cut short), and the sounds of the tileset at its foot. */
+.me-sound-pick { max-width: 260px; }
+.me-sound-pick > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.me-sound-legend { display: inline-flex; align-items: center; gap: var(--s-3); flex: 0 4 auto; min-width: 0; overflow: hidden; white-space: nowrap; }
+/* What is picked comes first: the legend gives way to it. */
+.me-foot:has(.me-sound-legend:not([hidden])) .me-foot-picked { min-width: 220px; }
+.me-sound-legend[hidden] { display: none; }
+.me-sound-key { display: inline-flex; align-items: center; gap: 6px; }
+.me-sound-swatch { flex-shrink: 0; width: 10px; height: 10px; border-radius: 2px; }
+
 /* ------------------------------------------------------------ the layers */
 
 /* One layer to a row: what kind it is, its name, a mark while it has unsaved edits, then its lock and its eye. */
@@ -115,6 +130,9 @@
   .me-pill-layer { max-width: 150px; }
   .me-legend { display: none; }
 }
+@media (max-width: 899px) {
+  .me-sound-legend { display: none; }
+}
 
 /* A phone held upright: the tools take as many lines as they need, and their keys (there is no keyboard to press
    them on) make room for their names. */
@@ -123,3 +141,9 @@
   .me-tools { flex-wrap: wrap; max-width: 100%; }
   .me-tools .tl-kbd, .me-key { display: none; }
 }
+
+/* ------------------------------------------------------------- New map */
+
+/* The form: a line on what it makes, the fields, then a tick box for each tileset. */
+.me-newmap-lead { margin: 0 0 var(--s-4); }
+.me-newmap-head { margin: var(--s-5) 0 var(--s-2); color: var(--text-faint); font-size: var(--t-xs); font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; }

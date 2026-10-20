@@ -1166,20 +1166,8 @@ document.addEventListener("click", (e) => {
     return;
   }
 
-  const guildMember = (e.target as HTMLElement).closest(".guild-member") as HTMLElement;
-  if (guildMember) {
-    const username = guildMember.dataset.username;
-    if (username) {
-      const currentPlayer = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
-      const isSelf = currentPlayer?.username?.toLowerCase() === username.toLowerCase();
-      const isLeader = currentPlayer?.guild?.length > 0
-        && currentPlayer?.guild?.[0]?.toLowerCase() === currentPlayer?.username?.toLowerCase();
-      if (isSelf || isLeader) {
-        createGuildContextMenu(e as MouseEvent, username);
-      }
-    }
-    return;
-  }
+  // A tap on a guild member opens the member panel (ui.ts createGuildUI), which carries its actions: no menu here.
+  if ((e.target as HTMLElement).closest(".guild-member")) return;
 
   const friendItem = (e.target as HTMLElement).closest(".friend-item") as HTMLElement;
   if (friendItem) {
