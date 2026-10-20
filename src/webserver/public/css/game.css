@@ -5215,6 +5215,22 @@ body.ios-device .guild-input {
 body.ios-device .guild-button {
   text-shadow: 0.5px 0.5px 1px rgba(0,0,0,0.4);
 }
+/* The guild's rank and member panels, as the rest of the guild window: an iPhone draws a text shadow far heavier
+   than a desktop does. USER REPORT 2026-10-20: "text shadow in the ranks section is broken on mobile". */
+body.ios-device #guild-member-panel,
+body.ios-device #guild-ranks-panel,
+body.ios-device .guild-panel-title,
+body.ios-device .guild-rank-row,
+body.ios-device #guild-motd {
+  text-shadow: 1px 1px 1.5px rgba(0,0,0,0.4);
+}
+body.ios-device .guild-permission,
+body.ios-device .guild-member-rank,
+body.ios-device .guild-member-note,
+body.ios-device #guild-member-panel-rank,
+body.ios-device .guild-panel-close {
+  text-shadow: 0.5px 0.5px 1px rgba(0,0,0,0.4);
+}
 /* The trade and vendor windows, as the windows above: an iPhone draws a text shadow far heavier than
    a desktop does. USER REPORT 2026-10-07: "text shadows on the trading window on mobile are wrong". */
 body.ios-device #trade-window h2,
