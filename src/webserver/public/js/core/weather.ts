@@ -7,6 +7,7 @@ import { windStreaks } from "./windstreaks.ts";
 import { drawSandstorm } from "./sandstorm.ts";
 import { drawBlizzard } from "./blizzard.ts";
 import { setWeatherSound, playEffect, loadEffect, soundLength } from "./audio.js";
+import { worldZoom } from "./worldzoom.js";
 
 const isMobileDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 const buffer = 200;
@@ -592,12 +593,20 @@ function weather(type: string, weatherData?: any): void {
     drawBolts();
   }
 
+  // The wind's effects are laid in the world, so they follow the world zoom (worldzoom.ts) about the middle of the
+  // screen, as the map does: drawn scaled by it, over the part of the world the canvas shows, which is 1 / zoom of it.
+  const zoom = worldZoom();
+  const viewWidth = width / zoom, viewHeight = height / zoom;
+  const viewX = cameraOffsetX + (width - viewWidth) / 2, viewY = cameraOffsetY + (height - viewHeight) / 2;
+  weatherCtx.save();
+  weatherCtx.scale(zoom, zoom);
+
   // (drawn whatever the weather, so it fades out when the weather changes or the player leaves the desert; the sand
   // takes the place of the wind's white streaks)
   const sandstorm = drawSandstorm(weatherCtx, {
     // (a tornado's storm also blows one: the server marks its values, as it tells it as a thunderstorm)
     wanted: type === "sandstorm" || weatherData?.sandstorm === true, deltaMs, baseWind: Number(baseWindSpeed) || 0, gust: windBurst.getIntensity(), windDirection,
-    cameraX: cameraOffsetX, cameraY: cameraOffsetY, width, height, focusX, focusY,
+    cameraX: viewX, cameraY: viewY, width: viewWidth, height: viewHeight, focusX, focusY,
   });
 
   // The blizzard, the same way in the snow zones (blizzard.ts): a tornado's storm and any wind of the real weather blow
@@ -605,10 +614,11 @@ function weather(type: string, weatherData?: any): void {
   const blizzard = drawBlizzard(weatherCtx, {
     wanted: type === "blizzard" || weatherData?.blizzard === true, deltaMs, baseWind: Number(baseWindSpeed) || 0, gust: windBurst.getIntensity(), windDirection,
     fall: Math.min(1, Math.max(0, Number(weatherData?.precipitation) || 0) / 100),
-    cameraX: cameraOffsetX, cameraY: cameraOffsetY, width, height, focusX, focusY,
+    cameraX: viewX, cameraY: viewY, width: viewWidth, height: viewHeight, focusX, focusY,
   });
 
-  windStreaks(weatherCtx, deltaMs, windSpeed * (1 - Math.max(sandstorm, blizzard)), windDirection, cameraOffsetX, cameraOffsetY, width, height, buffer);
+  windStreaks(weatherCtx, deltaMs, windSpeed * (1 - Math.max(sandstorm, blizzard)), windDirection, viewX, viewY, viewWidth, viewHeight, buffer / zoom);
+  weatherCtx.restore();
 }
 
 /**

@@ -109,16 +109,19 @@ export function renderCorpseLootHint(ctx: CanvasRenderingContext2D): boolean {
 
 /** An item taken from a corpse: "You receive loot:" and its name in its quality's colour. */
 export function showLootReceived(data: any): void {
-  const name = String(data?.itemName ?? "");
+  showItemReceived("You receive loot: ", String(data?.itemName ?? ""), Number(data?.quantity) || 1, data?.quality);
+}
+
+/** An item that came into the bags, after `lead` ("You receive loot: "): its name in its quality's colour. A fish caught uses it too (fishing.ts). */
+export function showItemReceived(lead: string, name: string, quantity: number, rawQuality: unknown): void {
   if (!name) return;
-  const quantity = Number(data?.quantity) || 1;
-  const quality = qualityOf(data?.quality);
-  showNotification(`You receive loot: ${name}${quantity > 1 ? ` x${quantity}` : ""}`, true, false, (body) => {
+  const quality = qualityOf(rawQuality);
+  showNotification(`${lead}${name}${quantity > 1 ? ` x${quantity}` : ""}`, true, false, (body) => {
     const item = document.createElement("span");
     item.textContent = name;
     item.style.color = QUALITY_COLORS[quality];
     item.style.fontWeight = "bold";
-    body.replaceChildren("You receive loot: ", item, quantity > 1 ? ` x${quantity}` : "");
+    body.replaceChildren(lead, item, quantity > 1 ? ` x${quantity}` : "");
   });
 }
 

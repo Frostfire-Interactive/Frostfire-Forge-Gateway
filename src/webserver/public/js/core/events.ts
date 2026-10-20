@@ -26,6 +26,7 @@ import { isTrading, offerItem } from "./trade.js";
 import { isVendorOpen, sellItem } from "./vendor.js";
 import { isMailOpen, attachItem, openNearestMailbox, mailboxAt } from "./mail.js";
 import { gather, gatherNearest, gatherNodeAt } from "./gathering.js";
+import { fishingClick, installFishingInput } from "./fishing.js";
 import { lootNearestCorpse } from "./creatureloot.js";
 import { playerAt } from "./playerpick.js";
 import { closeRadialMenu } from "./mobileui.js";
@@ -904,6 +905,8 @@ canvas.addEventListener("touchend", (e) => {
     const node = gatherNodeAt(worldX, worldY, TOUCH_TARGET_SLOP);
     if (node) gather(node);
     else if (mailboxAt(worldX, worldY, TOUCH_TARGET_SLOP)) sendRequest({ type: "MAIL_OPEN", data: null });
+    // a tap on water casts a line there (or, with a fish on, was the reel)
+    else fishingClick(worldX, worldY);
   });
 });
 
@@ -948,6 +951,8 @@ canvas.addEventListener("touchend", (e) => {
 
 // Ctrl + wheel zooms the world in, never the UI (worldzoom.ts).
 installWorldZoom();
+// Holding the mouse button or a finger down reels a fish in (fishing.ts).
+installFishingInput();
 
 // Ctrl + W closes the tab. USER REQUEST 2026-10-15: "Prevent control + w because that closes the tab". The browser keeps
 // that key for itself (Chrome and Firefox close the tab before the page is told), so no key handler can stop it.
@@ -1105,6 +1110,10 @@ document.addEventListener("click", (event) => {
     if (!isSelfActionLocked()) sendRequest({ type: "MAIL_OPEN", data: null });
     return;
   }
+
+  // A click on water casts a line there; with a fish on, the press was the reel. The server says when it is too far.
+  // A tap is the touch handler's (above).
+  if (!isTouch && !isSelfActionLocked() && fishingClick(worldX, worldY)) return;
 
   // Players are picked server-side; `touch` asks for the wider touch area.
   sendRequest({

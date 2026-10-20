@@ -156,6 +156,19 @@ export function worldToScreen(worldX: number, worldY: number): { x: number; y: n
   return { x: w / 2 + z * (worldX + o.x - w / 2), y: h / 2 + z * (worldY + o.y - h / 2) };
 }
 
+/**
+ * Takes the player's zoom back out of a drawing context about the world point (x, y), for marks that keep one size on
+ * the screen: what is drawn next round (x, y), in world px, comes out as it does at zoom 1, while (x, y) itself stays
+ * where the zoom puts it. USER REQUEST 2026-10-20: damage and healing numbers and the buff and debuff icons "should NOT
+ * get massive when zooming in". Call between save() and restore().
+ */
+export function unzoomAbout(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  const k = 1 / userZoom();
+  ctx.translate(x, y);
+  ctx.scale(k, k);
+  ctx.translate(-x, -y);
+}
+
 /** The world position under a point of the screen, in CSS pixels from the game canvas's top left. */
 export function screenToWorld(screenX: number, screenY: number): { x: number; y: number } {
   const camX = Number((window as any).cameraX) || 0, camY = Number((window as any).cameraY) || 0;

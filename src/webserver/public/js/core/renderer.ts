@@ -12,6 +12,8 @@ import { dropDistantTarget } from "./creatureinput.js";
 import { updateSourceParticle } from "./sourceparticles.js";
 import { renderCreatureEditorOverlays, renderThreatPanel } from "./creaturedebug.js";
 import { renderGatherHint, renderGatherPreviewArea, standingGatherNodes } from "./gathering.js";
+import { renderFishing } from "./fishing.js";
+import { renderFootprints } from "./footprints.js";
 import { renderCorpseLootHint, updateCreatureLootProximity } from "./creatureloot.js";
 let weatherType = null as string | null;
 let currentWeatherData = null as any; // Store full weather object for wind speed
@@ -34,7 +36,7 @@ import { renderLoot, renderLootInteractionHint } from './loot.js';
 import { renderSkeletons } from './skeletons.js';
 import { isSelfDead, isReleaseHidden, tickDeathOffer, tickReleaseCinematic, tickCorpseMarker, tickDeathWisps, tickGraveyardOffer } from './death.js';
 import { renderLightMap } from './lightmap.js';
-import { applyWorldTransform, worldOffset, viewWidth, viewHeight, userZoom, worldToScreen } from './worldzoom.js';
+import { applyWorldTransform, worldOffset, viewWidth, viewHeight, userZoom, worldToScreen, worldZoom } from './worldzoom.js';
 import { updateTileSounds } from './tilesounds.js';
 import { chatInput } from "./chat.js";
 import { friendsListSearch } from "./friends.js";
@@ -66,6 +68,8 @@ let rafsSinceRender = 0;
 
 // Typing-indicator <img> elements on document.body, mapped to their player.
 const typingBubbles = new Map<HTMLImageElement, any>();
+/** The typing GIF's own size, px: it is drawn this many world pixels square. */
+const TYPING_BUBBLE_SIZE = 48;
 
 function updateRemotePlayerInterpolation(player: any, deltaSeconds: number) {
   if (!player || !player.lastServerUpdate) return;
@@ -1388,6 +1392,11 @@ function animationLoop() {
   // Death skeletons lie on the ground: above the first (ground) z-index
   // layers and ground effects, below characters and loot.
   renderSkeletons(ctx);
+  // Footprints lie on the ground, under every character and under the water's waves (footprints.ts)
+  renderFootprints(ctx, playersArray);
+  // Fishing lines and their bobbers lie on the water, under every character (USER REQUEST 2026-10-20: "Fishing line
+  // should always be rendered under the player"): the line runs out from the staff's tip, behind whoever holds it
+  renderFishing(ctx, deltaTime, playersArray);
     tickDeathOffer();
     tickReleaseCinematic();
     tickCorpseMarker();
@@ -1455,7 +1464,6 @@ function animationLoop() {
 
     // NPCs, players and creatures go on back to front, so whoever stands
     // further south covers those behind. Corpses lie on the ground, under all.
-    const playerLevel = currentPlayer?.stats?.level ?? 1;
     const targetedCreature = parseCreatureTarget(cache.targetId);
     const standing: Standing[] = [];
     const scene = ctx;
@@ -1477,8 +1485,8 @@ function animationLoop() {
       });
     }
     for (const c of stepCreatures(isInView)) {
-      if (c.state === "dead") drawCreature(scene, c, playerLevel, c.id === targetedCreature);
-      else standing.push({ feet: creatureFeetY(c), draw: () => drawCreature(scene, c, playerLevel, c.id === targetedCreature) });
+      if (c.state === "dead") drawCreature(scene, c, c.id === targetedCreature);
+      else standing.push({ feet: creatureFeetY(c), draw: () => drawCreature(scene, c, c.id === targetedCreature) });
     }
     // Mailboxes stand among them, at their foot.
     for (const box of (window as any).mailboxesHere?.(String(window.mapData?.name ?? "")) ?? []) {
@@ -2291,9 +2299,13 @@ function animationLoop() {
           document.body.appendChild(p._typingEl);
           typingBubbles.set(p._typingEl, p);
         }
+        // The GIF is a page element, not drawn on the canvas, so the world zoom does not reach it: size it here.
         const at = worldToScreen(p.renderPosition.x - 5, p.renderPosition.y - 58);
+        const size = TYPING_BUBBLE_SIZE * worldZoom();
         p._typingEl.style.left = at.x + "px";
         p._typingEl.style.top = at.y + "px";
+        p._typingEl.style.width = size + "px";
+        p._typingEl.style.height = size + "px";
         p._typingEl.style.display = "block";
         typingShown.add(p._typingEl);
       }

@@ -78,6 +78,8 @@ The keys are fixed. There is no key binding screen at the moment.
 | Left-click empty ground | Clear your target |
 | Left-click a defeated creature that has loot for you | Open its loot window |
 | Left-click a resource node | Gather it |
+| Left-click fishable water | Cast a fishing line there |
+| Hold the left mouse button with a line out | Reel it in, with a fish or without |
 | Left-click a mailbox | Open your mail |
 | Right-click a player | Open the player menu |
 | Right-click a creature | Target it and start attacking it |
@@ -128,6 +130,8 @@ On phones and tablets the game adds on-screen controls. Hold your device sideway
 | Tap a defeated creature that has loot for you | Open its loot window |
 | Tap a character | Talk to them |
 | Tap a resource node | Gather it |
+| Tap fishable water | Cast a fishing line there |
+| Hold your finger down with a line out | Reel it in, with a fish or without |
 | Tap a mailbox | Open your mail |
 | Hold your finger on a player | Open the player menu |
 | Tap a hotbar slot | Cast that spell |

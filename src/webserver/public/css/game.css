@@ -1489,8 +1489,8 @@ body {
  */
 #chat-container {
   position: absolute;
-  bottom: 0;
-  left: 0;
+  bottom: 10px;
+  left: 10px;
   z-index: 100;
   width: 520px;
   height: 360px;
@@ -7356,7 +7356,7 @@ body.tiny-landscape #stats-container {
 
 #item-tooltip{display:none}
 
-/* Unit frames (target, and your own frame on touch devices). ui-nameplate.png
+/* Unit frames (your own, and your target's beside it). ui-nameplate.png
    is 240x80; every child is placed in percentages of that image so the whole
    frame scales with --tf-width. */
 .unit-frame {
@@ -7492,15 +7492,14 @@ body.tiny-landscape #stats-container {
   transform: translate(calc(var(--tf-width) * 0.009), calc(var(--tf-width) * 0.009));
 }
 
-/* Your own frame only exists on touch devices, which have no desktop HUD bars. */
-#self-frame { display: none !important; }
+/* Your frame at the top left, the target frame beside it. The frame images
+   overlap slightly: 5px of the 240px image. */
+#target-frame { left: calc(25px + var(--tf-width) * 235 / 240); }
 
-/* Touch devices: your frame at the top left, the target frame beside it. */
+/* Touch devices: smaller frames, closer to the edge. */
 @media (hover: none) and (pointer: coarse) {
   .unit-frame { --tf-width: 240px; left: 8px; }
-  #self-frame { display: block !important; }
-  /* 8px from the edge + 240px frame - 5px: the frame images overlap slightly. */
-  #target-frame { left: 243px; }
+  #target-frame { left: calc(8px + var(--tf-width) * 235 / 240); }
   /* The desktop outline and drop shadow are too heavy on the smaller frame's
      text; use the same soft shadow as the other touch HUD text (#castbar-text). */
   .unit-frame .uf-name,

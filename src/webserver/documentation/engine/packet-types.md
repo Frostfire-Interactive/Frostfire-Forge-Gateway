@@ -388,6 +388,8 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `CREATE_MAP_FAILED` | To client | Map editor | A new map was refused: `{ message }` |
 | `SAVE_TILE_SOUNDS` | To server | Map editor | Save the footstep sounds set on tiles: `{ changes }`. Needs `server.admin` or `server.*` |
 | `TILE_SOUNDS` | To client | Map editor | Every footstep sound set on tiles: `{ tilesets }`. Sent to everyone online after a save |
+| `SAVE_TILE_FOOTPRINTS` | To server | Map editor | Save the footprints of tiles: `{ changes: [{ tileset, ids, print }] }`, `print` being `{ style, color, opacity, fade }` or `null` for none. Needs `server.admin` or `server.*` |
+| `TILE_FOOTPRINTS` | To client | Map editor | Every footprint set on tiles: `{ tilesets: { "<tileset>": { "<tile id>": { style, color, opacity, fade } } } }`. Sent at login and to everyone online after a save |
 | `TOGGLE_PARTICLE_EDITOR` | To client | Particle editor | Open or close the particle editor |
 | `SAVE_PARTICLE` | To server | Particle editor | Save a particle |
 | `DELETE_PARTICLE` | To server | Particle editor | Delete a particle |
@@ -477,6 +479,15 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `GATHERING_EDITOR_PREVIEW_SPOTS` | To client | Gathering editor | The preview: `{ spots, wanted, note }` |
 | `GATHERING_EDITOR_RESULT` | To client | Gathering editor | Whether a save or delete was done |
 | `GATHERING_EDITOR_UPDATED` | To client | Gathering editor | Another admin changed the areas |
+| `FISH_CAST` | To server | Fishing | Cast a line at a fishable tile: `{ x, y }` in px |
+| `FISH_REEL` | To server | Fishing | The player began reeling in the fish that bit (no data). Without it within 5 s of the bite the fish gets away |
+| `FISH_LAND` | To server | Fishing | The fish on the line has been reeled to the shore (no data) |
+| `FISH_CANCEL` | To server | Fishing | The line was reeled in with no fish on it: take it in (no data) |
+| `FISHING` | To client | Fishing | A player's line, for everyone on the map: `{ id, state, x?, y?, item?, icon? }`. `state` is `cast` (the bobber lands at `x`, `y`), `bite`, `reel` (the reel began), `escape` (the fish got away: the bobber comes up, the line stays out), `catch` (the fish is pulled out: `item`, `icon`, `quality`) or `end` |
+| `FISHING_TILES` | To client | Fishing | Which tiles are fishable: `{ tilesets: { "<tileset>": [<tile id>] } }`. Sent at login and to everyone online after a save |
+| `FISHING_EDITOR_LIST` | To server | Map editor | Ask for the Fishing tab's data. Needs `server.admin` or `server.*` |
+| `FISHING_EDITOR_SAVE` | To server | Map editor | Save catches of tiles: `{ changes: [{ tileset, ids, catches }] }`, `catches` being `[{ item, chance }]` or `null` for not fishable. Needs `server.admin` or `server.*` |
+| `FISHING_EDITOR_DATA` | To client | Map editor | Every fishable tile with its catches, and the material items: `{ tiles, items }` |
 | `ACHIEVEMENT_EARNED` | To client | Achievements | The earner's popup: `{ id, name, description, icon, rewardItem, rewardQuantity, rewardMount, mailed }` |
 | `ACHIEVEMENTS_LIST` | To server | Achievements | Ask for your achievements (no data). Sent when the window opens, and after one is earned while it is open |
 | `ACHIEVEMENTS` | To client | Achievements | Every achievement that is on, with your progress: `{ achievements: [{ id, name, description, icon, type, count, progress, completedAt, rewardItem, rewardQuantity, rewardMount }] }` |

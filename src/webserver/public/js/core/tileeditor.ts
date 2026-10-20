@@ -7,6 +7,7 @@ import { MOBILE_RENDERER } from "./renderpath.js";
 import { panEditorCamera } from "./renderer.js";
 import { TilePreviewCache } from "./tilepreviewcache.js";
 import { getTileSounds, loadTileSounds, onTileSounds, tilesetKey } from "./tilesounds.js";
+import { getTileFootprints, onTileFootprints } from "./footprints.js";
 
 declare global {
   interface Window {
@@ -131,6 +132,10 @@ class TileEditor {
     // The Sounds tab shows the footstep sounds set on tiles as they are now, after anyone's save
     onTileSounds((tileSounds) => {
       if (this.bridgeReady && this.editorWindow) this.editorWindow.postMessage({ type: 'tileSoundsUpdate', tileSounds }, '*');
+    });
+    // and the Footprints tab the footprints set on tiles
+    onTileFootprints((tileFootprints) => {
+      if (this.bridgeReady && this.editorWindow) this.editorWindow.postMessage({ type: 'tileFootprintsUpdate', tileFootprints }, '*');
     });
   }
 
@@ -360,6 +365,11 @@ class TileEditor {
     if (this.bridgeReady && this.editorWindow) this.editorWindow.postMessage({ type: 'createMapFailed', message }, '*');
   }
 
+  /** The Fishing tab's data from the server (FISHING_EDITOR_DATA): the fishable tiles with their catches, and the material items. */
+  public fishingData(data: any) {
+    if (this.bridgeReady && this.editorWindow) this.editorWindow.postMessage({ type: 'fishingUpdate', tiles: data?.tiles ?? {}, items: data?.items ?? [] }, '*');
+  }
+
   private sendToEditor(msg: any) {
     if (this.bridgeReady && this.editorWindow) {
       this.editorWindow.postMessage(msg, '*');
@@ -436,6 +446,18 @@ class TileEditor {
           // The Sounds tab: tiles given a sound, saved for every map at once (the server answers with TILE_SOUNDS)
           sendRequest({ type: 'SAVE_TILE_SOUNDS', data: { changes: msg.changes } });
           break;
+        case 'tileFootprintsSave':
+          // The Footprints tab: tiles given prints, saved for every map at once (the server answers with TILE_FOOTPRINTS)
+          sendRequest({ type: 'SAVE_TILE_FOOTPRINTS', data: { changes: msg.changes } });
+          break;
+        case 'fishingList':
+          // The Fishing tab: what can be caught on which tiles (the server answers with FISHING_EDITOR_DATA)
+          sendRequest({ type: 'FISHING_EDITOR_LIST', data: null });
+          break;
+        case 'fishingSave':
+          // tiles given catches, or made not fishable, for every map at once (answered with FISHING_EDITOR_DATA too)
+          sendRequest({ type: 'FISHING_EDITOR_SAVE', data: { changes: msg.changes } });
+          break;
         case 'command':
           switch (msg.name) {
             case 'undo': this.undo(); break;
@@ -487,6 +509,7 @@ class TileEditor {
         key: tilesetKey(t)
       })),
       tileSounds: getTileSounds(),
+      tileFootprints: getTileFootprints(),
       tool: this.currentTool,
       selectedLayer: this.selectedLayer,
       selectedObject: this.selectedObject,

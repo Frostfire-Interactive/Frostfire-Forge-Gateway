@@ -27,13 +27,16 @@
 
 /* ----------------------------------------------------------- the toolbar */
 
+/* (USER REPORT 2026-10-20: the Footprints tab's options went off the screen) the tools take a second line when they do
+   not fit on one, at any width: nothing is ever cut off. */
 .me-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--s-3);
+  gap: var(--s-2) var(--s-3);
   flex-shrink: 0;
   min-height: 52px;
-  padding: 0 var(--s-6);
+  padding: var(--s-2) var(--s-6);
   border-bottom: 1px solid var(--border);
 }
 .me-toolbar-title { color: var(--text-faint); font-size: var(--t-xs); font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; }
@@ -48,7 +51,7 @@
 .me-tools .tl-seg-item[aria-checked="true"] .tl-kbd { border-color: var(--accent-line); color: var(--accent-text); }
 .me-toolbar .tl-btn .me-key { margin-left: 2px; }
 
-/* The two tabs at the start of the toolbar, Paint and Sounds, then the bar of the one in view. */
+/* The tabs at the start of the toolbar, Paint, Sounds and Fishing, then the bar of the one in view. */
 .me-views .tl-seg-item { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; }
 .me-views .tl-seg-item[aria-checked="true"] { background: var(--accent-soft); color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-line); }
 .me-toolbar-set { display: contents; }
@@ -62,6 +65,28 @@
 .me-sound-legend[hidden] { display: none; }
 .me-sound-key { display: inline-flex; align-items: center; gap: 6px; }
 .me-sound-swatch { flex-shrink: 0; width: 10px; height: 10px; border-radius: 2px; }
+/* The Fishing tab's Catches dialog: one row per item, its chance, and the share of all it comes to. */
+.me-catch-hint { margin: 0 0 var(--s-3); color: var(--text-muted); }
+.me-catch-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: var(--s-3); }
+.me-catch-row { display: flex; align-items: center; gap: 8px; }
+.me-catch-item { flex: 1 1 auto; min-width: 0; justify-content: flex-start; }
+.me-catch-item > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.me-catch-chance { width: 90px; flex: 0 0 auto; }
+.me-catch-chance.is-invalid { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger-line); }
+.me-catch-unit { color: var(--text-muted); }
+.me-catch-share { min-width: 72px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.me-catch-empty { margin: 0; color: var(--text-faint); }
+.me-catch-total { margin: var(--s-3) 0 0; color: var(--text-muted); }
+/* The Footprints tab: the colour of the prints, their darkness and how long they stay, on the bar. */
+.me-print-color { width: 32px; height: 30px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-raised); cursor: pointer; }
+.me-print-field { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); white-space: nowrap; }
+.me-print-dark { width: 90px; }
+.me-print-value { min-width: 38px; color: var(--text); font-variant-numeric: tabular-nums; }
+.me-print-fade { width: 70px; }
+.me-print-fade.is-invalid { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger-line); }
+/* The preview: someone walking across the first picked tile, leaving the bar's prints. */
+.me-print-preview-box { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); white-space: nowrap; }
+.me-print-preview { width: 192px; height: 48px; border: 1px solid var(--border); border-radius: 6px; image-rendering: pixelated; background: var(--surface-raised); }
 
 /* ------------------------------------------------------------ the layers */
 

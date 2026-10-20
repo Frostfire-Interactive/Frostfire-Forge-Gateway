@@ -8,6 +8,7 @@ import { NUMBER_FONT, fontFor } from "./fonts.js";
 import { config } from "../web/global.js";
 import Cache from "./cache.js";
 import { TARGET_ARROWS, ARROW_GAP, spriteArtTop, type ArrowPalette } from "./targetmarker.js";
+import { unzoomAbout } from "./worldzoom.js";
 const cache = Cache.getInstance();
 
 export interface CreatureView {
@@ -498,9 +499,13 @@ export function drawFloatingTexts(
     ctx.font = `bold ${t.size}px ${fontFor(t.text)}`;
     const x = anchor.x + t.jitter;
     const y = anchor.y - 20 - progress * 30;
+    // One size on the screen at any zoom, rising from the anchor.
+    ctx.save();
+    unzoomAbout(ctx, anchor.x, anchor.y);
     ctx.strokeText(t.text, x, y);
     ctx.fillStyle = t.color;
     ctx.fillText(t.text, x, y);
+    ctx.restore();
   }
   ctx.restore();
 }
@@ -665,7 +670,7 @@ export function creatureFeetY(c: CreatureView): number {
   return groundLine(c, spriteMetrics(c));
 }
 
-export function drawCreature(ctx: CanvasRenderingContext2D, c: CreatureView, playerLevel: number, targeted: boolean): void {
+export function drawCreature(ctx: CanvasRenderingContext2D, c: CreatureView, targeted: boolean): void {
   if (c.state === "dead") {
     drawCreatureCorpse(ctx, c);
     return;
@@ -707,13 +712,13 @@ export function drawCreature(ctx: CanvasRenderingContext2D, c: CreatureView, pla
   // Bars and icons sit above the drawn sprite, so they follow scaled creatures.
   // Measured from the feet so bars clear the head of a tall or scaled sprite.
   const headY = spriteHeight > 0 ? groundY - spriteHeight : cy - radius;
-  drawNameplate(ctx, c, playerLevel, targeted, headY, groundY);
+  drawNameplate(ctx, c, targeted, headY, groundY);
   drawCastBar(ctx, c, headY);
   ctx.restore();
 }
 
-/** Same layout as player nameplates: name below the feet, subname in the guild slot, bars and level when targeted. */
-function drawNameplate(ctx: CanvasRenderingContext2D, c: CreatureView, playerLevel: number, targeted: boolean, headY: number, groundY: number): void {
+/** Same layout as player nameplates: name below the feet, subname in the guild slot, health bar when targeted. */
+function drawNameplate(ctx: CanvasRenderingContext2D, c: CreatureView, targeted: boolean, headY: number, groundY: number): void {
   const x = c.renderX;
   // Below the feet (feet sit a quarter frame under the anchor, players offset
   // their name the same way), so a scaled creature's shadow never lands on it.
@@ -752,17 +757,6 @@ function drawNameplate(ctx: CanvasRenderingContext2D, c: CreatureView, playerLev
     else if (pct < 0.8) ctx.fillStyle = "#C8C520";
     else ctx.fillStyle = "#519D41";
     ctx.fillRect(x - 50, barY, pct * 100, 3);
-
-    // Level beside the bar, coloured by difficulty. Players centre theirs on
-    // two bars (health + mana); creatures have only the health bar, so the
-    // level sits level with that one bar instead of hanging below it.
-    const skull = c.rank === "boss" || c.level - playerLevel >= 10;
-    const elite = c.rank === "elite" || c.rank === "rare_elite" || c.rank === "boss";
-    const levelText = `${skull ? "??" : c.level}${elite ? "+" : ""}`;
-    ctx.textAlign = "left";
-    ctx.font = "12px 'Comic Relief'";
-    ctx.fillStyle = skull ? "#ff2020" : levelColor(c.level, playerLevel);
-    ctx.fillText(levelText, x - 60 - levelText.length * 5, barY + 7);
   }
 
   drawAuras(ctx, c, headY);
@@ -793,6 +787,8 @@ function drawAuras(ctx: CanvasRenderingContext2D, c: CreatureView, headY: number
   ctx.imageSmoothingEnabled = false;
   ctx.shadowColor = "transparent";
   ctx.shadowBlur = 0;
+  // One size on the screen at any zoom, kept the same height over the head.
+  unzoomAbout(ctx, c.renderX, headY);
   for (let r = 0; r * maxPerRow < active.length; r++) {
     const row = active.slice(r * maxPerRow, (r + 1) * maxPerRow);
     const rowWidth = row.length * iconSize + (row.length - 1) * gap;

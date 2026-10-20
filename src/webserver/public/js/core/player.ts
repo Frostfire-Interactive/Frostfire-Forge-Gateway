@@ -10,6 +10,7 @@ import { getCachedImage } from "./images.js";
 import { config } from "../web/global.js";
 import { particlePool, getParticleSprite, particleBrightness } from "./npc.js";
 import { queueGlow } from "./glowqueue.js";
+import { unzoomAbout } from "./worldzoom.js";
 import { initializeLayeredAnimation } from "./layeredAnimation.js";
 import { getVisibleLayersSorted } from "./layeredAnimation.js";
 import { formatDuration } from "./tooltip.js";
@@ -290,6 +291,8 @@ async function createPlayer(data: any) {
 
       context.save();
       context.imageSmoothingEnabled = false;
+      // One size on the screen at any zoom, kept the same height over the top of the head (about 28px over the anchor).
+      unzoomAbout(context, this.renderPosition.x, this.renderPosition.y - 28);
 
       for (let r = 0; r < rows.length; r++) {
         const row = rows[r];
@@ -439,6 +442,9 @@ async function createPlayer(data: any) {
           ? `${dmg.value}!`
           : `${dmg.value}`;
 
+        // One size on the screen at any zoom, rising from where it was struck.
+        context.save();
+        unzoomAbout(context, dmg.x, dmg.y);
         context.lineWidth = 3;
         context.strokeText(
           displayText,
@@ -450,6 +456,7 @@ async function createPlayer(data: any) {
           dmg.x,
           displayY
         );
+        context.restore();
       }
 
       context.fillStyle = "white";
@@ -620,7 +627,8 @@ async function createPlayer(data: any) {
     },
     show: function (context: CanvasRenderingContext2D, currentPlayer?: any) {
 
-      const uiOffset = 10;
+      // Moves the whole nameplate (name, guild, bars, level) down from its place just under the feet.
+      const uiOffset = 0;
 
       const shadowsDisabled = getWeatherType() === "thunderstorm";
 
@@ -714,7 +722,8 @@ async function createPlayer(data: any) {
 
       const guildOffset = this.guild_name ? 16 : 0;
 
-      let plateLeft = context.measureText(data.username).width / 2;
+      const nameHalf = context.measureText(data.username).width / 2;
+      let plateLeft = nameHalf;
       let plateRight = plateLeft;
       let plateBottom = 54 + uiOffset;
 
@@ -739,8 +748,12 @@ async function createPlayer(data: any) {
         plateBottom = 70 + uiOffset;
       }
 
+      // Your own health and stamina are on the screen's own bars (or your unit frame on touch), so only another player's
+      // nameplate shows them, while targeted. No nameplate shows a level: the unit frames do.
+      const isOwn = data.id === cachedPlayerId;
+
       if (!this.isStealth && !this.isDead && !this.isGhost) {
-        if (data.id === cachedPlayerId || this.targeted) {
+        if (!isOwn && this.targeted) {
           context.fillStyle = "rgba(0, 0, 0, 0.8)";
           context.fillRect(this.renderPosition.x - 50, this.renderPosition.y + 46 + guildOffset + uiOffset, 100, 3);
 
@@ -783,7 +796,7 @@ async function createPlayer(data: any) {
           }
         }
 
-        if (data.id === cachedPlayerId || this.targeted) {
+        if (!isOwn && this.targeted) {
         context.fillStyle = "rgba(0, 0, 0, 0.8)";
         context.fillRect(this.renderPosition.x - 50, this.renderPosition.y + 51 + guildOffset + uiOffset, 100, 3);
         context.fillStyle = "#469CD9";
@@ -796,20 +809,10 @@ async function createPlayer(data: any) {
           );
         }
 
-        if (data.id === cachedPlayerId || this.targeted) {
-
-          context.textAlign = "left";
-          context.font = "12px 'Comic Relief'";
-          context.fillStyle = "white";
-
-          context.shadowColor = "black";
-          context.shadowBlur = 2;
-            const offsetX = this.renderPosition.x - 60 - (this.stats.level.toString().length * 5);
-          context.fillText(`${this.stats.level}`, offsetX, this.renderPosition.y + 55 + guildOffset + uiOffset);
-
-          plateLeft = Math.max(plateLeft, 60 + this.stats.level.toString().length * 5);
+        if (!isOwn && this.targeted) {
+          plateLeft = Math.max(plateLeft, 50);
           plateRight = Math.max(plateRight, 50);
-          plateBottom = Math.max(plateBottom, 59 + guildOffset + uiOffset);
+          plateBottom = Math.max(plateBottom, 54 + guildOffset + uiOffset);
         }
       }
 

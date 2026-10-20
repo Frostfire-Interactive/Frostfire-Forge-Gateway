@@ -1,7 +1,9 @@
-// Unit frames: the ui-nameplate.png panel. One shows whatever the player has
-// targeted (another player or a creature); on touch devices a second shows the
-// player themselves, in place of the desktop health and stamina bars. Both are
-// read-only views of state the rest of the client already tracks.
+// Unit frames: the ui-nameplate.png panel. One at the top left shows the player
+// themselves (USER REQUEST 2026-10-20: "Show my current stats in a target frame
+// at the top left and move the actual targets frame to the right side of self
+// target. Same thing mobile has."); the other, beside it, shows whatever the
+// player has targeted (another player or a creature). Both are read-only views
+// of state the rest of the client already tracks.
 import Cache from "./cache.js";
 import { creatures, parseCreatureTarget, levelColor } from "./creature.js";
 import { getLayerStillFrame } from "./layeredAnimation.js";
@@ -215,16 +217,10 @@ function playerView(player: any): UnitView | null {
 const targetFrame = new UnitFrame("target-frame");
 const selfFrame = new UnitFrame("self-frame");
 
-/** Touch devices show the self frame; everywhere else it stays hidden. */
-const touchQuery = typeof window !== "undefined" && window.matchMedia
-  ? window.matchMedia("(hover: none) and (pointer: coarse)")
-  : null;
-
 /** Refresh both frames. Called every frame from the render loop. */
 export function updateUnitFrames(self: any): void {
   const playerLevel = Number(self?.stats?.level) || 1;
   const targetedPlayer = Array.from(cache.players as Iterable<any>).find((p: any) => p?.targeted);
   targetFrame.render(creatureView(playerLevel) ?? playerView(targetedPlayer));
-  // Skip the self frame's work entirely on desktop, where CSS hides it.
-  selfFrame.render(touchQuery?.matches ? playerView(self) : null);
+  selfFrame.render(playerView(self));
 }

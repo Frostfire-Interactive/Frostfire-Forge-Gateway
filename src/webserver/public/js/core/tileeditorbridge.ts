@@ -11,8 +11,9 @@
 // layer is selected, which layers are locked or have unsaved edits, and the
 // tiles picked up from the map. It does not answer a Save, a tool change or
 // the choice of an object layer, so what is shown here is only what it said.
-import { arrowKeys, brandName, button, confirmDialog, count, el, empty, icon, iconButton, num, oneStop, openDialog, pill, screen, segments, setBusy, setIcon, toast, tooltip, type IconName } from "./toolkit.js";
+import { arrowKeys, brandName, button, confirmDialog, count, el, empty, icon, iconButton, num, oneStop, openDialog, pill, screen, segments, setBusy, setIcon, thumb, toast, tooltip, type IconName } from "./toolkit.js";
 import { FieldRenderer, setFieldError } from "./toolfields.js";
+import { drawPrint } from "./footprintdraw.js";
 import { config } from "../web/global.js";
 
 type Tool = "paint" | "erase" | "copy" | "paste";
@@ -37,8 +38,52 @@ const ZOOM_KEY = "ff-map-editor-zoom";
  * separate tab that allows selecting multiple tiles to share a sound (picked from asset server)"): tiles of the palette
  * picked and given one footstep sound, for every map at once (js/core/tilesounds.ts).
  */
-type View = "paint" | "sounds";
+type View = "paint" | "sounds" | "fishing" | "footprints";
 const VIEW_KEY = "ff-map-editor-view";
+/**
+ * The Fishing tab (USER REQUEST 2026-10-20: "Fishing editor choose type of fish (multiple choice with % chance
+ * editable) rewarded on what tile (similar to tileset sound editor) (item listed as material)"): tiles of the palette
+ * picked and given what can be caught from them, material items with a chance each, for every map at once (engine
+ * src/systems/fishing). A tile with catches is water a player can cast a line into.
+ */
+interface Catch { item: string; chance: number }
+interface FishItem { name: string; image: string | null; quality: string | null }
+/** At most this many catches on a tile, and a chance from and to (%): the server's limits. */
+const MAX_CATCHES = 12, MIN_CHANCE = 0.01, MAX_CHANCE = 100;
+/** How long a fishing save may go without the server's answer before it is called not saved. */
+const FISH_SAVE_WAIT_MS = 6000;
+/** A list of catches as text, the same for the same list: to tell lists apart and to colour them. */
+const catchesKey = (list: Catch[] | null | undefined): string => (list ?? []).map((c) => `${c.item.toLowerCase()}=${c.chance}`).join("|");
+/** Each catch's chance as a share of all of them: what the server rolls with. */
+function shares(list: Catch[]): number[] {
+  const total = list.reduce((sum, c) => sum + (c.chance > 0 ? c.chance : 0), 0);
+  return list.map((c) => (total > 0 && c.chance > 0 ? (c.chance / total) * 100 : 0));
+}
+const percent = (n: number): string => `${Math.round(n * 10) / 10} %`;
+/**
+ * The Footprints tab (USER REQUEST 2026-10-20: "a section in the editor to be able to add footsteps on certain tiles"):
+ * tiles of the palette picked and given the prints players leave on them, for every map at once (engine
+ * src/systems/footprints.ts, game window js/core/footprints.ts): a style, a colour, a darkness and a fade time.
+ */
+type PrintStyle = "boot" | "bare" | "hole";
+interface Footprint { style: PrintStyle; color: string; opacity: number; fade: number }
+const PRINT_STYLES: Array<[PrintStyle, string]> = [["boot", "Boots"], ["bare", "Bare feet"], ["hole", "Deep holes"]];
+/** Darkness from and to (%), and fade time from and to (s): the server's limits. */
+const MIN_DARKNESS = 5, MAX_DARKNESS = 100, MIN_FADE = 1, MAX_FADE = 600;
+/** How long a footprints save may go without the server's answer before it is called not saved. */
+const PRINT_SAVE_WAIT_MS = 6000;
+/** A footprint setting as text, the same for the same setting: to tell them apart and to colour them. */
+const printKey = (print: Footprint | null | undefined): string => (print ? `${print.style}|${print.color}|${print.opacity}|${print.fade}` : "");
+const styleWords = (style: PrintStyle): string => PRINT_STYLES.find(([value]) => value === style)?.[1] ?? style;
+/**
+ * The preview: its size on screen (px), how many times the ground is magnified in it, how far the walker starts outside
+ * it and how fast they walk (ground px, px/s), the game's step and feet apart (js/core/steps.ts STEP_PX, footprints.ts
+ * FOOT_APART), and the longest a print takes to fade in it (s): a longer fade is shown sped up.
+ */
+const PREVIEW_W = 192, PREVIEW_H = 48, PREVIEW_SCALE = 2, PREVIEW_START = 6, PREVIEW_SPEED = 60;
+const PREVIEW_STRIDE = 44, PREVIEW_APART = 4, PREVIEW_FADE_MAX = 3;
+/** How much of its time a print stays as laid before it fades (the game's HOLD). */
+const PREVIEW_HOLD = 0.6;
 /** How long a sound save may go without the server's answer before it is called not saved. */
 const SOUND_SAVE_WAIT_MS = 6000;
 /** An audio file's name as a tile keeps it: without its extension, in lower case (the asset server finds it so). */
@@ -159,6 +204,52 @@ class TileEditorBridge {
   private preview: HTMLAudioElement | null = null;
   private fields = new FieldRenderer({ rerender: () => {} });
 
+  /** The Fishing tab: its bar, the fishable tiles of every map (tileset key -> tile id -> catches), and the material items. */
+  private fishBar = el("div", "me-toolbar-set");
+  private fishTiles: Record<string, Record<string, Catch[]>> = {};
+  private fishItems: FishItem[] = [];
+  private fishState: "none" | "loading" | "loaded" = "none";
+  /** The tiles picked in the Fishing tab, apart from those of the other tabs. */
+  private fishPicked = new Map<number, Set<number>>();
+  /** The catches to give the picked tiles, as made in the Catches dialog. */
+  private fishDraft: Catch[] = [];
+  private fishEditBtn!: HTMLButtonElement;
+  private fishTakeBtn!: HTMLButtonElement;
+  private fishApplyBtn!: HTMLButtonElement;
+  private fishClearBtn!: HTMLButtonElement;
+  private fishSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** A save on its way: the tiles and the catches they are to have, null for not fishable. */
+  private fishSaving: { key: string; ids: number[]; catches: Catch[] | null } | null = null;
+
+  /** The Footprints tab: its bar, the footprints set on tiles of every map (tileset key -> tile id -> prints), and its picks. */
+  private printBar = el("div", "me-toolbar-set");
+  private tileFootprints: Record<string, Record<string, Footprint>> = {};
+  private printPicked = new Map<number, Set<number>>();
+  /** The prints to give the picked tiles, as set on the bar. */
+  private printDraft: Footprint = { style: "boot", color: "#3a2a1c", opacity: 0.45, fade: 30 };
+  private printStyleSeg!: HTMLElement;
+  private printColorInput!: HTMLInputElement;
+  private printDarkInput!: HTMLInputElement;
+  private printDarkLabel = el("span", "me-print-value");
+  private printFadeInput!: HTMLInputElement;
+  private printApplyBtn!: HTMLButtonElement;
+  private printClearBtn!: HTMLButtonElement;
+  private printTakeBtn!: HTMLButtonElement;
+  private printSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** A save on its way: the tiles and the prints they are to have, null for none. */
+  private printSaving: { key: string; ids: number[]; print: Footprint | null } | null = null;
+  /**
+   * The preview on the Footprints bar (USER REQUEST 2026-10-20: "Add a preview section"): someone walking across the
+   * first picked tile, leaving the bar's prints as the game draws them (js/core/footprintdraw.ts).
+   */
+  private printPreview = el("canvas", "me-print-preview");
+  private previewPrints: Array<{ x: number; side: number; born: number }> = [];
+  private previewWalk = { x: -PREVIEW_START, walked: 0, side: 1, waitUntil: 0 };
+  /** The preview's own clock (s): it runs faster than real time for a long fade, so a print is seen fading. */
+  private previewClock = 0;
+  private previewLast = 0;
+  private previewFrame: number | null = null;
+
   /** New map: a request is on its way, its button, and the time it may take. */
   private creatingMap = false;
   private createBtn: HTMLButtonElement | null = null;
@@ -252,6 +343,12 @@ class TileEditorBridge {
           break;
         case 'tileSoundsUpdate':
           this.handleTileSoundsUpdate(msg);
+          break;
+        case 'tileFootprintsUpdate':
+          this.handleFootprintsUpdate(msg);
+          break;
+        case 'fishingUpdate':
+          this.handleFishingUpdate(msg);
           break;
         case 'createMapFailed':
           this.createMapDone(String(msg.message || "The map was not made."));
@@ -358,12 +455,16 @@ class TileEditorBridge {
 
     this.paintBar.append(el("span", "me-toolbar-title", "Tool"), group, rotate, end);
     this.buildSoundBar();
+    this.buildFishBar();
+    this.buildPrintBar();
 
     this.viewTabs.setAttribute("role", "tablist");
     this.viewTabs.setAttribute("aria-label", "What to do");
     const views: Array<[View, string, IconName, string]> = [
       ["paint", "Tiles", "brush", "Paint tiles onto the map"],
       ["sounds", "Sounds", "megaphone", "Give tiles the footstep sound they make, on every map"],
+      ["fishing", "Fishing", "fish", "Choose what can be caught from tiles, on every map: those tiles become water to fish in"],
+      ["footprints", "Footprints", "paw", "Give tiles the footprints players leave on them, on every map"],
     ];
     for (const [id, label, glyph, does] of views) {
       const tab = el("button", "tl-seg-item");
@@ -376,14 +477,14 @@ class TileEditorBridge {
       this.viewTabs.appendChild(tab);
     }
     arrowKeys(this.viewTabs);
-    this.toolbarEl.append(this.viewTabs, el("span", "tl-topbar-rule"), this.paintBar, this.soundBar);
+    this.toolbarEl.append(this.viewTabs, el("span", "tl-topbar-rule"), this.paintBar, this.soundBar, this.fishBar, this.printBar);
     let kept: string | null = null;
     try {
       kept = localStorage.getItem(VIEW_KEY);
     } catch {
       // No storage here: the window opens on Paint.
     }
-    this.setView(kept === "sounds" ? "sounds" : "paint", false);
+    this.setView(kept === "sounds" || kept === "fishing" || kept === "footprints" ? kept : "paint", false);
   }
 
   private buildPalette() {
@@ -568,10 +669,15 @@ class TileEditorBridge {
 
     // The tiles picked for a sound belong to the tilesets as they were: a map with other tilesets starts afresh
     const keys = (list: any[]) => list.map((t: any) => this.keyOf(t)).join("|");
-    if (keys(msg.tilesets || []) !== keys(this.tilesets)) this.soundPicked.clear();
+    if (keys(msg.tilesets || []) !== keys(this.tilesets)) {
+      this.soundPicked.clear();
+      this.fishPicked.clear();
+      this.printPicked.clear();
+    }
     this.tilesets = msg.tilesets || [];
     this.currentTilesetIndex = 0;
     this.tileSounds = msg.tileSounds && typeof msg.tileSounds === "object" ? msg.tileSounds : {};
+    this.tileFootprints = msg.tileFootprints && typeof msg.tileFootprints === "object" ? msg.tileFootprints : {};
 
     this.layerData = msg.layers || [];
 
@@ -782,7 +888,7 @@ class TileEditorBridge {
   private onKeyDown(e: KeyboardEvent) {
     const target = e.target as HTMLElement;
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
-    if (this.view === "sounds") return this.soundKeyDown(e);
+    if (this.view !== "paint") return this.soundKeyDown(e);
 
     if (this.selectedObject && ['p', 'e', 'c', 'v'].includes(e.key)) return;
 
@@ -1249,6 +1355,14 @@ class TileEditorBridge {
       this.drawSounds(tileset, tileWidth, tileHeight, cols);
       return;
     }
+    if (this.view === "fishing") {
+      this.drawFishing(tileset, tileWidth, tileHeight, cols);
+      return;
+    }
+    if (this.view === "footprints") {
+      this.drawPrints(tileset, tileWidth, tileHeight, cols);
+      return;
+    }
 
     if (this.isSelectingTiles && this.selectionStartTile && this.selectionEndTile) {
       const minX = Math.min(this.selectionStartTile.x, this.selectionEndTile.x);
@@ -1373,6 +1487,8 @@ class TileEditorBridge {
   /** Under the palette: what is picked to paint with. */
   private paintPicked() {
     if (this.view === "sounds") return this.paintSoundPicked();
+    if (this.view === "fishing") return this.paintFishPicked();
+    if (this.view === "footprints") return this.paintPrintPicked();
     let said: string;
     let none = false;
     if (this.isSelectingTiles && this.selectionStartTile && this.selectionEndTile) {
@@ -1407,7 +1523,7 @@ class TileEditorBridge {
     const cols = Math.floor(tileset.imagewidth / tileset.tilewidth);
     const rows = Math.floor(tileset.imageheight / tileset.tileheight);
     const at = this.hoveredTilesetPos;
-    if (at && at.x >= 0 && at.y >= 0 && at.x < cols && at.y < rows) this.underEl.textContent = `Column ${num(at.x + 1)}, row ${num(at.y + 1)}${this.view === "sounds" ? ` · ${this.soundWords(tileset, at.y * cols + at.x)}` : ""}`;
+    if (at && at.x >= 0 && at.y >= 0 && at.x < cols && at.y < rows) this.underEl.textContent = `Column ${num(at.x + 1)}, row ${num(at.y + 1)}${this.view === "sounds" ? ` · ${this.soundWords(tileset, at.y * cols + at.x)}` : this.view === "fishing" ? ` · ${this.catchWords(this.fishTiles[this.keyOf(tileset)]?.[String(at.y * cols + at.x)])}` : this.view === "footprints" ? ` · ${this.printWords(this.tileFootprints[this.keyOf(tileset)]?.[String(at.y * cols + at.x)])}` : ""}`;
     else this.underEl.textContent = `${num(cols)} × ${num(rows)} tiles of ${num(tileset.tilewidth)} px`;
   }
 
@@ -1415,7 +1531,7 @@ class TileEditorBridge {
 
   private onTilesetMouseDown(e: MouseEvent) {
     if (e.button !== 0) return;
-    if (this.view === "sounds") return this.soundMouseDown(e);
+    if (this.view !== "paint") return this.soundMouseDown(e);
 
     const tileset = this.tilesets[this.currentTilesetIndex];
     if (!tileset) return;
@@ -1444,7 +1560,7 @@ class TileEditorBridge {
   }
 
   private onTilesetMouseUp(_e: MouseEvent) {
-    if (this.view === "sounds") return this.soundMouseUp();
+    if (this.view !== "paint") return this.soundMouseUp();
     if (!this.isSelectingTiles) return;
 
     this.isSelectingTiles = false;
@@ -1525,7 +1641,7 @@ class TileEditorBridge {
   }
 
   private onTilesetMouseLeave() {
-    // A drag in the Sounds tab that leaves the palette picks what it covered so far
+    // A drag in the Sounds or Fishing tab that leaves the palette picks what it covered so far
     if (this.soundDrag) this.soundMouseUp();
     if (this.isSelectingTiles) {
       this.isSelectingTiles = false;
@@ -1700,6 +1816,10 @@ class TileEditorBridge {
     }
     this.paintBar.hidden = view !== "paint";
     this.soundBar.hidden = view !== "sounds";
+    this.fishBar.hidden = view !== "fishing";
+    this.printBar.hidden = view !== "footprints";
+    if (view === "footprints") this.startPrintPreview();
+    else this.stopPrintPreview();
     if (keep) {
       try {
         localStorage.setItem(VIEW_KEY, view);
@@ -1710,9 +1830,11 @@ class TileEditorBridge {
     this.soundDrag = null;
     this.isSelectingTiles = false;
     if (view === "sounds") void this.loadAudio();
+    if (view === "fishing") this.loadFishing();
     this.drawTileset();
     this.paintPicked();
-    this.paintSoundLegend();
+    // (the Fishing tab draws its own legend in the same place, from paintPicked)
+    if (view !== "fishing" && view !== "footprints") this.paintSoundLegend();
   }
 
   private buildSoundBar() {
@@ -1770,10 +1892,11 @@ class TileEditorBridge {
     return `${it.sound} (${it.set ? "set here" : "from the map"})`;
   }
 
-  /** The tiles picked in the tileset in view. */
+  /** The tiles picked in the tileset in view, in the tab in view (Sounds and Fishing each keep their own). */
   private pickedHere(): Set<number> {
-    let set = this.soundPicked.get(this.currentTilesetIndex);
-    if (!set) this.soundPicked.set(this.currentTilesetIndex, set = new Set());
+    const all = this.view === "fishing" ? this.fishPicked : this.view === "footprints" ? this.printPicked : this.soundPicked;
+    let set = all.get(this.currentTilesetIndex);
+    if (!set) all.set(this.currentTilesetIndex, set = new Set());
     return set;
   }
 
@@ -1989,14 +2112,27 @@ class TileEditorBridge {
       this.pickNone();
       return;
     }
-    if (e.key === 'Enter' && !this.soundApplyBtn.disabled && (e.target as HTMLElement)?.tagName !== 'BUTTON') {
+    if (e.key !== 'Enter' || (e.target as HTMLElement)?.tagName === 'BUTTON') return;
+    if (this.view === "fishing") {
+      if (this.fishApplyBtn.disabled) return;
+      e.preventDefault();
+      this.applyFishing(this.fishDraft);
+      return;
+    }
+    if (this.view === "footprints") {
+      if (this.printApplyBtn.disabled) return;
+      e.preventDefault();
+      this.applyPrints(this.printDraft);
+      return;
+    }
+    if (!this.soundApplyBtn.disabled) {
       e.preventDefault();
       this.applySound(this.chosenSound);
     }
   }
 
   private pickNone() {
-    this.soundPicked.get(this.currentTilesetIndex)?.clear();
+    this.pickedHere().clear();
     this.drawTileset();
     this.paintPicked();
   }
@@ -2084,6 +2220,731 @@ class TileEditorBridge {
     }
     this.drawTileset();
     this.paintPicked();
+  }
+
+  // ------------------------------------------------------------ the Fishing tab
+
+  private fishAskedAt = 0;
+
+  /** The fishable tiles and the material items, asked of the server the first time the tab is shown (again when it never answered). */
+  private loadFishing() {
+    if (this.fishState === "loaded" || (this.fishState === "loading" && Date.now() - this.fishAskedAt < FISH_SAVE_WAIT_MS)) return;
+    this.fishState = "loading";
+    this.fishAskedAt = Date.now();
+    this.send({ type: 'fishingList' });
+  }
+
+  private buildFishBar() {
+    this.fishEditBtn = button("Choose catches", () => this.editCatches(), { icon: "fish", tip: "The material items the picked tiles give, each with its chance" });
+    this.fishEditBtn.classList.add("me-sound-pick");
+    this.fishTakeBtn = button("Take from picked", () => this.takeCatches(), { icon: "copy", kind: "quiet", fold: true, tip: "Start from the catches the picked tiles have now" });
+    this.fishApplyBtn = button("Apply", () => this.applyFishing(this.fishDraft), { icon: "check", kind: "primary", tip: "Give the picked tiles these catches, on every map that uses the tileset" });
+    this.fishClearBtn = button("Not fishable", () => this.applyFishing(null), { icon: "close", kind: "quiet", fold: true, tip: "Take the catches off the picked tiles: they are no longer water to fish in" });
+    const same = button("Pick all with them", () => this.pickSameCatches(), { icon: "target", kind: "quiet", fold: true, tip: "Pick every tile of this tileset that gives these catches now" });
+    same.classList.add("me-fish-same");
+    const clear = button("Pick none", () => this.pickNone(), { icon: "close", kind: "quiet", fold: true, tip: "Pick no tiles (Esc)" });
+    const end = el("div", "me-toolbar-end");
+    end.append(same, clear);
+    this.fishBar.append(el("span", "me-toolbar-title", "Catches"), this.fishEditBtn, this.fishTakeBtn, this.fishApplyBtn, this.fishClearBtn, end);
+  }
+
+  /** A list of catches in words: "Trout 60 %, Old Boot 40 %". */
+  private catchesWords(list: Catch[]): string {
+    const share = shares(list);
+    return list.map((c, i) => `${c.item} ${percent(share[i]!)}`).join(", ");
+  }
+
+  /** A tile's catches, in words. */
+  private catchWords(list: Catch[] | undefined): string {
+    return list && list.length ? `gives ${this.catchesWords(list)}` : "not fishable";
+  }
+
+  /** The catches the picked tiles share, null when they differ ([] when none is fishable). */
+  private pickedCatches(): Catch[] | null {
+    const tileset = this.tilesets[this.currentTilesetIndex];
+    const picked = this.fishPicked.get(this.currentTilesetIndex);
+    if (!tileset || !picked?.size) return null;
+    const row = this.fishTiles[this.keyOf(tileset)] ?? {};
+    let first: string | null = null, list: Catch[] = [];
+    for (const id of picked) {
+      const here = row[String(id)] ?? [];
+      const key = catchesKey(here);
+      if (first === null) {
+        first = key;
+        list = here;
+      } else if (key !== first) return null;
+    }
+    return list;
+  }
+
+  /** On the palette: each fishable tile in the colour of its list of catches, with a wave in its corner, then what is picked. */
+  private drawFishing(tileset: any, tw: number, th: number, cols: number) {
+    const ctx = this.tilesetCtx;
+    for (const [id, list] of Object.entries(this.fishTiles[this.keyOf(tileset)] ?? {})) {
+      const n = Number(id), x = (n % cols) * tw, y = Math.floor(n / cols) * th;
+      const hue = soundHue(catchesKey(list));
+      ctx.fillStyle = `hsla(${hue}, 85%, 55%, 0.4)`;
+      ctx.fillRect(x, y, tw, th);
+      ctx.strokeStyle = `hsla(${hue}, 90%, 65%, 1)`;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 1.5, y + 1.5, tw - 3, th - 3);
+      // a wave in the corner: plain to see on any art
+      const k = Math.max(6, Math.round(Math.min(tw, th) * 0.5));
+      const base = y + th - k * 0.35, from = x + tw - k - 1;
+      ctx.beginPath();
+      for (let i = 0; i <= 8; i++) {
+        const px = from + (k * i) / 8, py = base - Math.sin((i / 8) * Math.PI * 2) * k * 0.2;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.strokeStyle = "rgba(2, 6, 23, 0.9)";
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.strokeStyle = `hsl(${hue}, 85%, 60%)`;
+      ctx.lineWidth = 1.25;
+      ctx.stroke();
+    }
+    ctx.fillStyle = "rgba(0, 150, 255, 0.4)";
+    ctx.strokeStyle = "rgba(0, 150, 255, 1)";
+    ctx.lineWidth = 1;
+    for (const id of this.fishPicked.get(this.currentTilesetIndex) ?? []) {
+      const x = (id % cols) * tw, y = Math.floor(id / cols) * th;
+      ctx.fillRect(x, y, tw, th);
+      ctx.strokeRect(x + 0.5, y + 0.5, tw - 1, th - 1);
+    }
+    const d = this.soundDrag;
+    if (d) {
+      const minX = Math.min(d.start.x, d.end.x), maxX = Math.max(d.start.x, d.end.x);
+      const minY = Math.min(d.start.y, d.end.y), maxY = Math.max(d.start.y, d.end.y);
+      const rgb = d.mode === "remove" ? "248, 113, 113" : "0, 150, 255";
+      ctx.fillStyle = `rgba(${rgb}, 0.25)`;
+      ctx.fillRect(minX * tw, minY * th, (maxX - minX + 1) * tw, (maxY - minY + 1) * th);
+      ctx.strokeStyle = `rgba(${rgb}, 1)`;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(minX * tw, minY * th, (maxX - minX + 1) * tw, (maxY - minY + 1) * th);
+    } else if (this.hoveredTilesetPos) {
+      ctx.fillStyle = "rgba(0, 150, 255, 0.4)";
+      ctx.fillRect(this.hoveredTilesetPos.x * tw, this.hoveredTilesetPos.y * th, tw, th);
+    }
+  }
+
+  /** Under the palette: how many tiles are picked, and what they give. */
+  private paintFishPicked() {
+    const picked = this.fishPicked.get(this.currentTilesetIndex) ?? new Set<number>();
+    let said: string;
+    let none = false;
+    const d = this.soundDrag;
+    if (d) {
+      const w = Math.abs(d.end.x - d.start.x) + 1, h = Math.abs(d.end.y - d.start.y) + 1;
+      said = `${d.mode === "remove" ? "Taking away" : d.mode === "add" ? "Adding" : "Picking"} ${w * h === 1 ? "1 tile" : `${num(w)} × ${num(h)} tiles`}`;
+    } else if (picked.size > 0) {
+      const shared = this.pickedCatches();
+      said = `${count(picked.size, "tile")} picked · ${shared === null ? "they give different catches" : shared.length ? `all give ${this.catchesWords(shared)}` : "none is fishable"}`;
+    } else {
+      said = "Nothing picked. Click a water tile or drag across several; Shift adds, Alt takes away.";
+      none = true;
+    }
+    this.pickedEl.classList.toggle("is-none", none);
+    this.pickedEl.replaceChildren(el("span", "", said));
+    this.pickedEl.title = said;
+    this.paintUnder();
+    this.paintFishBar();
+    this.paintFishLegend();
+  }
+
+  /** The fishing bar: the catches made on the Choose button, and what can be done now. */
+  private paintFishBar() {
+    if (!this.fishEditBtn) return;
+    const picked = this.fishPicked.get(this.currentTilesetIndex)?.size ?? 0;
+    const label = this.fishDraft.length ? this.catchesWords(this.fishDraft) : "Choose catches";
+    this.fishEditBtn.querySelector("span")!.textContent = label;
+    this.fishEditBtn.title = this.fishDraft.length ? `${label}. Click to change them.` : "The material items the picked tiles give, each with its chance";
+    const busy = this.fishSaving !== null || this.fishState !== "loaded";
+    this.fishApplyBtn.querySelector("span")!.textContent = picked > 0 ? `Apply to ${count(picked, "tile")}` : "Apply";
+    this.fishApplyBtn.disabled = busy || picked === 0 || this.fishDraft.length === 0 || !this.inited;
+    this.fishApplyBtn.title = picked === 0 ? "Pick tiles first" : this.fishDraft.length === 0 ? "Choose catches first" : "Give the picked tiles these catches, on every map that uses the tileset (Enter)";
+    this.fishClearBtn.disabled = busy || picked === 0 || !this.inited;
+    const shared = this.pickedCatches();
+    this.fishTakeBtn.disabled = !shared || shared.length === 0;
+    const same = this.fishBar.querySelector<HTMLButtonElement>(".me-fish-same");
+    if (same) same.disabled = this.fishDraft.length === 0;
+  }
+
+  /** At the foot of the palette: the lists of catches of the tileset in view, in their colours, most used first. */
+  private paintFishLegend() {
+    const tileset = this.tilesets[this.currentTilesetIndex];
+    this.soundLegendEl.replaceChildren();
+    this.soundLegendEl.hidden = this.view !== "fishing" || !tileset;
+    if (this.soundLegendEl.hidden) return;
+    if (this.fishState !== "loaded") {
+      this.soundLegendEl.appendChild(el("span", "", "Asking the server what can be caught…"));
+      return;
+    }
+    const lists = new Map<string, { list: Catch[]; n: number }>();
+    for (const list of Object.values(this.fishTiles[this.keyOf(tileset)] ?? {})) {
+      const key = catchesKey(list);
+      const held = lists.get(key);
+      if (held) held.n++;
+      else lists.set(key, { list, n: 1 });
+    }
+    const all = [...lists].sort((a, b) => b[1].n - a[1].n);
+    if (all.length === 0) {
+      this.soundLegendEl.appendChild(el("span", "", "No tile of this tileset is fishable yet"));
+      return;
+    }
+    for (const [key, { list, n }] of all.slice(0, 5)) {
+      const entry = el("span", "me-sound-key");
+      const swatch = el("span", "me-sound-swatch");
+      swatch.style.background = `hsl(${soundHue(key)}, 85%, 55%)`;
+      entry.append(swatch, el("span", "", `${this.catchesWords(list)} · ${num(n)}`));
+      this.soundLegendEl.appendChild(entry);
+    }
+    if (all.length > 5) this.soundLegendEl.appendChild(el("span", "", `and ${num(all.length - 5)} more`));
+    tooltip(this.soundLegendEl, "Fishable tiles are tinted in the colour of what they give, with a wave in the corner. The number is how many tiles give it.");
+  }
+
+  /** Start the catches from those the picked tiles give now. */
+  private takeCatches() {
+    const shared = this.pickedCatches();
+    if (!shared || shared.length === 0) return;
+    this.fishDraft = shared.map((c) => ({ ...c }));
+    this.paintFishBar();
+  }
+
+  /** Pick every tile of the tileset in view that gives the catches made now. */
+  private pickSameCatches() {
+    const tileset = this.tilesets[this.currentTilesetIndex];
+    if (!tileset || this.fishDraft.length === 0) return;
+    const want = catchesKey(this.fishDraft);
+    const set = this.pickedHere();
+    set.clear();
+    for (const [id, list] of Object.entries(this.fishTiles[this.keyOf(tileset)] ?? {})) if (catchesKey(list) === want) set.add(Number(id));
+    if (set.size === 0) toast(`No tile of ${tileset.name || "this tileset"} gives ${this.catchesWords(this.fishDraft)}.`);
+    this.drawTileset();
+    this.paintPicked();
+  }
+
+  /**
+   * The Catches dialog: the material items the picked tiles give, each with its chance. The chances are shares: when
+   * they do not add up to 100 %, each counts for its part of their sum, and the dialog shows what that comes to.
+   */
+  private editCatches() {
+    this.loadFishing();
+    if (this.fishState !== "loaded") {
+      toast("The material items are still being asked for. Try again in a moment.");
+      return;
+    }
+    if (this.fishItems.length === 0) {
+      toast("There are no material items to catch. Make some in the item editor first.", "warning");
+      return;
+    }
+    const dialog = openDialog("Catches", { keepOnOutsideClick: true, onClose: () => this.paintFishBar() });
+    const draft = this.fishDraft.map((c) => ({ ...c }));
+    const list = el("div", "me-catch-list");
+    const total = el("p", "me-catch-total");
+    const options = () => this.fishItems.map((item) => ({ value: item.name, label: item.name, image: item.image, quality: item.quality }));
+    const itemOf = (name: string) => this.fishItems.find((item) => item.name.toLowerCase() === name.toLowerCase());
+
+    const paint = () => {
+      list.replaceChildren();
+      const share = shares(draft);
+      draft.forEach((entry, i) => {
+        const row = el("div", "me-catch-row");
+        const known = itemOf(entry.item);
+        const pick = el("button", "tl-btn me-catch-item");
+        pick.type = "button";
+        pick.append(thumb(known?.image ?? null, { fallback: "fish", quality: known?.quality ?? undefined }), el("span", "", entry.item));
+        pick.title = "Choose another item";
+        pick.addEventListener("click", () => {
+          this.fields.openAssetPicker("Catch", options(), (option) => {
+            const name = String(option.value);
+            if (draft.some((other, j) => j !== i && other.item.toLowerCase() === name.toLowerCase())) {
+              toast(`${name} is in the list already.`);
+              return;
+            }
+            entry.item = name;
+            paint();
+          }, { current: entry.item, fallback: "fish" });
+        });
+        const chance = el("input", "tl-input tl-input-number me-catch-chance");
+        chance.type = "number";
+        chance.min = String(MIN_CHANCE);
+        chance.max = String(MAX_CHANCE);
+        chance.step = "any";
+        chance.value = String(entry.chance);
+        chance.setAttribute("aria-label", `Chance of ${entry.item}, %`);
+        const shareEl = el("span", "me-catch-share", `= ${percent(share[i]!)}`);
+        chance.addEventListener("input", () => {
+          entry.chance = Number(chance.value);
+          const bad = !(entry.chance >= MIN_CHANCE && entry.chance <= MAX_CHANCE);
+          chance.classList.toggle("is-invalid", bad);
+          paintTotal();
+          const now = shares(draft);
+          list.querySelectorAll<HTMLElement>(".me-catch-share").forEach((node, j) => { node.textContent = `= ${percent(now[j]!)}`; });
+        });
+        const remove = iconButton("trash", `Take ${entry.item} off the list`, () => {
+          draft.splice(i, 1);
+          paint();
+        }, { danger: true });
+        row.append(pick, chance, el("span", "me-catch-unit", "%"), shareEl, remove);
+        list.appendChild(row);
+      });
+      if (!draft.length) list.appendChild(el("p", "me-catch-empty", "No catches yet. Add the material items these tiles give."));
+      add.disabled = draft.length >= MAX_CATCHES;
+      paintTotal();
+    };
+    const paintTotal = () => {
+      const sum = draft.reduce((n, c) => n + (Number.isFinite(c.chance) ? c.chance : 0), 0);
+      total.textContent = draft.length === 0 ? "" : Math.abs(sum - 100) < 0.005
+        ? "The chances add up to 100 %."
+        : `The chances add up to ${percent(sum)}: each counts as its share of that, shown after the =.`;
+    };
+    const add = button("Add a catch", () => {
+      const free = this.fishItems.filter((item) => !draft.some((c) => c.item.toLowerCase() === item.name.toLowerCase()));
+      this.fields.openAssetPicker("Catch", free.map((item) => ({ value: item.name, label: item.name, image: item.image, quality: item.quality })), (option) => {
+        const left = Math.max(0, 100 - draft.reduce((n, c) => n + (c.chance > 0 ? c.chance : 0), 0));
+        draft.push({ item: String(option.value), chance: Math.round((left > 0 ? left : 10) * 100) / 100 });
+        paint();
+      }, { fallback: "fish" });
+    }, { icon: "plus", add: true });
+    const done = button("Use these catches", () => {
+      const bad = draft.find((c) => !(c.chance >= MIN_CHANCE && c.chance <= MAX_CHANCE));
+      if (bad) {
+        toast(`The chance of ${bad.item} must be ${MIN_CHANCE} to ${MAX_CHANCE} %.`, "error");
+        return;
+      }
+      this.fishDraft = draft.map((c) => ({ item: c.item, chance: Math.round(c.chance * 100) / 100 }));
+      dialog.close();
+    }, { icon: "check", kind: "primary" });
+    const cancel = button("Cancel", () => dialog.close(), { kind: "quiet" });
+    dialog.body.append(el("p", "me-catch-hint", "What a fish caught on the picked tiles turns out to be: one of these material items, by its chance."), list, add, total);
+    dialog.foot.append(cancel, done);
+    paint();
+  }
+
+  /**
+   * Give the picked tiles catches, or with null make them not fishable. The game window passes it to the server, which
+   * saves it and answers with every fishable tile as it is now (handleFishingUpdate).
+   */
+  private applyFishing(catches: Catch[] | null) {
+    const tileset = this.tilesets[this.currentTilesetIndex];
+    const ids = [...(this.fishPicked.get(this.currentTilesetIndex) ?? [])].sort((a, b) => a - b);
+    if (!tileset || ids.length === 0 || this.fishSaving) return;
+    if (catches !== null && catches.length === 0) return;
+    if (catches === null && !ids.some((id) => this.fishTiles[this.keyOf(tileset)]?.[String(id)])) {
+      toast("None of the picked tiles is fishable.");
+      return;
+    }
+    const list = catches === null ? null : catches.map((c) => ({ ...c }));
+    this.fishSaving = { key: this.keyOf(tileset), ids, catches: list };
+    this.send({ type: 'fishingSave', changes: [{ tileset: this.keyOf(tileset), ids, catches: list }] });
+    setBusy(catches === null ? this.fishClearBtn : this.fishApplyBtn, true);
+    this.paintFishBar();
+    if (this.fishSaveTimer) clearTimeout(this.fishSaveTimer);
+    this.fishSaveTimer = setTimeout(() => {
+      this.fishSaveDone();
+      toast("Fishing was not saved: the server did not answer.\nThe game window shows the reason when it gave one (an account that may not save maps, for one).", "error");
+    }, FISH_SAVE_WAIT_MS);
+  }
+
+  private fishSaveDone() {
+    if (this.fishSaveTimer) clearTimeout(this.fishSaveTimer);
+    this.fishSaveTimer = null;
+    this.fishSaving = null;
+    setBusy(this.fishApplyBtn, false);
+    setBusy(this.fishClearBtn, false);
+    this.paintFishBar();
+  }
+
+  /** Every fishable tile as it is now, and the material items: the answer to the first ask and to every save of this window. */
+  private handleFishingUpdate(msg: any) {
+    this.fishTiles = msg.tiles && typeof msg.tiles === "object" ? msg.tiles : {};
+    this.fishItems = Array.isArray(msg.items) ? msg.items : [];
+    this.fishState = "loaded";
+    const saved = this.fishSaving;
+    const row = saved ? this.fishTiles[saved.key] ?? {} : {};
+    const want = saved ? catchesKey(saved.catches) : "";
+    if (saved && saved.ids.every((id) => (saved.catches === null ? row[String(id)] === undefined : catchesKey(row[String(id)]) === want))) {
+      this.fishSaveDone();
+      toast(`Saved for ${count(saved.ids.length, "tile")}, on every map: ${saved.catches === null ? "not fishable" : this.catchesWords(saved.catches)}.`);
+    }
+    if (this.view === "fishing") {
+      this.drawTileset();
+      this.paintPicked();
+    }
+  }
+
+  // --------------------------------------------------------- the Footprints tab
+
+  private buildPrintBar() {
+    this.printStyleSeg = segments(PRINT_STYLES, this.printDraft.style, (style) => {
+      this.printDraft = { ...this.printDraft, style };
+      this.paintPrintBar();
+    }, "Print style");
+    tooltip(this.printStyleSeg, "The shape of the prints: boot soles, bare feet with toes, or holes pushed into deep snow");
+
+    this.printColorInput = el("input", "me-print-color");
+    this.printColorInput.type = "color";
+    this.printColorInput.value = this.printDraft.color;
+    this.printColorInput.addEventListener("input", () => {
+      this.printDraft = { ...this.printDraft, color: this.printColorInput.value.toLowerCase() };
+      this.paintPrintBar();
+    });
+    tooltip(this.printColorInput, "The colour of the prints: dark for mud and wet sand, light or blue-grey for snow");
+
+    this.printDarkInput = el("input", "me-print-dark");
+    this.printDarkInput.type = "range";
+    this.printDarkInput.min = String(MIN_DARKNESS);
+    this.printDarkInput.max = String(MAX_DARKNESS);
+    this.printDarkInput.step = "1";
+    this.printDarkInput.value = String(Math.round(this.printDraft.opacity * 100));
+    this.printDarkInput.setAttribute("aria-label", "Darkness of the prints, %");
+    this.printDarkInput.addEventListener("input", () => {
+      this.printDraft = { ...this.printDraft, opacity: Number(this.printDarkInput.value) / 100 };
+      this.paintPrintBar();
+    });
+    const dark = el("label", "me-print-field");
+    dark.append(el("span", "", "Darkness"), this.printDarkInput, this.printDarkLabel);
+    tooltip(dark, "How dark the prints are when laid, 5 to 100 %");
+
+    this.printFadeInput = el("input", "tl-input tl-input-number me-print-fade");
+    this.printFadeInput.type = "number";
+    this.printFadeInput.min = String(MIN_FADE);
+    this.printFadeInput.max = String(MAX_FADE);
+    this.printFadeInput.step = "1";
+    this.printFadeInput.value = String(this.printDraft.fade);
+    this.printFadeInput.setAttribute("aria-label", "Fade time of the prints, seconds");
+    this.printFadeInput.addEventListener("input", () => {
+      this.printDraft = { ...this.printDraft, fade: Number(this.printFadeInput.value) };
+      this.paintPrintBar();
+    });
+    const fade = el("label", "me-print-field");
+    fade.append(el("span", "", "Fade"), this.printFadeInput, el("span", "", "s"));
+    tooltip(fade, `How long the prints stay, ${MIN_FADE} to ${MAX_FADE} seconds: as laid for most of it, then fading away`);
+
+    this.printApplyBtn = button("Apply", () => this.applyPrints(this.printDraft), { icon: "check", kind: "primary", tip: "Give the picked tiles these footprints, on every map that uses the tileset" });
+    this.printClearBtn = button("No footprints", () => this.applyPrints(null), { icon: "close", kind: "quiet", fold: true, tip: "Take the footprints off the picked tiles" });
+    this.printTakeBtn = button("Take from picked", () => this.takePrints(), { icon: "copy", kind: "quiet", fold: true, tip: "Set the bar to the footprints the picked tiles have now" });
+    const same = button("Pick all with these", () => this.pickSamePrints(), { icon: "target", kind: "quiet", fold: true, tip: "Pick every tile of this tileset that has these footprints now" });
+    const clear = button("Pick none", () => this.pickNone(), { icon: "close", kind: "quiet", fold: true, tip: "Pick no tiles (Esc)" });
+    const end = el("div", "me-toolbar-end");
+    end.append(same, clear);
+    // (no title of its own: the tab says Footprints, and the bar needs the room)
+    const preview = el("div", "me-print-preview-box");
+    preview.append(el("span", "", "Preview"), this.printPreview);
+    tooltip(preview, "Someone walking across the first picked tile, leaving these prints as the game draws them. A long fade is shown sped up.");
+    this.printBar.append(this.printStyleSeg, this.printColorInput, dark, fade, preview, this.printApplyBtn, this.printClearBtn, this.printTakeBtn, end);
+  }
+
+  /** A tile's footprints, in words. */
+  private printWords(print: Footprint | undefined): string {
+    return print ? `${styleWords(print.style).toLowerCase()}, ${print.color}, ${Math.round(print.opacity * 100)} % dark, ${print.fade} s` : "no footprints";
+  }
+
+  /** The bar's prints, when they are within the server's limits; else what is wrong. */
+  private printProblem(): string | null {
+    const { opacity, fade } = this.printDraft;
+    if (!(opacity * 100 >= MIN_DARKNESS && opacity * 100 <= MAX_DARKNESS)) return `The darkness must be ${MIN_DARKNESS} to ${MAX_DARKNESS} %.`;
+    if (!Number.isInteger(fade) || fade < MIN_FADE || fade > MAX_FADE) return `The fade time must be a whole ${MIN_FADE} to ${MAX_FADE} seconds.`;
+    return null;
+  }
+
+  /** The prints the picked tiles share, null when they differ (undefined: none has any). */
+  private pickedPrints(): Footprint | null | undefined {
+    const tileset = this.tilesets[this.currentTilesetIndex];
+    const picked = this.printPicked.get(this.currentTilesetIndex);
+    if (!tileset || !picked?.size) return null;
+    const row = this.tileFootprints[this.keyOf(tileset)] ?? {};
+    let first: string | null = null, print: Footprint | undefined;
+    for (const id of picked) {
+      const here = row[String(id)];
+      const key = printKey(here);
+      if (first === null) {
+        first = key;
+        print = here;
+      } else if (key !== first) return null;
+    }
+    return print;
+  }
+
+  /** On the palette: each tile with footprints tinted in their colour, with a print in its corner, then what is picked. */
+  private drawPrints(tileset: any, tw: number, th: number, cols: number) {
+    const ctx = this.tilesetCtx;
+    for (const [id, print] of Object.entries(this.tileFootprints[this.keyOf(tileset)] ?? {})) {
+      const n = Number(id), x = (n % cols) * tw, y = Math.floor(n / cols) * th;
+      ctx.fillStyle = print.color;
+      ctx.globalAlpha = 0.35;
+      ctx.fillRect(x, y, tw, th);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = print.color;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 1.5, y + 1.5, tw - 3, th - 3);
+      // a print in the corner, outlined light so it shows on dark art
+      const k = Math.max(5, Math.round(Math.min(tw, th) * 0.5));
+      const cx = x + tw - k / 2 - 1, cy = y + th - k / 2 - 1;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy - k * 0.12, k * 0.22, k * 0.34, 0, 0, Math.PI * 2);
+      ctx.moveTo(cx + k * 0.2, cy + k * 0.32);
+      ctx.ellipse(cx, cy + k * 0.32, k * 0.2, k * 0.14, 0, 0, Math.PI * 2);
+      ctx.fillStyle = print.color;
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    ctx.fillStyle = "rgba(0, 150, 255, 0.4)";
+    ctx.strokeStyle = "rgba(0, 150, 255, 1)";
+    ctx.lineWidth = 1;
+    for (const id of this.printPicked.get(this.currentTilesetIndex) ?? []) {
+      const x = (id % cols) * tw, y = Math.floor(id / cols) * th;
+      ctx.fillRect(x, y, tw, th);
+      ctx.strokeRect(x + 0.5, y + 0.5, tw - 1, th - 1);
+    }
+    const d = this.soundDrag;
+    if (d) {
+      const minX = Math.min(d.start.x, d.end.x), maxX = Math.max(d.start.x, d.end.x);
+      const minY = Math.min(d.start.y, d.end.y), maxY = Math.max(d.start.y, d.end.y);
+      const rgb = d.mode === "remove" ? "248, 113, 113" : "0, 150, 255";
+      ctx.fillStyle = `rgba(${rgb}, 0.25)`;
+      ctx.fillRect(minX * tw, minY * th, (maxX - minX + 1) * tw, (maxY - minY + 1) * th);
+      ctx.strokeStyle = `rgba(${rgb}, 1)`;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(minX * tw, minY * th, (maxX - minX + 1) * tw, (maxY - minY + 1) * th);
+    } else if (this.hoveredTilesetPos) {
+      ctx.fillStyle = "rgba(0, 150, 255, 0.4)";
+      ctx.fillRect(this.hoveredTilesetPos.x * tw, this.hoveredTilesetPos.y * th, tw, th);
+    }
+  }
+
+  /** Under the palette: how many tiles are picked, and the footprints they share. */
+  private paintPrintPicked() {
+    const picked = this.printPicked.get(this.currentTilesetIndex) ?? new Set<number>();
+    let said: string;
+    let none = false;
+    const d = this.soundDrag;
+    if (d) {
+      const w = Math.abs(d.end.x - d.start.x) + 1, h = Math.abs(d.end.y - d.start.y) + 1;
+      said = `${d.mode === "remove" ? "Taking away" : d.mode === "add" ? "Adding" : "Picking"} ${w * h === 1 ? "1 tile" : `${num(w)} × ${num(h)} tiles`}`;
+    } else if (picked.size > 0) {
+      const shared = this.pickedPrints();
+      said = `${count(picked.size, "tile")} picked · ${shared === null ? "they have different footprints" : shared ? `all ${this.printWords(shared)}` : "none has footprints"}`;
+    } else {
+      said = "Nothing picked. Click a tile or drag across several; Shift adds, Alt takes away.";
+      none = true;
+    }
+    this.pickedEl.classList.toggle("is-none", none);
+    this.pickedEl.replaceChildren(el("span", "", said));
+    this.pickedEl.title = said;
+    this.paintUnder();
+    this.paintPrintBar();
+    this.paintPrintLegend();
+  }
+
+  /** The footprints bar: the settings as made, and what can be done now. */
+  private paintPrintBar() {
+    if (!this.printApplyBtn) return;
+    const draft = this.printDraft;
+    for (const btn of this.printStyleSeg.querySelectorAll<HTMLElement>("[data-value]")) btn.setAttribute("aria-checked", String(btn.dataset.value === draft.style));
+    if (this.printColorInput.value.toLowerCase() !== draft.color) this.printColorInput.value = draft.color;
+    this.printDarkInput.value = String(Math.round(draft.opacity * 100));
+    this.printDarkLabel.textContent = `${Math.round(draft.opacity * 100)} %`;
+    if (document.activeElement !== this.printFadeInput) this.printFadeInput.value = String(draft.fade);
+    const problem = this.printProblem();
+    this.printFadeInput.classList.toggle("is-invalid", problem !== null);
+    const picked = this.printPicked.get(this.currentTilesetIndex)?.size ?? 0;
+    const busy = this.printSaving !== null;
+    this.printApplyBtn.querySelector("span")!.textContent = picked > 0 ? `Apply to ${count(picked, "tile")}` : "Apply";
+    this.printApplyBtn.disabled = busy || picked === 0 || problem !== null || !this.inited;
+    this.printApplyBtn.title = picked === 0 ? "Pick tiles first" : problem ?? "Give the picked tiles these footprints, on every map that uses the tileset (Enter)";
+    this.printClearBtn.disabled = busy || picked === 0 || !this.inited;
+    this.printTakeBtn.disabled = !this.pickedPrints();
+  }
+
+  /** At the foot of the palette: the footprints of the tileset in view, most used first. */
+  private paintPrintLegend() {
+    const tileset = this.tilesets[this.currentTilesetIndex];
+    this.soundLegendEl.replaceChildren();
+    this.soundLegendEl.hidden = this.view !== "footprints" || !tileset;
+    if (this.soundLegendEl.hidden) return;
+    const groups = new Map<string, { print: Footprint; n: number }>();
+    for (const print of Object.values(this.tileFootprints[this.keyOf(tileset)] ?? {})) {
+      const key = printKey(print);
+      const held = groups.get(key);
+      if (held) held.n++;
+      else groups.set(key, { print, n: 1 });
+    }
+    const all = [...groups.values()].sort((a, b) => b.n - a.n);
+    if (all.length === 0) {
+      this.soundLegendEl.appendChild(el("span", "", "No tile of this tileset has footprints yet"));
+      return;
+    }
+    for (const { print, n } of all.slice(0, 5)) {
+      const entry = el("span", "me-sound-key");
+      const swatch = el("span", "me-sound-swatch");
+      swatch.style.background = print.color;
+      swatch.style.opacity = String(Math.max(0.35, print.opacity));
+      entry.append(swatch, el("span", "", `${styleWords(print.style)}, ${print.fade} s · ${num(n)}`));
+      this.soundLegendEl.appendChild(entry);
+    }
+    if (all.length > 5) this.soundLegendEl.appendChild(el("span", "", `and ${num(all.length - 5)} more`));
+    tooltip(this.soundLegendEl, "Tiles with footprints are tinted in their colour, with a print in the corner. The number is how many tiles have them.");
+  }
+
+  /** Set the bar to the footprints the picked tiles have now. */
+  private takePrints() {
+    const shared = this.pickedPrints();
+    if (!shared) return;
+    this.printDraft = { ...shared };
+    this.paintPrintBar();
+  }
+
+  /** Pick every tile of the tileset in view that has the bar's footprints now. */
+  private pickSamePrints() {
+    const tileset = this.tilesets[this.currentTilesetIndex];
+    if (!tileset) return;
+    const want = printKey(this.printDraft);
+    const set = this.pickedHere();
+    set.clear();
+    for (const [id, print] of Object.entries(this.tileFootprints[this.keyOf(tileset)] ?? {})) if (printKey(print) === want) set.add(Number(id));
+    if (set.size === 0) toast(`No tile of ${tileset.name || "this tileset"} has ${this.printWords(this.printDraft)}.`);
+    this.drawTileset();
+    this.paintPicked();
+  }
+
+  /**
+   * Give the picked tiles footprints, or with null take them away. The game window passes it to the server, which saves
+   * it and sends every player the list as it is now (handleFootprintsUpdate).
+   */
+  private applyPrints(print: Footprint | null) {
+    const tileset = this.tilesets[this.currentTilesetIndex];
+    const ids = [...(this.printPicked.get(this.currentTilesetIndex) ?? [])].sort((a, b) => a - b);
+    if (!tileset || ids.length === 0 || this.printSaving) return;
+    if (print !== null) {
+      const problem = this.printProblem();
+      if (problem) {
+        toast(problem, "error");
+        return;
+      }
+    } else if (!ids.some((id) => this.tileFootprints[this.keyOf(tileset)]?.[String(id)])) {
+      toast("None of the picked tiles has footprints.");
+      return;
+    }
+    const kept = print === null ? null : { ...print, opacity: Math.round(print.opacity * 100) / 100 };
+    this.printSaving = { key: this.keyOf(tileset), ids, print: kept };
+    this.send({ type: 'tileFootprintsSave', changes: [{ tileset: this.keyOf(tileset), ids, print: kept }] });
+    setBusy(print === null ? this.printClearBtn : this.printApplyBtn, true);
+    this.paintPrintBar();
+    if (this.printSaveTimer) clearTimeout(this.printSaveTimer);
+    this.printSaveTimer = setTimeout(() => {
+      this.printSaveDone();
+      toast("The footprints were not saved: the server did not answer.\nThe game window shows the reason when it gave one (an account that may not save maps, for one).", "error");
+    }, PRINT_SAVE_WAIT_MS);
+  }
+
+  private printSaveDone() {
+    if (this.printSaveTimer) clearTimeout(this.printSaveTimer);
+    this.printSaveTimer = null;
+    this.printSaving = null;
+    setBusy(this.printApplyBtn, false);
+    setBusy(this.printClearBtn, false);
+    this.paintPrintBar();
+  }
+
+  /** The footprints set on tiles as they are now, after a save (this window's or anyone's). */
+  private handleFootprintsUpdate(msg: any) {
+    this.tileFootprints = msg.tileFootprints && typeof msg.tileFootprints === "object" ? msg.tileFootprints : {};
+    const saved = this.printSaving;
+    const row = saved ? this.tileFootprints[saved.key] ?? {} : {};
+    if (saved && saved.ids.every((id) => (saved.print === null ? row[String(id)] === undefined : printKey(row[String(id)]) === printKey(saved.print)))) {
+      this.printSaveDone();
+      toast(`Saved for ${count(saved.ids.length, "tile")}, on every map: ${saved.print === null ? "no footprints" : this.printWords(saved.print)}.`);
+    }
+    if (this.view === "footprints") {
+      this.drawTileset();
+      this.paintPicked();
+    }
+  }
+
+  /** Start the preview's animation (the Footprints tab is shown). */
+  private startPrintPreview() {
+    if (this.previewFrame !== null) return;
+    this.previewLast = performance.now();
+    const frame = (now: number) => {
+      this.previewFrame = requestAnimationFrame(frame);
+      const dt = Math.min(0.1, Math.max(0, (now - this.previewLast) / 1000));
+      this.previewLast = now;
+      this.stepPrintPreview(dt, now / 1000);
+      this.drawPrintPreview();
+    };
+    this.previewFrame = requestAnimationFrame(frame);
+  }
+
+  private stopPrintPreview() {
+    if (this.previewFrame !== null) cancelAnimationFrame(this.previewFrame);
+    this.previewFrame = null;
+  }
+
+  /** How many times faster than real time the preview's prints age: so a print of any fade time is seen fading. */
+  private previewSpeed(): number {
+    const fade = this.printDraft.fade;
+    return fade > PREVIEW_FADE_MAX ? fade / PREVIEW_FADE_MAX : 1;
+  }
+
+  /** The walker crosses the preview; once across and every print has faded, they start again. */
+  private stepPrintPreview(dt: number, now: number) {
+    this.previewClock += dt * this.previewSpeed();
+    const walk = this.previewWalk, wide = PREVIEW_W / PREVIEW_SCALE;
+    const fade = Math.max(1, this.printDraft.fade);
+    this.previewPrints = this.previewPrints.filter((print) => this.previewClock - print.born < fade);
+    if (walk.x > wide + PREVIEW_START) {
+      if (this.previewPrints.length && now < walk.waitUntil) return;
+      // across, and the trail gone (or a second past): again from the left
+      this.previewWalk = { x: -PREVIEW_START, walked: 0, side: 1, waitUntil: 0 };
+      return;
+    }
+    walk.x += PREVIEW_SPEED * dt;
+    walk.walked += PREVIEW_SPEED * dt;
+    if (walk.x > wide + PREVIEW_START) walk.waitUntil = now + 1;
+    if (walk.walked < PREVIEW_STRIDE) return;
+    walk.walked %= PREVIEW_STRIDE;
+    walk.side = -walk.side;
+    this.previewPrints.push({ x: walk.x, side: walk.side, born: this.previewClock });
+  }
+
+  /** The ground (the first picked tile, side by side), and the prints on it as the game draws them. */
+  private drawPrintPreview() {
+    const canvas = this.printPreview, dpr = window.devicePixelRatio || 1;
+    if (canvas.width !== Math.round(PREVIEW_W * dpr)) {
+      canvas.width = Math.round(PREVIEW_W * dpr);
+      canvas.height = Math.round(PREVIEW_H * dpr);
+    }
+    const ctx = canvas.getContext("2d")!;
+    ctx.setTransform(dpr * PREVIEW_SCALE, 0, 0, dpr * PREVIEW_SCALE, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    const wide = PREVIEW_W / PREVIEW_SCALE, high = PREVIEW_H / PREVIEW_SCALE;
+
+    // the ground: the first picked tile, or plain ground when none is picked (or its picture is not here yet)
+    const tileset = this.tilesets[this.currentTilesetIndex];
+    const image = this.tilesetImages[this.currentTilesetIndex];
+    const first = [...(this.printPicked.get(this.currentTilesetIndex) ?? [])].sort((a, b) => a - b)[0];
+    if (tileset && image?.complete && image.naturalWidth > 0 && first !== undefined) {
+      const tw = tileset.tilewidth, th = tileset.tileheight;
+      const cols = Math.max(1, Math.floor(tileset.imagewidth / tw));
+      const sx = (first % cols) * tw, sy = Math.floor(first / cols) * th;
+      for (let y = 0; y < high; y += th) for (let x = 0; x < wide; x += tw) ctx.drawImage(image, sx, sy, tw, th, x, y, tw, th);
+    } else {
+      ctx.fillStyle = "#8a8173";
+      ctx.fillRect(0, 0, wide, high);
+    }
+
+    // the prints, with the bar's style, colour, darkness and fade time
+    const draft = this.printDraft, fade = Math.max(1, draft.fade), y = high / 2;
+    for (const print of this.previewPrints) {
+      const k = (this.previewClock - print.born) / fade;
+      const alpha = draft.opacity * (k < PREVIEW_HOLD ? 1 : 1 - (k - PREVIEW_HOLD) / (1 - PREVIEW_HOLD));
+      if (alpha <= 0.01) continue;
+      drawPrint(ctx, { x: print.x, y: y + PREVIEW_APART * print.side, angle: 0, side: print.side, style: draft.style, color: draft.color }, alpha);
+    }
   }
 
   // --- Tileset Panning ---

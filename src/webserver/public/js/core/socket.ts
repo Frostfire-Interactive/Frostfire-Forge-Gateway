@@ -94,6 +94,8 @@ import { showTrade, closeTrade } from "./trade.ts";
 import { showVendor, closeVendor, refreshVendor } from "./vendor.ts";
 import { setMailboxes, showMail, mailSent, setUnreadMail, closeMail, refreshMail } from "./mail.ts";
 import { applyGatherSpawn, applyGatherDespawn, clearGatherNodes } from "./gathering.ts";
+import { applyFishing, clearFishing, setFishingTiles } from "./fishing.ts";
+import { clearFootprints, setTileFootprints } from "./footprints.ts";
 import { rememberVisit } from "./visitedmaps.ts";
 import { startItemCooldown, refreshHotbarItems, clearItemCooldowns } from "./consumables.ts";
 import { showNotification } from "./notifications.ts";
@@ -1357,6 +1359,11 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       (window as any).tileEditor?.createMapFailed(String(data?.message ?? ""));
       break;
     }
+    case "TILE_FOOTPRINTS": {
+      // The footprints set in the map editor's Footprints tab, all of them: at login and after someone saved (footprints.ts)
+      setTileFootprints(data?.tilesets);
+      break;
+    }
     case "TILE_SOUNDS": {
       // The footstep sounds set in the map editor's Sounds tab, all of them, after someone saved (tilesounds.ts)
       setTileSounds(data?.tilesets);
@@ -2558,6 +2565,21 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       applyGatherSpawn(data);
       break;
     }
+    case "FISHING": {
+      // A line cast, a bite, a catch or a line taken in, of anyone on the map (fishing.ts)
+      applyFishing(data);
+      break;
+    }
+    case "FISHING_TILES": {
+      // Which tiles can be fished, sent at login and after a save in the map editor's Fishing tab
+      setFishingTiles(data);
+      break;
+    }
+    case "FISHING_EDITOR_DATA": {
+      // The map editor's Fishing tab: every fishable tile with what it gives, and the material items
+      (window as any).tileEditor?.fishingData(data);
+      break;
+    }
     case "GATHER_NODE_DESPAWN": {
       applyGatherDespawn(data);
       break;
@@ -3118,6 +3140,8 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           if (cache?.pendingPlayers) cache.pendingPlayers.clear();
           clearCreatures();
           clearGatherNodes();
+          clearFishing();
+          clearFootprints();
           if (cache?.npcs) cache.npcs = [];
           if (cache?.projectiles) cache.projectiles = [];
           cache.activeGroundAoeZones = {};
