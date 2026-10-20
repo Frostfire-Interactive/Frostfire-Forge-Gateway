@@ -27,6 +27,8 @@ Frostfire Forge ships its content tools inside the game client. An admin logs in
 | [Particle Editor](#/tools/particle-editor) | `/pe` or `/particleeditor` | `/particle-editor` | `tools.particle_editor` or `tools.*` |
 | [Animator](#/tools/animator) | None | `/animator` | None |
 
+One more tool runs outside the game: [Frostfire Worlds for Tiled](#/tools/tiled-worlds), an extension for the Tiled map editor that edits large `.world` maps region by region and saves straight into the world's files. It needs no chat command and no permission, only access to the maps folder.
+
 Commands are not case sensitive. Typing a tool's command again while it is open closes it. The player editor is the exception: its command opens the editor on the player you name.
 
 :::note The permission column is what the code checks

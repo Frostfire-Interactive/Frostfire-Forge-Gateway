@@ -285,13 +285,39 @@ export async function refreshWorldMap(mapName: string): Promise<void> {
 The comment at the top of `worldmaps.ts` still says worlds are read only. The code below it (`refreshWorldMap`) and the `SAVE_MAP` handler in `receiver.ts` implement saving as described here.
 :::
 
+## Changes made outside the game
+
+A world can also change on the asset server without this game server knowing: a save from the [Tiled extension](#/tools/tiled-worlds), or an editor save on another game server. The engine picks these up without a restart.
+
+Every `WORLD_SYNC_INTERVAL` seconds (default `10`, `0` turns it off) the engine calls `checkWorldChanges`:
+
+1. It posts to `/world-list`. A world listed with the same file hashes as at its last sync is up to date. Its local files are not hashed again, so an unchanged world costs one small request.
+2. For a world whose hashes changed, it fetches the changed files as at startup.
+3. It puts the new collision and no-PvP bits in place with `adopt`, so movement and creature pathing use them at once.
+4. It reads the world's warps and graveyards from the new manifest, the same way the loader does, and clears the movement cache.
+5. It gives the world a new map version, so a player who loads the map again gets the new chunks.
+
+```text title="Game server log"
+World overworld changed on the asset server: collision, warps and graveyards updated
+```
+
+Players already on the map are not told: they see the new tiles after they reload the page. An editor save made on this server is not picked up a second time, since its sync already recorded the new hashes.
+
+| Not taken in while running | Why |
+|----------------------------|-----|
+| Particle NPCs | They are made into NPCs once, at startup |
+| A change of the world's size | `adopt` refuses it with `the world changed size`. Restart to load the world. |
+| A world new to this server | It is fetched, and loaded at the next start |
+
 ## Reference
 
 | Export of `src/modules/worldmaps.ts` | Purpose |
 |--------------------------------------|---------|
 | `getWorldMap(mapName)` | The loaded world, or `undefined`. Accepts the name with or without `.json`. |
 | `loadWorldMaps(mapDir, tiledMapNames)` | Reads every `.world` directory. Called by the asset loader. |
-| `syncWorldMaps(mapDir)` | Downloads outdated world files from the asset server |
+| `syncWorldMaps(mapDir)` | Downloads outdated world files from the asset server. Returns the ids of the worlds it fetched files for. |
 | `refreshWorldMap(mapName)` | Re-syncs one world after an editor save and swaps its bitsets |
+| `checkWorldChanges()` | Takes in worlds changed on the asset server by anything else. Returns the worlds that changed. |
+| `warpsAndGraveyardsOf(manifest)` | A world's warps and graveyards from its manifest objects, as the loader reads them |
 | `WorldBits` | A bitset with `isSet(tileX, tileY)`, `width`, `height` and `adopt(newer)` |
 | `WorldMap` | `id`, `name`, `width`, `height`, `tileWidth`, `tileHeight`, `collision`, `nopvp`, `spawn`, `map`, `properties` |

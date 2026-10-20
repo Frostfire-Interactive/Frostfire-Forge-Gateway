@@ -172,7 +172,7 @@ Save sends a `SAVE_MAP` packet with the changed chunks, the map bounds, and all 
 4. Answers "Map saved successfully!" with the number of chunks updated.
 5. Tells the other players on the map to reload the changed chunks.
 
-Large world maps (see [World Maps](#/engine/world-maps)) are saved the same way, except that the asset server writes the chunks into the world's packs and the game server fetches the new collision and no-PvP data afterwards. A world's size is fixed.
+Large world maps (see [World Maps](#/engine/world-maps)) are saved the same way, except that the asset server writes the chunks into the world's packs and the game server fetches the new collision and no-PvP data afterwards. A world's size is fixed. For larger edits, a world can also be edited in Tiled with [Frostfire Worlds for Tiled](#/tools/tiled-worlds).
 
 Saves are limited to one every half second. If the tool window reports "The game window did not save the map", the game window shows the reason: an invalid warp or a save sent too soon after the last one.
 

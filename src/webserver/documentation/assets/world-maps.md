@@ -33,7 +33,7 @@ packs/
   ...
 ```
 
-Worlds are written by the project's map generator. The asset server reads them, serves them and applies editor saves to them.
+Worlds are written by the project's map generator and can be edited in Tiled with the [Frostfire Worlds for Tiled](#/tools/tiled-worlds) extension. The asset server reads them, serves them and applies editor saves to them.
 
 :::warning A world and a map cannot share a name
 If `maps/continent.json` and `maps/continent.world` both exist, the world is skipped at startup and an error is logged. Remove one of the two.
@@ -241,6 +241,12 @@ The game's full map view uses images baked by the asset server:
 
 The whole world image is baked at startup and kept in the system temp folder between starts, keyed by the world's manifest and its tileset images. Region images are baked on first request and up to 64 of them are kept in memory.
 
+When a world's tiles change (an editor save, or a save on disk by another program), the whole world image is baked again half a second later. Only the changed chunks are drawn, over the image as it was, so a save takes moments instead of the seconds a full bake takes: one pack of the 10240 x 10240 continent takes about a quarter of a second. Region images follow by themselves, since their cache key holds the world's checksum.
+
+```text title="Asset server log"
+Baked the world map of overworld again (256 chunk(s)) in 241ms
+```
+
 ## Sync to the engine
 
 The engine keeps a local copy of three files per world and never the packs:
@@ -301,3 +307,14 @@ World continent.world: a save had been cut short. 1 pack(s) were taken as they a
 
 - A world cannot be replaced whole: `POST /update-map` with a world's name is answered with `400 A world cannot be replaced whole`.
 - A world has a fixed size. Chunks outside it are rejected, and it does not grow like an infinite Tiled map.
+
+## Changes made outside the server
+
+Another program may write a world's files while the asset server runs: the [Tiled extension](#/tools/tiled-worlds) saves straight into the maps folder. The asset server notices and works from the files on disk.
+
+- **The manifest.** Each time a world is used (a chunk, the world list, a save, its map image), the asset server compares the size and time of its `manifest.json` with those it read. When they differ, it reads the world again and logs `World <id>.json changed on disk: read again`. The world's checksum changes with it, so cached chunks and region images are not served again.
+- **The packs.** The table of each pack is kept with the pack file's size and time. A pack written again since is read again before a chunk is served from it, so the server never reads records at their old places.
+- **Saves.** An editor save first reads the world again, so it builds on what is on disk. Tiles, warps and graveyards saved from Tiled are kept.
+- **The map image.** The chunks of every pack whose hash changed are baked again, as after an editor save (see [Map images](#/assets/world-maps/map-images)).
+
+A save on disk is written packs first and manifest last, like a save here. The asset server reads the world again once the manifest is in place.
