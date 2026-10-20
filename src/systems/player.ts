@@ -502,16 +502,6 @@ const player = {
     );
     return response;
   },
-  hasTwoFactorEnabled: async (username: string) => {
-    if (!username) return false;
-    username = username.toLowerCase();
-    const response = (await query(
-      "SELECT totp_enabled, webauthn_enabled FROM accounts WHERE username = ?",
-      [username]
-    )) as any[];
-    if (!response || response.length === 0) return false;
-    return response[0].totp_enabled === 1 || response[0].webauthn_enabled === 1;
-  },
   setTwoFactorPending: async (username: string, pending: boolean) => {
     if (!username) return;
     username = username.toLowerCase();

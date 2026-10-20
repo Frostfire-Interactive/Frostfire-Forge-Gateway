@@ -2,7 +2,7 @@ const now = performance.now();
 import log from "../modules/logger";
 import sendEmail, { buildEmailBody, buildLinkAction, buildCodeAction, censorEmail } from "../services/email";
 import player, { ensureTokenExpiryColumn, TOKEN_LIFETIME_MS } from "../systems/player";
-import verify, { shuffle } from "../services/verification";
+import verify from "../services/verification";
 import { hash, randomBytes, hashGuestPassword } from "../modules/hash";
 import query from "../controllers/sqldatabase";
 import { generateSecret, generateTotpUri, verifyTOTP } from "../services/totp";
@@ -131,6 +131,8 @@ const limits = {
   sendCode: new RateLimit(5, 15 * MINUTE),
   // /api/2fa/verify-totp, /api/2fa/verify-email and /api/2fa/verify-webauthn, counted together.
   twoFactor: new RateLimit(10, 15 * MINUTE),
+  // Answers that confirm an account change (security key, authenticator or email code).
+  confirmChange: new RateLimit(10, 15 * MINUTE),
 };
 
 function getRequestOrigin(req: Request): { rpId: string; origin: string } {
@@ -497,9 +499,6 @@ const routes = {
   "/api/profile/2fa-requirements": {
     POST: async (req: Request) => handleSet2FARequirement(req),
   },
-  "/api/profile/auth-webauthn": {
-    POST: async (req: Request) => handleProfileWebAuthnAuth(req),
-  },
   "/api/subscription": {
     GET: async (req: Request) => handleGetSubscription(req),
   },
@@ -616,7 +615,6 @@ Bun.serve({
       "/api/profile/reveal-email": routes["/api/profile/reveal-email"],
       "/api/profile/generate-password": routes["/api/profile/generate-password"],
       "/api/profile/2fa-requirements": routes["/api/profile/2fa-requirements"],
-      "/api/profile/auth-webauthn": routes["/api/profile/auth-webauthn"],
       "/api/subscription": routes["/api/subscription"],
       "/api/character": routes["/api/character"],
       "/api/subscription/checkout": routes["/api/subscription/checkout"],
@@ -944,12 +942,9 @@ async function resetPassword(req: Request, server: any) {
 
   const code = randomBytes(8);
 
-  const has2FA = await player.hasTwoFactorEnabled(result[0].username);
-  const twofaParam = has2FA ? "&require2fa=1" : "";
-
   const gameName = process.env.GAME_NAME || "Frostfire Forge";
   const subject = "Reset your password";
-  const url = `${process.env.DOMAIN}/manage-profile?email=${encodeURIComponent(email)}&code=${code}${twofaParam}`;
+  const url = `${process.env.DOMAIN}/manage-profile?email=${encodeURIComponent(email)}&code=${code}`;
   const message = buildEmailBody(
     "Reset Your Password",
     "Click the button below to reset your password. This link will expire after use.",
@@ -999,19 +994,17 @@ async function updatePassword(req: Request, server: any) {
     return new Response(JSON.stringify({ message: "Failed to update password" }), { status: 500 });
   }
 
-  const codeResult = await query("SELECT reset_password_code, username, totp_secret, totp_enabled FROM accounts WHERE email = ? AND reset_password_code = ? LIMIT 1", [body.email.toLowerCase(), body.code]) as any;
+  const codeResult = await query("SELECT reset_password_code, username FROM accounts WHERE email = ? AND reset_password_code = ? LIMIT 1", [body.email.toLowerCase(), body.code]) as any;
   if (codeResult.length === 0) {
     log.warn(`Invalid reset password code for email: ${censorEmail(body.email.toLowerCase())}`);
     return new Response(JSON.stringify({ message: "Invalid reset password code" }), { status: 403 });
   }
 
-  if (codeResult[0].totp_enabled === 1) {
-    if (!body.totp) {
-      return new Response(JSON.stringify({ message: "Authenticator code is required" }), { status: 400 });
-    }
-    if (!verifyTOTP(codeResult[0].totp_secret, body.totp)) {
-      return new Response(JSON.stringify({ message: "Invalid authenticator code" }), { status: 400 });
-    }
+  // The link proves the email. A stronger factor, when set up, must confirm it too.
+  const factor = await strongestFactor(codeResult[0].username);
+  if (factor !== "email") {
+    const denied = await confirmFactor(codeResult[0].username, factor, body, req, "password reset");
+    if (denied) return denied;
   }
 
   const hashedPassword = await hash(body.password);
@@ -1149,11 +1142,12 @@ async function handleChangeEmail(req: Request) {
   const body = await req.json();
   const { email, password } = body;
 
-  if (password) {
-    const pwdCheck = await player.login(username, password);
-    if (!pwdCheck) {
-      return new Response(JSON.stringify({ message: "Incorrect password" }), { status: 400 });
-    }
+  if (!password) {
+    return new Response(JSON.stringify({ message: "Password is required" }), { status: 400 });
+  }
+  const pwdCheck = await player.login(username, password);
+  if (!pwdCheck) {
+    return new Response(JSON.stringify({ message: "Incorrect password" }), { status: 400 });
   }
 
   if (!email || !validateEmail(email)) {
@@ -1170,15 +1164,13 @@ async function handleChangeEmail(req: Request) {
     return new Response(JSON.stringify({ message: "Email already in use" }), { status: 400 });
   }
 
-  const hasTOTP = await player.hasTwoFactorEnabled(username);
-  if (hasTOTP) {
-    if (body.totp) {
-      const totpData = await player.getTOTPSecret(username) as any;
-      if (!totpData || !totpData.totp_secret || !verifyTOTP(totpData.totp_secret, body.totp)) {
-        return new Response(JSON.stringify({ message: "Invalid authenticator code" }), { status: 400 });
-      }
-    } else if (!body.oldEmailCode && !body.emailCode) {
-      return new Response(JSON.stringify({ message: "Authenticator code is required" }), { status: 400 });
+  // The code sent to the current email confirms the change. A stronger factor,
+  // when set up, must confirm it first: the code is only sent once it has.
+  if (!body.oldEmailCode && !body.emailCode) {
+    const factor = await strongestFactor(username);
+    if (factor !== "email") {
+      const denied = await confirmFactor(username, factor, body, req, "email change");
+      if (denied) return denied;
     }
   }
 
@@ -1262,46 +1254,9 @@ async function handleChangePassword(req: Request) {
     return new Response(JSON.stringify({ message: "Current password is incorrect" }), { status: 400 });
   }
 
-  const hasTOTP = await player.hasTwoFactorEnabled(username);
+  const denied = await confirmFactor(username, await strongestFactor(username), body, req, "password change");
+  if (denied) return denied;
 
-  if (hasTOTP) {
-    if (!body.totp) {
-      return new Response(JSON.stringify({ message: "Authenticator code is required" }), { status: 400 });
-    }
-    const totpData = await player.getTOTPSecret(username) as any;
-    if (!totpData || !totpData.totp_secret || !verifyTOTP(totpData.totp_secret, body.totp)) {
-      return new Response(JSON.stringify({ message: "Invalid authenticator code" }), { status: 400 });
-    }
-  } else if (await isEmail2FARequired(username)) {
-    if (body.emailCode) {
-      const result = await query(
-        "SELECT verification_code FROM accounts WHERE username = ?",
-        [username]
-      ) as any[];
-      if (!result.length || !codesMatch(result[0].verification_code, body.emailCode)) {
-        return new Response(JSON.stringify({ message: "Invalid verification code" }), { status: 400 });
-      }
-      await query("UPDATE accounts SET verification_code = NULL WHERE username = ?", [username]);
-    } else {
-      const useremail = await player.getEmail(username);
-      const code = shuffle(token, 6);
-      await query("UPDATE accounts SET verification_code = ? WHERE username = ?", [code, username]);
-
-      const gameName = process.env.GAME_NAME || "Frostfire Forge";
-      const subject = "Verify password change";
-        const message = buildEmailBody(
-          "Confirm Password Change",
-          "Enter the code below to confirm your password change.",
-          buildCodeAction(code)
-        );
-        const emailResponse = await sendEmail(useremail, subject, gameName, message);
-        if (emailResponse !== "Email sent successfully") {
-          return new Response(JSON.stringify({ message: "Failed to send verification email" }), { status: 500 });
-        }
-
-        return new Response(JSON.stringify({ requiresEmail: true, message: "Verification email sent" }), { status: 200 });
-      }
-    }
   const newPasswordHash = await hash(newPassword);
   await player.changePassword(username, newPasswordHash);
 
@@ -1330,6 +1285,9 @@ async function handleSetupTOTP(req: Request) {
   if (totpData && totpData.totp_enabled === 1) {
     return new Response(JSON.stringify({ message: "TOTP already enabled" }), { status: 400 });
   }
+
+  const denied = await confirmFactor(username, await strongestFactor(username), body, req, "authenticator app setup");
+  if (denied) return denied;
 
   const secret = generateSecret();
   await player.setTOTPSecret(username, secret);
@@ -1385,31 +1343,8 @@ async function handleDisableTOTP(req: Request) {
     return new Response(JSON.stringify({ message: "Incorrect password" }), { status: 400 });
   }
 
-  if (body.emailCode) {
-    const result = await query(
-      "SELECT verification_code FROM accounts WHERE username = ?",
-      [username]
-    ) as any[];
-    if (!result.length || !codesMatch(result[0].verification_code, body.emailCode)) {
-      return new Response(JSON.stringify({ message: "Invalid verification code" }), { status: 400 });
-    }
-    await query("UPDATE accounts SET verification_code = NULL WHERE username = ?", [username]);
-  } else {
-    const useremail = await player.getEmail(username);
-    const code = randomBytes(6).substring(0, 6).toUpperCase();
-    await query("UPDATE accounts SET verification_code = ? WHERE username = ?", [code, username]);
-
-    const gameName = process.env.GAME_NAME || "Frostfire Forge";
-    const subject = "Verify TOTP removal";
-    const message = buildEmailBody(
-      "Confirm Authenticator Removal",
-      "Enter the code below to confirm removal of your authenticator app.",
-      buildCodeAction(code)
-    );
-    await sendEmail(useremail, subject, gameName, message);
-
-    return new Response(JSON.stringify({ requiresEmail: true, message: "Verification email sent" }), { status: 200 });
-  }
+  const denied = await confirmFactor(username, await strongestFactor(username), body, req, "authenticator app removal");
+  if (denied) return denied;
 
   await player.disableTOTP(username);
   await player.setTwoFactorRequirement(username, 'totp', false);
@@ -1433,6 +1368,9 @@ async function handleRegisterWebAuthn(req: Request) {
   if (!pwdCheck) {
     return new Response(JSON.stringify({ message: "Incorrect password" }), { status: 400 });
   }
+
+  const denied = await confirmFactor(username, await strongestFactor(username), body, req, "security key registration");
+  if (denied) return denied;
 
   const { rpId } = getRequestOrigin(req);
   const rpName = process.env.GAME_NAME || "Frostfire Forge";
@@ -1517,41 +1455,8 @@ async function handleRemoveWebAuthn(req: Request) {
     return new Response(JSON.stringify({ message: "Incorrect password" }), { status: 400 });
   }
 
-  const totpData = await player.getTOTPSecret(username) as any;
-  const hasTOTP = totpData?.totp_enabled === 1;
-
-  if (hasTOTP) {
-    if (!body.totp) {
-      return new Response(JSON.stringify({ message: "Authenticator code is required" }), { status: 400 });
-    }
-    if (!totpData.totp_secret || !verifyTOTP(totpData.totp_secret, body.totp)) {
-      return new Response(JSON.stringify({ message: "Invalid authenticator code" }), { status: 400 });
-    }
-  } else if (body.emailCode) {
-    const result = await query(
-      "SELECT verification_code FROM accounts WHERE username = ?",
-      [username]
-    ) as any[];
-    if (!result.length || !codesMatch(result[0].verification_code, body.emailCode)) {
-      return new Response(JSON.stringify({ message: "Invalid verification code" }), { status: 400 });
-    }
-    await query("UPDATE accounts SET verification_code = NULL WHERE username = ?", [username]);
-  } else {
-      const useremail = await player.getEmail(username);
-      const code = randomBytes(6).substring(0, 6).toUpperCase();
-      await query("UPDATE accounts SET verification_code = ? WHERE username = ?", [code, username]);
-
-      const gameName = process.env.GAME_NAME || "Frostfire Forge";
-      const subject = "Verify key removal";
-      const message = buildEmailBody(
-        "Confirm Security Key Removal",
-        "Enter the code below to confirm removal of your security key.",
-        buildCodeAction(code)
-      );
-      await sendEmail(useremail, subject, gameName, message);
-
-      return new Response(JSON.stringify({ requiresEmail: true, message: "Verification email sent" }), { status: 200 });
-    }
+  const denied = await confirmFactor(username, await strongestFactor(username), body, req, "security key removal");
+  if (denied) return denied;
 
   await player.removeWebAuthnCredential(username, credentialId);
   const credentials = await player.getWebAuthnCredentials(username);
@@ -1773,6 +1678,80 @@ async function handleVerifyWebAuthnLogin(req: Request) {
   return new Response(JSON.stringify({ message: "2FA verified" }), { status: 200 });
 }
 
+type SecondFactor = "webauthn" | "totp" | "email";
+
+// The strongest second factor the account has set up: a security key, then an
+// authenticator app, then a code sent to its email, which every account has.
+async function strongestFactor(username: string): Promise<SecondFactor> {
+  const credentials = await player.getWebAuthnCredentials(username) as any[];
+  if (credentials.length > 0) return "webauthn";
+  const totpData = await player.getTOTPSecret(username) as any;
+  if (totpData?.totp_enabled === 1) return "totp";
+  return "email";
+}
+
+// Confirms an account change with the given factor. Returns null once the
+// request carries a valid answer. Otherwise returns the response to send:
+// a 200 that asks for the answer (with the key challenge, or after mailing the
+// code), or a 400 for a wrong answer.
+async function confirmFactor(username: string, factor: SecondFactor, body: any, req: Request, action: string): Promise<Response | null> {
+  const reply = (data: object, status: number) =>
+    new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
+
+  if (factor === "webauthn") {
+    if (!body.webauthnResponse) {
+      const credentials = await player.getWebAuthnCredentials(username) as any[];
+      const { rpId } = getRequestOrigin(req);
+      const challenge = generateChallenge();
+      const tempChallenges = (globalThis as any).__webauthnChallenges || {};
+      tempChallenges[username] = challenge;
+      (globalThis as any).__webauthnChallenges = tempChallenges;
+      return reply({ requiresWebAuthn: true, options: generateAssertionOptions(challenge, rpId, credentials), message: "Confirm with your security key" }, 200);
+    }
+    const wait = limits.confirmChange.take(limitKey(req));
+    if (wait) return tooMany(wait);
+    const { credentialId, clientDataJSON, authenticatorData, signature } = body.webauthnResponse;
+    const result = await verifyWebAuthnAssertion(username, credentialId, clientDataJSON, authenticatorData, signature, req);
+    return result.error ? reply({ message: result.error }, 400) : null;
+  }
+
+  if (factor === "totp") {
+    if (!body.totp) return reply({ requiresTotp: true, message: "Enter your authenticator code" }, 200);
+    const wait = limits.confirmChange.take(limitKey(req));
+    if (wait) return tooMany(wait);
+    const totpData = await player.getTOTPSecret(username) as any;
+    if (!totpData?.totp_secret || !verifyTOTP(totpData.totp_secret, body.totp)) {
+      return reply({ message: "Invalid authenticator code" }, 400);
+    }
+    return null;
+  }
+
+  if (!body.emailCode) {
+    const useremail = await player.getEmail(username);
+    const code = randomBytes(6).substring(0, 6).toUpperCase();
+    await query("UPDATE accounts SET verification_code = ? WHERE username = ?", [code, username]);
+    const gameName = process.env.GAME_NAME || "Frostfire Forge";
+    const message = buildEmailBody(
+      "Confirm Account Change",
+      `Enter the code below to confirm the ${action}.`,
+      buildCodeAction(code)
+    );
+    const emailResponse = await sendEmail(useremail, "Confirm account change", gameName, message);
+    if (emailResponse !== "Email sent successfully") {
+      return reply({ message: "Failed to send verification email" }, 500);
+    }
+    return reply({ requiresEmail: true, message: "Verification email sent" }, 200);
+  }
+  const wait = limits.confirmChange.take(limitKey(req));
+  if (wait) return tooMany(wait);
+  const result = await query("SELECT verification_code FROM accounts WHERE username = ?", [username]) as any[];
+  if (!result.length || !codesMatch(result[0].verification_code, body.emailCode)) {
+    return reply({ message: "Invalid verification code" }, 400);
+  }
+  await query("UPDATE accounts SET verification_code = NULL WHERE username = ?", [username]);
+  return null;
+}
+
 async function getRequiredLoginMethod(username: string): Promise<boolean> {
   const reqs = await player.getTwoFactorRequirements(username);
 
@@ -1819,28 +1798,6 @@ async function handleRevealEmail(req: Request) {
   return new Response(JSON.stringify({ email }), { status: 200 });
 }
 
-async function handleProfileWebAuthnAuth(req: Request) {
-  const username = await getUsernameFromToken(req);
-  if (!username) {
-    return new Response(JSON.stringify({ message: "Unauthorized" }), { status: 401 });
-  }
-
-  const credentials = await player.getWebAuthnCredentials(username) as any[];
-  if (credentials.length === 0) {
-    return new Response(JSON.stringify({ message: "No WebAuthn credentials registered" }), { status: 400 });
-  }
-
-  const { rpId } = getRequestOrigin(req);
-  const challenge = generateChallenge();
-
-  const tempChallenges = (globalThis as any).__webauthnChallenges || {};  
-  tempChallenges[username] = challenge;
-  (globalThis as any).__webauthnChallenges = tempChallenges;
-
-  const options = generateAssertionOptions(challenge, rpId, credentials);
-  return new Response(JSON.stringify(options), { status: 200, headers: { "Content-Type": "application/json" } });
-}
-
 async function handleSet2FARequirement(req: Request) {
   const username = await getUsernameFromToken(req);
   if (!username) {
@@ -1855,80 +1812,26 @@ async function handleSet2FARequirement(req: Request) {
     return new Response(JSON.stringify({ message: "Invalid method" }), { status: 400 });
   }
 
-  // Enabling requires no additional verification
-  if (value) {
-    if (method === 'webauthn') {
-      const creds = await player.getWebAuthnCredentials(username) as any[];
-      if (creds.length === 0) {
-        return new Response(JSON.stringify({ message: "No security keys registered" }), { status: 400 });
-      }
-    }
-    if (method === 'totp') {
-      const totpData = await player.getTOTPSecret(username) as any;
-      if (!totpData || totpData.totp_enabled !== 1) {
-        return new Response(JSON.stringify({ message: "Authenticator app not set up" }), { status: 400 });
-      }
-    }
-    if (method === 'email') {
-      // email 2FA is always available
-    }
-
-    await player.setTwoFactorRequirement(username, method, true);
-    const updated = await player.getTwoFactorRequirements(username);
-    return new Response(JSON.stringify(updated), { status: 200 });
-  }
-
-  // Disabling requires that method's verification
-  if (method === 'webauthn') {
-    if (!body.webauthnResponse) {
-      return new Response(JSON.stringify({ requiresWebAuthn: true, message: "Authenticate with security key to disable" }), { status: 200 });
-    }
-
-    const { credentialId, clientDataJSON, authenticatorData, signature } = body.webauthnResponse;
-    const result = await verifyWebAuthnAssertion(username, credentialId, clientDataJSON, authenticatorData, signature, req);
-    if (result.error) {
-      return new Response(JSON.stringify({ message: result.error }), { status: 400 });
+  if (value && method === 'webauthn') {
+    const creds = await player.getWebAuthnCredentials(username) as any[];
+    if (creds.length === 0) {
+      return new Response(JSON.stringify({ message: "No security keys registered" }), { status: 400 });
     }
   }
-
-  if (method === 'totp') {
-    if (!body.totp) {
-      return new Response(JSON.stringify({ message: "Authenticator code is required" }), { status: 400 });
-    }
+  if (value && method === 'totp') {
     const totpData = await player.getTOTPSecret(username) as any;
-    if (!totpData || !totpData.totp_secret || !verifyTOTP(totpData.totp_secret, body.totp)) {
-      return new Response(JSON.stringify({ message: "Invalid authenticator code" }), { status: 400 });
+    if (!totpData || totpData.totp_enabled !== 1) {
+      return new Response(JSON.stringify({ message: "Authenticator app not set up" }), { status: 400 });
     }
   }
 
-  if (method === 'email') {
-    if (!body.emailCode) {
-      const useremail = await player.getEmail(username);
-      const code = randomBytes(6).substring(0, 6).toUpperCase();
-      await query("UPDATE accounts SET verification_code = ? WHERE username = ?", [code, username]);
-
-      const gameName = process.env.GAME_NAME || "Frostfire Forge";
-      const message = buildEmailBody(
-        "Confirm 2FA Change",
-        "Enter the code below to confirm disabling email verification.",
-        buildCodeAction(code)
-      );
-      await sendEmail(useremail, "Verify 2FA change", gameName, message);
-
-      return new Response(JSON.stringify({ requiresEmail: true, message: "Verification email sent" }), { status: 200 });
-    }
-
-    const result = await query(
-      "SELECT verification_code FROM accounts WHERE username = ?",
-      [username]
-    ) as any[];
-    if (!result.length || !codesMatch(result[0].verification_code, body.emailCode)) {
-      return new Response(JSON.stringify({ message: "Invalid verification code" }), { status: 400 });
-    }
-    await query("UPDATE accounts SET verification_code = NULL WHERE username = ?", [username]);
+  // Turning a requirement on only adds protection. Turning one off is confirmed.
+  if (!value) {
+    const denied = await confirmFactor(username, await strongestFactor(username), body, req, "sign-in requirement change");
+    if (denied) return denied;
   }
 
-  await player.setTwoFactorRequirement(username, method, false);
+  await player.setTwoFactorRequirement(username, method, value);
   const updated = await player.getTwoFactorRequirements(username);
   return new Response(JSON.stringify(updated), { status: 200 });
 }

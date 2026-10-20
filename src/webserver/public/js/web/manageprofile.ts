@@ -7,7 +7,6 @@ declare global {
 const currentURL = new URL(window.location.href);
 const resetEmail = currentURL.searchParams.get("email");
 const resetCode = currentURL.searchParams.get("code");
-const reset2fa = currentURL.searchParams.get("require2fa") === "1";
 const isResetMode = !!(resetEmail && resetCode);
 
 function getToken(): string {
@@ -20,7 +19,6 @@ function getToken(): string {
 }
 
 let totpEnabled = false;
-let requireEmail2FA = false;
 
 function base64UrlToBuffer(base64url: string): ArrayBuffer {
   const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
@@ -45,13 +43,117 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
+// ========== Confirming a change ==========
+// The server confirms each account change with the strongest second factor the
+// account has set up. When it asks for one, use the security key or ask for the
+// code, then send the request again with the answer.
+type Confirmed = { ok: boolean; body: any; cancelled?: boolean };
+
+function askForCode(title: string, desc: string): Promise<string | null> {
+  const modal = document.getElementById('confirm-modal')!;
+  const input = document.getElementById('confirm-code') as HTMLInputElement;
+  const submit = document.getElementById('confirm-submit')!;
+  const cancel = document.getElementById('confirm-cancel')!;
+  document.getElementById('confirm-title')!.textContent = title;
+  document.getElementById('confirm-desc')!.textContent = desc;
+  input.value = '';
+  modal.classList.remove('hidden');
+  input.focus();
+
+  return new Promise((resolve) => {
+    const finish = (code: string | null) => {
+      submit.removeEventListener('click', onSubmit);
+      cancel.removeEventListener('click', onCancel);
+      modal.classList.add('hidden');
+      resolve(code);
+    };
+    const onSubmit = () => {
+      const code = input.value.trim().toUpperCase();
+      if (code.length !== 6) {
+        window.Notify('error', 'Enter a valid 6-digit code');
+        return;
+      }
+      finish(code);
+    };
+    const onCancel = () => finish(null);
+    submit.addEventListener('click', onSubmit);
+    cancel.addEventListener('click', onCancel);
+  });
+}
+
+async function useSecurityKey(options: any): Promise<Record<string, string> | null> {
+  if (!window.isSecureContext || !navigator?.credentials) {
+    window.Notify('error', 'WebAuthn requires HTTPS or localhost');
+    return null;
+  }
+  try {
+    const credential = await navigator.credentials.get({
+      publicKey: {
+        challenge: base64UrlToBuffer(options.challenge),
+        rpId: options.rpId,
+        allowCredentials: options.allowCredentials.map((cred: any) => ({ type: 'public-key', id: base64UrlToBuffer(cred.id) })),
+        timeout: options.timeout,
+        userVerification: options.userVerification,
+      },
+    }) as PublicKeyCredential | null;
+    if (!credential) return null;
+    const response = credential.response as AuthenticatorAssertionResponse;
+    return {
+      credentialId: credential.id,
+      clientDataJSON: bufferToBase64Url(response.clientDataJSON),
+      authenticatorData: bufferToBase64Url(response.authenticatorData),
+      signature: bufferToBase64Url(response.signature),
+    };
+  } catch (err: any) {
+    if (err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
+      window.Notify('error', err.message || 'Verification failed');
+    }
+    return null;
+  }
+}
+
+async function postConfirmed(url: string, payload: Record<string, any>, signedIn = true): Promise<Confirmed> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (signedIn) headers['Authorization'] = `Bearer ${getToken()}`;
+  const send = async (): Promise<Confirmed> => {
+    const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
+    return { ok: response.ok, body: await response.json() };
+  };
+
+  const result = await send();
+  if (!result.ok) return result;
+
+  if (result.body.requiresWebAuthn) {
+    const answer = await useSecurityKey(result.body.options);
+    if (!answer) return { ok: false, body: result.body, cancelled: true };
+    payload.webauthnResponse = answer;
+  } else if (result.body.requiresTotp) {
+    const code = await askForCode('Authenticator Code', 'Enter the code from your authenticator app to confirm.');
+    if (!code) return { ok: false, body: result.body, cancelled: true };
+    payload.totp = code;
+  } else if (result.body.requiresEmail) {
+    const code = await askForCode('Email Verification', 'A verification code was sent to your email. Enter it to confirm.');
+    if (!code) return { ok: false, body: result.body, cancelled: true };
+    payload.emailCode = code;
+  } else {
+    return result;
+  }
+  return send();
+}
+
+function reportFailure(result: Confirmed) {
+  if (!result.cancelled) window.Notify('error', result.body.message || 'Something went wrong');
+}
+
 async function loadProfile() {
+  // A reset link shows the reset form, even in a browser that is still signed in.
+  if (isResetMode) {
+    initResetMode();
+    return;
+  }
+
   const token = getToken();
   if (!token) {
-    if (isResetMode) {
-      initResetMode();
-      return;
-    }
     window.location.href = '/';
     return;
   }
@@ -90,7 +192,6 @@ async function loadProfile() {
     updateSecurityBanner();
 
     totpEnabled = profile.totp_enabled;
-    requireEmail2FA = profile.require_email_2fa;
 
     const totpBadge = document.getElementById('totp-badge')!;
     const totpEnableBtn = document.getElementById('totp-enable-btn')!;
@@ -128,9 +229,6 @@ function initResetMode() {
   document.getElementById('profile-loading')!.classList.add('hidden');
   document.getElementById('reset-password-section')!.classList.remove('hidden');
   document.getElementById('reset-email-display')!.textContent = resetEmail!;
-  if (reset2fa) {
-    document.getElementById('reset-totp-group')!.classList.remove('hidden');
-  }
 }
 
 function renderWebAuthnKeys(keys: Array<{ id: string; name: string; createdAt: string }>) {
@@ -180,7 +278,6 @@ document.getElementById('reset-generate-password-btn')?.addEventListener('click'
 document.getElementById('reset-password-btn')?.addEventListener('click', async () => {
   const password = (document.getElementById('reset-new-password') as HTMLInputElement).value;
   const confirm = (document.getElementById('reset-confirm-password') as HTMLInputElement).value;
-  const totpCode = (document.getElementById('reset-totp') as HTMLInputElement).value;
 
   if (!password || !confirm) {
     window.Notify('error', 'All fields are required');
@@ -191,33 +288,18 @@ document.getElementById('reset-password-btn')?.addEventListener('click', async (
     return;
   }
 
-  const body: Record<string, string> = {
+  const result = await postConfirmed('/update-password', {
     email: resetEmail!,
     password,
     password2: confirm,
     code: resetCode!,
-  };
+  }, false);
 
-  if (reset2fa) {
-    if (!totpCode || totpCode.length !== 6) {
-      window.Notify('error', 'Authenticator code is required');
-      return;
-    }
-    body.totp = totpCode;
-  }
-
-  const response = await fetch('/update-password', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  const data = await response.json();
-  if (response.ok) {
+  if (result.ok) {
     window.Notify('success', 'Password updated. Redirecting to login...');
     setTimeout(() => { window.location.href = '/'; }, 3000);
   } else {
-    window.Notify('error', data.message);
+    reportFailure(result);
   }
 });
 
@@ -239,12 +321,10 @@ document.getElementById('change-email-btn')?.addEventListener('click', () => {
   showEmailChangeModal('password');
 });
 
-function showEmailChangeModal(step: 'password' | 'totp' | 'code') {
+function showEmailChangeModal(step: 'password' | 'code') {
   document.getElementById('email-2fa-password')!.classList.add('hidden');
-  document.getElementById('email-2fa-totp')!.classList.add('hidden');
   document.getElementById('email-2fa-code')!.classList.add('hidden');
   (document.getElementById('email-2fa-password-input') as HTMLInputElement).value = '';
-  (document.getElementById('email-2fa-totp-input') as HTMLInputElement).value = '';
   (document.getElementById('email-2fa-code-input') as HTMLInputElement).value = '';
 
   if (step === 'password') {
@@ -252,11 +332,6 @@ function showEmailChangeModal(step: 'password' | 'totp' | 'code') {
     document.getElementById('email-2fa-desc')!.textContent = 'Enter your account password to change your email.';
     document.getElementById('email-2fa-password')!.classList.remove('hidden');
     (document.getElementById('email-2fa-password-input') as HTMLInputElement).focus();
-  } else if (step === 'totp') {
-    document.getElementById('email-2fa-title')!.textContent = 'Authenticator Code';
-    document.getElementById('email-2fa-desc')!.textContent = 'Enter your authenticator code to continue.';
-    document.getElementById('email-2fa-totp')!.classList.remove('hidden');
-    (document.getElementById('email-2fa-totp-input') as HTMLInputElement).focus();
   } else {
     document.getElementById('email-2fa-code')!.classList.remove('hidden');
     (document.getElementById('email-2fa-code-input') as HTMLInputElement).focus();
@@ -274,7 +349,6 @@ document.getElementById('email-2fa-cancel')?.addEventListener('click', () => {
 
 document.getElementById('email-2fa-submit')?.addEventListener('click', async () => {
   const passwordVisible = !document.getElementById('email-2fa-password')!.classList.contains('hidden');
-  const totpVisible = !document.getElementById('email-2fa-totp')!.classList.contains('hidden');
   const codeVisible = !document.getElementById('email-2fa-code')!.classList.contains('hidden');
 
   if (passwordVisible) {
@@ -284,24 +358,7 @@ document.getElementById('email-2fa-submit')?.addEventListener('click', async () 
       return;
     }
     emailChangePassword = pwd;
-
-    if (totpEnabled) {
-      showEmailChangeModal('totp');
-      return;
-    }
-
     sendEmailChangeRequest();
-    return;
-  }
-
-  if (totpVisible) {
-    const totpCode = (document.getElementById('email-2fa-totp-input') as HTMLInputElement).value.trim();
-    if (!totpCode || totpCode.length !== 6) {
-      window.Notify('error', 'Enter a valid 6-digit code');
-      return;
-    }
-    document.getElementById('email-2fa-modal')!.classList.add('hidden');
-    sendEmailChangeRequest(totpCode);
     return;
   }
 
@@ -354,27 +411,17 @@ document.getElementById('email-2fa-submit')?.addEventListener('click', async () 
   }
 });
 
-async function sendEmailChangeRequest(totp?: string) {
-  const token = getToken();
-  const requestBody: Record<string, string> = { email: pendingNewEmail, password: emailChangePassword };
-  if (totp) requestBody.totp = totp;
-
-  const response = await fetch('/api/profile/change-email', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-    body: JSON.stringify(requestBody),
-  });
-
-  const body = await response.json();
-  if (!response.ok) {
+async function sendEmailChangeRequest() {
+  const result = await postConfirmed('/api/profile/change-email', { email: pendingNewEmail, password: emailChangePassword });
+  if (!result.ok) {
     document.getElementById('email-2fa-modal')!.classList.add('hidden');
-    window.Notify('error', body.message);
+    reportFailure(result);
     return;
   }
 
   emailChangeStep = 'old';
   document.getElementById('email-2fa-title')!.textContent = 'Verify Current Email';
-  document.getElementById('email-2fa-desc')!.textContent = `A verification code was sent to ${body.oldEmailMasked}. Enter it to continue.`;
+  document.getElementById('email-2fa-desc')!.textContent = `A verification code was sent to ${result.body.oldEmailMasked}. Enter it to continue.`;
   showEmailChangeModal('code');
 }
 
@@ -414,124 +461,14 @@ document.getElementById('change-password-btn')?.addEventListener('click', async 
     return;
   }
 
-  if (totpEnabled) {
-    show2FAModal('totp');
-    return;
-  }
-
-  if (!totpEnabled && requireEmail2FA) {
-    window.Notify('success', 'Sending verification email...');
-    const token = getToken();
-    const response = await fetch('/api/profile/change-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ currentPassword, newPassword }),
-    });
-    const body = await response.json();
-    if (response.ok && body.requiresEmail) {
-      show2FAModal('email');
-    } else if (response.ok) {
-      clearPasswordFields();
-      window.Notify('success', body.message);
-    } else {
-      window.Notify('error', body.message);
-    }
-    return;
-  }
-
-  doPasswordChange();
-});
-
-function show2FAModal(type: 'totp' | 'email') {
-  const modal = document.getElementById('password-2fa-modal')!;
-  const title = document.getElementById('password-2fa-title')!;
-  const totpGroup = document.getElementById('password-2fa-totp')!;
-  const emailGroup = document.getElementById('password-2fa-email')!;
-  const totpInput = document.getElementById('password-2fa-totp-input') as HTMLInputElement;
-  const emailInput = document.getElementById('password-2fa-email-input') as HTMLInputElement;
-
-  totpGroup.classList.add('hidden');
-  emailGroup.classList.add('hidden');
-  totpInput.value = '';
-  emailInput.value = '';
-
-  if (type === 'totp') {
-    title.textContent = 'Authenticator Code';
-    totpGroup.classList.remove('hidden');
-    totpInput.focus();
-  } else {
-    title.textContent = 'Email Verification';
-    emailGroup.classList.remove('hidden');
-    emailInput.focus();
-  }
-
-  modal.classList.remove('hidden');
-}
-
-document.getElementById('password-2fa-cancel')?.addEventListener('click', () => {
-  document.getElementById('password-2fa-modal')!.classList.add('hidden');
-});
-
-document.getElementById('password-2fa-submit')?.addEventListener('click', async () => {
-  const totpVisible = !document.getElementById('password-2fa-totp')!.classList.contains('hidden');
-  const totpCode = (document.getElementById('password-2fa-totp-input') as HTMLInputElement).value;
-  const emailCode = (document.getElementById('password-2fa-email-input') as HTMLInputElement).value.toUpperCase();
-
-  if (totpVisible && (!totpCode || totpCode.length !== 6)) {
-    window.Notify('error', 'Enter a valid 6-digit code');
-    return;
-  }
-  if (!totpVisible && (!emailCode || emailCode.length !== 6)) {
-    window.Notify('error', 'Enter a valid 6-digit code');
-    return;
-  }
-
-  const currentPassword = (document.getElementById('current-password') as HTMLInputElement).value;
-  const newPassword = (document.getElementById('new-password') as HTMLInputElement).value;
-
-  const requestBody: Record<string, string> = { currentPassword, newPassword };
-  if (totpVisible) {
-    requestBody.totp = totpCode;
-  } else {
-    requestBody.emailCode = emailCode;
-  }
-
-  const token = getToken();
-  const response = await fetch('/api/profile/change-password', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-    body: JSON.stringify(requestBody),
-  });
-
-  const body = await response.json();
-  if (response.ok) {
-    document.getElementById('password-2fa-modal')!.classList.add('hidden');
+  const result = await postConfirmed('/api/profile/change-password', { currentPassword, newPassword });
+  if (result.ok) {
     clearPasswordFields();
-    window.Notify('success', body.message);
+    window.Notify('success', result.body.message);
   } else {
-    window.Notify('error', body.message);
+    reportFailure(result);
   }
 });
-
-function doPasswordChange() {
-  const currentPassword = (document.getElementById('current-password') as HTMLInputElement).value;
-  const newPassword = (document.getElementById('new-password') as HTMLInputElement).value;
-
-  const token = getToken();
-  fetch('/api/profile/change-password', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-    body: JSON.stringify({ currentPassword, newPassword }),
-  }).then(async (response) => {
-    const body = await response.json();
-    if (response.ok) {
-      clearPasswordFields();
-      window.Notify('success', body.message);
-    } else {
-      window.Notify('error', body.message);
-    }
-  });
-}
 
 function clearPasswordFields() {
   (document.getElementById('current-password') as HTMLInputElement).value = '';
@@ -548,47 +485,26 @@ document.querySelectorAll('input[data-method]').forEach((cb) => {
     const method = this.dataset.method!;
     const value = this.checked;
 
-    if (value) {
-      const token = getToken();
-      const response = await fetch('/api/profile/2fa-requirements', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ method, value: true }),
-      });
-      const body = await response.json();
-      if (response.ok) {
-        updateAllCheckboxes(body);
-        const labels: Record<string, string> = {
-          webauthn: 'Security Key will be required for sign-in',
-          totp: 'Authenticator App will be required for sign-in',
-          email: 'Email verification will be required for sign-in',
-        };
-        window.Notify('success', labels[method] || 'Method enabled');
-      } else {
-        revertCheckbox(method);
-        window.Notify('error', body.message);
-      }
+    // The switch shows the saved state until the server confirms the change.
+    isUpdatingCheckbox = true;
+    this.checked = !value;
+    isUpdatingCheckbox = false;
+
+    const result = await postConfirmed('/api/profile/2fa-requirements', { method, value });
+    if (!result.ok) {
+      reportFailure(result);
       return;
     }
 
-    this.checked = true;
-    if (method === 'webauthn') {
-      await disableWebAuthnRequirement();
-    } else if (method === 'totp') {
-      showDisableTotpRequirementModal();
-    } else if (method === 'email') {
-      showDisableEmailRequirementModal();
-    }
+    updateAllCheckboxes(result.body);
+    const labels: Record<string, string> = {
+      webauthn: 'Security Key will be required for sign-in',
+      totp: 'Authenticator App will be required for sign-in',
+      email: 'Email verification will be required for sign-in',
+    };
+    window.Notify('success', value ? labels[method] || 'Method enabled' : 'Requirement disabled');
   });
 });
-
-function revertCheckbox(method: string) {
-  isUpdatingCheckbox = true;
-  const map: Record<string, string> = { webauthn: 'require-webauthn', totp: 'require-totp', email: 'require-email' };
-  const cb = document.getElementById(map[method]) as HTMLInputElement;
-  if (cb) cb.checked = true;
-  isUpdatingCheckbox = false;
-}
 
 function updateAllCheckboxes(body: any) {
   isUpdatingCheckbox = true;
@@ -628,170 +544,6 @@ function updateSecurityBanner() {
   }
 }
 
-async function disableWebAuthnRequirement() {
-  if (!window.isSecureContext || !navigator?.credentials) {
-    revertCheckbox('webauthn');
-    window.Notify('error', 'WebAuthn requires HTTPS or localhost');
-    return;
-  }
-
-  try {
-    const token = getToken();
-    const response = await fetch('/api/profile/2fa-requirements', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ method: 'webauthn', value: false }),
-    });
-
-    const body = await response.json();
-    if (response.ok && body.requiresWebAuthn) {
-      const optionsResponse = await fetch('/api/profile/auth-webauthn', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      if (!optionsResponse.ok) {
-        revertCheckbox('webauthn');
-        window.Notify('error', 'Failed to start WebAuthn');
-        return;
-      }
-
-      const options = await optionsResponse.json();
-      const publicKey: PublicKeyCredentialRequestOptions = {
-        challenge: base64UrlToBuffer(options.challenge),
-        rpId: options.rpId,
-        allowCredentials: options.allowCredentials.map((cred: any) => ({ type: 'public-key', id: base64UrlToBuffer(cred.id) })),
-        timeout: options.timeout,
-        userVerification: options.userVerification,
-      };
-
-      const credential = await navigator.credentials.get({ publicKey }) as PublicKeyCredential;
-      if (!credential) throw new Error('Failed');
-
-      const credResponse = credential.response as AuthenticatorAssertionResponse;
-      const verifyResponse = await fetch('/api/profile/2fa-requirements', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({
-          method: 'webauthn',
-          value: false,
-          webauthnResponse: {
-            credentialId: credential.id,
-            clientDataJSON: bufferToBase64Url(credResponse.clientDataJSON),
-            authenticatorData: bufferToBase64Url(credResponse.authenticatorData),
-            signature: bufferToBase64Url(credResponse.signature),
-          },
-        }),
-      });
-
-      const verifyBody = await verifyResponse.json();
-      if (verifyResponse.ok) {
-        updateAllCheckboxes(verifyBody);
-        window.Notify('success', 'Requirement disabled');
-      } else {
-        window.Notify('error', verifyBody.message);
-      }
-    } else if (response.ok) {
-      updateAllCheckboxes(body);
-    } else {
-      window.Notify('error', body.message);
-    }
-  } catch (err: any) {
-    if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
-      revertCheckbox('webauthn');
-    } else {
-      window.Notify('error', err.message || 'Verification failed');
-    }
-  }
-}
-
-function showDisableTotpRequirementModal() {
-  (document.getElementById('disable-totp-code') as HTMLInputElement).value = '';
-  document.getElementById('disable-totp-modal')!.classList.remove('hidden');
-  document.getElementById('disable-totp-code')?.focus();
-}
-
-document.getElementById('disable-totp-cancel')?.addEventListener('click', () => {
-  document.getElementById('disable-totp-modal')!.classList.add('hidden');
-  revertCheckbox('totp');
-});
-
-document.getElementById('disable-totp-submit')?.addEventListener('click', async () => {
-  const code = (document.getElementById('disable-totp-code') as HTMLInputElement).value.trim().toUpperCase();
-  if (!code || code.length !== 6) {
-    window.Notify('error', 'Enter a valid 6-digit code');
-    return;
-  }
-
-  const token = getToken();
-  const response = await fetch('/api/profile/2fa-requirements', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-    body: JSON.stringify({ method: 'totp', value: false, totp: code }),
-  });
-
-  const body = await response.json();
-  if (response.ok) {
-    document.getElementById('disable-totp-modal')!.classList.add('hidden');
-    updateAllCheckboxes(body);
-    window.Notify('success', 'Authenticator requirement disabled');
-  } else {
-    window.Notify('error', body.message);
-  }
-});
-
-function showDisableEmailRequirementModal() {
-  (document.getElementById('disable-email-code') as HTMLInputElement).value = '';
-  document.getElementById('disable-email-modal')!.classList.remove('hidden');
-  document.getElementById('disable-email-code')?.focus();
-
-  const token = getToken();
-  fetch('/api/profile/2fa-requirements', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-    body: JSON.stringify({ method: 'email', value: false }),
-  }).then(async (response) => {
-    const body = await response.json();
-    if (response.ok && body.requiresEmail) {
-      window.Notify('success', body.message || 'Verification email sent');
-    } else if (response.ok) {
-      document.getElementById('disable-email-modal')!.classList.add('hidden');
-      updateAllCheckboxes(body);
-    } else {
-      document.getElementById('disable-email-modal')!.classList.add('hidden');
-      window.Notify('error', body.message);
-    }
-  });
-}
-
-document.getElementById('disable-email-cancel')?.addEventListener('click', () => {
-  document.getElementById('disable-email-modal')!.classList.add('hidden');
-  revertCheckbox('email');
-});
-
-document.getElementById('disable-email-submit')?.addEventListener('click', async () => {
-  const code = (document.getElementById('disable-email-code') as HTMLInputElement).value.trim().toUpperCase();
-  if (!code || code.length !== 6) {
-    window.Notify('error', 'Enter a valid 6-digit code');
-    return;
-  }
-
-  const token = getToken();
-  const verifyResponse = await fetch('/api/profile/2fa-requirements', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-    body: JSON.stringify({ method: 'email', value: false, emailCode: code }),
-  });
-
-  const verifyBody = await verifyResponse.json();
-  if (verifyResponse.ok) {
-    document.getElementById('disable-email-modal')!.classList.add('hidden');
-    updateAllCheckboxes(verifyBody);
-    window.Notify('success', 'Email requirement disabled');
-  } else {
-    window.Notify('error', verifyBody.message);
-  }
-});
-
 // ========== TOTP ==========
 document.getElementById('totp-enable-btn')?.addEventListener('click', () => {
   document.getElementById('totp-setup-password')!.classList.remove('hidden');
@@ -816,25 +568,18 @@ document.getElementById('totp-setup-password-btn')?.addEventListener('click', as
     return;
   }
 
-  const token = getToken();
-  const response = await fetch('/api/profile/setup-totp', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-    body: JSON.stringify({ password }),
-  });
-
-  const body = await response.json();
-  if (response.ok) {
+  const result = await postConfirmed('/api/profile/setup-totp', { password });
+  if (result.ok) {
     document.getElementById('totp-setup-password')!.classList.add('hidden');
     document.getElementById('totp-setup-qr')!.classList.remove('hidden');
     const qrImg = document.getElementById('totp-qr') as HTMLImageElement;
     qrImg.style.visibility = 'hidden';
     qrImg.onload = () => { qrImg.style.visibility = 'visible'; };
-    qrImg.src = body.qrUrl;
+    qrImg.src = result.body.qrUrl;
     (document.getElementById('totp-code') as HTMLInputElement).value = '';
     document.getElementById('totp-code')?.focus();
   } else {
-    window.Notify('error', body.message);
+    reportFailure(result);
   }
 });
 
@@ -867,12 +612,7 @@ document.getElementById('totp-verify-btn')?.addEventListener('click', async () =
   }
 });
 
-let pendingTotpRemovePassword = '';
-let isAwaitingTotpRemoveCode = false;
-
 document.getElementById('totp-disable-btn')?.addEventListener('click', () => {
-  pendingTotpRemovePassword = '';
-  isAwaitingTotpRemoveCode = false;
   (document.getElementById('totp-remove-password') as HTMLInputElement).value = '';
   document.getElementById('totp-remove-message')!.textContent = '';
   document.getElementById('totp-remove-message')!.className = '';
@@ -885,80 +625,38 @@ document.getElementById('totp-remove-cancel')?.addEventListener('click', () => {
 });
 
 document.getElementById('totp-remove-submit')?.addEventListener('click', async () => {
-  if (isAwaitingTotpRemoveCode) {
-    const code = (document.getElementById('totp-remove-password') as HTMLInputElement).value.trim();
-    if (!code || code.length !== 6) {
-      window.Notify('error', 'Enter a valid 6-digit code');
-      return;
-    }
-
-    const token = getToken();
-    const response = await fetch('/api/profile/disable-totp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ password: pendingTotpRemovePassword, emailCode: code }),
-    });
-
-    const body = await response.json();
-    if (response.ok) {
-      document.getElementById('totp-remove-modal')!.classList.add('hidden');
-      window.Notify('success', body.message);
-      document.getElementById('totp-badge')!.textContent = 'Disabled';
-      document.getElementById('totp-badge')!.className = 'badge badge-off';
-      document.getElementById('totp-enable-btn')!.classList.remove('hidden');
-      document.getElementById('totp-disable-btn')!.classList.add('hidden');
-      totpEnabled = false;
-      pendingTotpRemovePassword = '';
-      isAwaitingTotpRemoveCode = false;
-    } else {
-      window.Notify('error', body.message);
-    }
-    return;
-  }
-
   const password = (document.getElementById('totp-remove-password') as HTMLInputElement).value;
   if (!password) {
     window.Notify('error', 'Password is required');
     return;
   }
 
-  pendingTotpRemovePassword = password;
-  const token = getToken();
-  const response = await fetch('/api/profile/disable-totp', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-    body: JSON.stringify({ password }),
-  });
-
-  const body = await response.json();
-  if (response.ok && body.requiresEmail) {
-    isAwaitingTotpRemoveCode = true;
-    const label = document.querySelector('#totp-remove-modal label')!;
-    label.textContent = 'Verification Code';
-    const input = document.getElementById('totp-remove-password') as HTMLInputElement;
-    input.type = 'text';
-    input.placeholder = 'Email code';
-    input.value = '';
-    input.focus();
-  } else if (response.ok) {
-    document.getElementById('totp-remove-modal')!.classList.add('hidden');
-    window.Notify('success', body.message);
-    document.getElementById('totp-badge')!.textContent = 'Disabled';
-    document.getElementById('totp-badge')!.className = 'badge badge-off';
-    document.getElementById('totp-enable-btn')!.classList.remove('hidden');
-    document.getElementById('totp-disable-btn')!.classList.add('hidden');
-    totpEnabled = false;
-    updateCheckboxStates();
-  } else {
-    window.Notify('error', body.message);
+  const result = await postConfirmed('/api/profile/disable-totp', { password });
+  if (!result.ok) {
+    reportFailure(result);
+    return;
   }
+
+  document.getElementById('totp-remove-modal')!.classList.add('hidden');
+  window.Notify('success', result.body.message);
+  document.getElementById('totp-badge')!.textContent = 'Disabled';
+  document.getElementById('totp-badge')!.className = 'badge badge-off';
+  document.getElementById('totp-enable-btn')!.classList.remove('hidden');
+  document.getElementById('totp-disable-btn')!.classList.add('hidden');
+  totpEnabled = false;
+  isUpdatingCheckbox = true;
+  (document.getElementById('require-totp') as HTMLInputElement).checked = false;
+  isUpdatingCheckbox = false;
+  updateCheckboxStates();
+  updateSecurityBanner();
 });
 
 // ========== WebAuthn ==========
-let pendingWebAuthnPassword = '';
+// The registration options the server gives once the change is confirmed.
+let pendingRegistrationOptions: any = null;
 
 document.getElementById('webauthn-add-btn')?.addEventListener('click', () => {
-  pendingWebAuthnPassword = '';
+  pendingRegistrationOptions = null;
   document.getElementById('webauthn-password-step')!.classList.remove('hidden');
   document.getElementById('webauthn-name-step')!.classList.add('hidden');
   (document.getElementById('webauthn-password') as HTMLInputElement).value = '';
@@ -981,22 +679,15 @@ document.getElementById('webauthn-password-btn')?.addEventListener('click', asyn
     return;
   }
 
-  const token = getToken();
-  const response = await fetch('/api/profile/register-webauthn', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-    body: JSON.stringify({ password }),
-  });
-
-  if (response.ok) {
-    pendingWebAuthnPassword = password;
+  const result = await postConfirmed('/api/profile/register-webauthn', { password });
+  if (result.ok) {
+    pendingRegistrationOptions = result.body;
     document.getElementById('webauthn-password-step')!.classList.add('hidden');
     document.getElementById('webauthn-name-step')!.classList.remove('hidden');
     (document.getElementById('webauthn-key-name') as HTMLInputElement).value = '';
     document.getElementById('webauthn-key-name')?.focus();
   } else {
-    const body = await response.json();
-    window.Notify('error', body.message);
+    reportFailure(result);
   }
 });
 
@@ -1009,20 +700,11 @@ document.getElementById('webauthn-register-btn')?.addEventListener('click', asyn
     return;
   }
 
+  const options = pendingRegistrationOptions;
+  if (!options) return;
+  pendingRegistrationOptions = null;
+
   try {
-    const optionsResponse = await fetch('/api/profile/register-webauthn', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ password: pendingWebAuthnPassword }),
-    });
-    if (!optionsResponse.ok) {
-      const err = await optionsResponse.json();
-      window.Notify('error', err.message);
-      return;
-    }
-
-    const options = await optionsResponse.json();
-
     const publicKey: PublicKeyCredentialCreationOptions = {
       challenge: base64UrlToBuffer(options.challenge),
       rp: options.rp,
@@ -1084,48 +766,12 @@ document.getElementById('webauthn-register-btn')?.addEventListener('click', asyn
   }
 });
 
-async function removeWebAuthnKey(keyId: string, password: string, totp?: string) {
-  const token = getToken();
-  const requestBody: Record<string, string> = { credentialId: keyId, password };
-  if (totp) requestBody.totp = totp;
-
-  const response = await fetch('/api/profile/remove-webauthn', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
-    body: JSON.stringify(requestBody),
-  });
-
-  const body = await response.json();
-  if (response.ok) {
-    const keys = body.credentials || [];
-    renderWebAuthnKeys(keys);
-    updateWebAuthnBadge(keys.length);
-    updateAllCheckboxes(body);
-    updateCheckboxStates();
-    window.Notify('success', 'Security key removed');
-  } else {
-    window.Notify('error', body.message);
-  }
-}
-
 let pendingRemoveKeyId = '';
-let pendingRemovePassword = '';
-let isAwaitingEmailCode = false;
 
 function showRemoveKeyModal(keyId: string, keyName: string) {
   pendingRemoveKeyId = keyId;
-  pendingRemovePassword = '';
-  isAwaitingEmailCode = false;
   document.getElementById('remove-key-desc')!.textContent = `Enter your password to remove "${keyName}".`;
   (document.getElementById('remove-key-password') as HTMLInputElement).value = '';
-  (document.getElementById('remove-key-totp-input') as HTMLInputElement).value = '';
-  document.getElementById('remove-key-totp')!.classList.add('hidden');
-  document.getElementById('remove-key-password')!.parentElement!.classList.remove('hidden');
-  const totpLabel = document.getElementById('remove-key-totp')!.querySelector('label')!;
-  totpLabel.textContent = 'Authenticator Code';
   document.getElementById('remove-key-message')!.textContent = '';
   document.getElementById('remove-key-message')!.className = '';
 
@@ -1136,111 +782,28 @@ function showRemoveKeyModal(keyId: string, keyName: string) {
 document.getElementById('remove-key-cancel')?.addEventListener('click', () => {
   document.getElementById('remove-key-modal')!.classList.add('hidden');
   pendingRemoveKeyId = '';
-  pendingRemovePassword = '';
-  isAwaitingEmailCode = false;
 });
 
 document.getElementById('remove-key-submit')?.addEventListener('click', async () => {
-  if (isAwaitingEmailCode) {
-    const code = (document.getElementById('remove-key-totp-input') as HTMLInputElement).value.trim().toUpperCase();
-    if (!code || code.length !== 6) {
-      window.Notify('error', 'Enter a valid 6-digit code');
-      return;
-    }
-
-    const token = getToken();
-    const response = await fetch('/api/profile/remove-webauthn', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ credentialId: pendingRemoveKeyId, password: pendingRemovePassword, emailCode: code }),
-    });
-
-    const body = await response.json();
-    if (response.ok) {
-      document.getElementById('remove-key-modal')!.classList.add('hidden');
-      const keys = body.credentials || [];
-      renderWebAuthnKeys(keys);
-      updateWebAuthnBadge(keys.length);
-      updateAllCheckboxes(body);
-      updateCheckboxStates();
-      window.Notify('success', 'Security key removed');
-      pendingRemoveKeyId = '';
-      pendingRemovePassword = '';
-      isAwaitingEmailCode = false;
-    } else {
-      window.Notify('error', body.message);
-    }
-    return;
-  }
-
   const password = (document.getElementById('remove-key-password') as HTMLInputElement).value;
   if (!password) {
     window.Notify('error', 'Password is required');
     return;
   }
 
-  if (totpEnabled) {
-    const totpInput = document.getElementById('remove-key-totp-input') as HTMLInputElement;
-    const totpCode = totpInput.value.trim();
-    const totpVisible = !document.getElementById('remove-key-totp')!.classList.contains('hidden');
-
-    if (!totpVisible) {
-      pendingRemovePassword = password;
-      document.getElementById('remove-key-totp')!.classList.remove('hidden');
-      totpInput.value = '';
-      totpInput.focus();
-      return;
-    }
-
-    if (!totpCode || totpCode.length !== 6) {
-      window.Notify('error', 'Enter a valid 6-digit code');
-      return;
-    }
-
-    document.getElementById('remove-key-modal')!.classList.add('hidden');
-    await removeWebAuthnKey(pendingRemoveKeyId, password, totpCode);
-    pendingRemoveKeyId = '';
-    return;
-  }
-
-  if (!totpEnabled) {
-    window.Notify('success', 'Sending verification email...');
-    pendingRemovePassword = password;
-    const token = getToken();
-    const response = await fetch('/api/profile/remove-webauthn', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ credentialId: pendingRemoveKeyId, password }),
-    });
-    const body = await response.json();
-    if (response.ok && body.requiresEmail) {
-      isAwaitingEmailCode = true;
-      document.getElementById('remove-key-desc')!.textContent = 'A verification code was sent to your email. Enter it to confirm.';
-      document.getElementById('remove-key-password')!.parentElement!.classList.add('hidden');
-      document.getElementById('remove-key-totp')!.querySelector('label')!.textContent = 'Verification Code';
-      const totpInput = document.getElementById('remove-key-totp-input') as HTMLInputElement;
-      totpInput.value = '';
-      document.getElementById('remove-key-totp')!.classList.remove('hidden');
-      document.getElementById('remove-key-message')!.textContent = '';
-      document.getElementById('remove-key-message')!.className = '';
-      totpInput.focus();
-    } else if (response.ok) {
-      document.getElementById('remove-key-modal')!.classList.add('hidden');
-      const keys = body.credentials || [];
-      renderWebAuthnKeys(keys);
-      updateWebAuthnBadge(keys.length);
-      updateAllCheckboxes(body);
-      updateCheckboxStates();
-      window.Notify('success', 'Security key removed');
-      pendingRemoveKeyId = '';
-    } else {
-      window.Notify('error', body.message);
-    }
+  const result = await postConfirmed('/api/profile/remove-webauthn', { credentialId: pendingRemoveKeyId, password });
+  if (!result.ok) {
+    reportFailure(result);
     return;
   }
 
   document.getElementById('remove-key-modal')!.classList.add('hidden');
-  await removeWebAuthnKey(pendingRemoveKeyId, password);
+  const keys = result.body.credentials || [];
+  renderWebAuthnKeys(keys);
+  updateWebAuthnBadge(keys.length);
+  updateAllCheckboxes(result.body);
+  updateCheckboxStates();
+  window.Notify('success', 'Security key removed');
   pendingRemoveKeyId = '';
 });
 

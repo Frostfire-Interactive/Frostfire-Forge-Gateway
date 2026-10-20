@@ -68,10 +68,6 @@
                             <label for="reset-confirm-password">Confirm Password</label>
                             <input type="password" id="reset-confirm-password" placeholder="Confirm new password" spellcheck="false" autocomplete="new-password">
                         </div>
-                        <div class="form-group hidden" id="reset-totp-group">
-                            <label for="reset-totp">Authenticator Code</label>
-                            <input type="text" id="reset-totp" placeholder="000000" maxlength="6" spellcheck="false" autocomplete="off">
-                        </div>
                         <button type="button" id="reset-password-btn" class="btn">Reset Password</button>
                         <div id="reset-message"></div>
                         </form>
@@ -219,25 +215,6 @@
             </div>
         </div>
 
-        <div id="password-2fa-modal" class="modal-overlay hidden">
-            <div class="modal-box">
-                <h3 id="password-2fa-title">Verify Identity</h3>
-                <div class="form-group hidden" id="password-2fa-totp">
-                    <label for="password-2fa-totp-input">Authenticator Code</label>
-                    <input type="text" id="password-2fa-totp-input" placeholder="000000" maxlength="6" spellcheck="false" autocomplete="off">
-                </div>
-                <div class="form-group hidden" id="password-2fa-email">
-                    <label for="password-2fa-email-input">Verification Code</label>
-                    <input type="text" id="password-2fa-email-input" placeholder="Check your email" maxlength="6" spellcheck="false" autocomplete="off">
-                </div>
-                <div id="password-2fa-message"></div>
-                <div class="modal-actions">
-                    <button type="button" id="password-2fa-submit" class="btn">Verify</button>
-                    <button type="button" id="password-2fa-cancel" class="btn-outline">Cancel</button>
-                </div>
-            </div>
-        </div>
-
         <div id="email-2fa-modal" class="modal-overlay hidden">
             <div class="modal-box">
                 <h3 id="email-2fa-title">Verify Email Change</h3>
@@ -246,10 +223,6 @@
                 <div class="form-group hidden" id="email-2fa-password">
                     <label for="email-2fa-password-input">Account Password</label>
                     <input type="password" id="email-2fa-password-input" placeholder="Your password" spellcheck="false" autocomplete="off">
-                </div>
-                <div class="form-group hidden" id="email-2fa-totp">
-                    <label for="email-2fa-totp-input">Authenticator Code</label>
-                    <input type="text" id="email-2fa-totp-input" placeholder="000000" maxlength="6" spellcheck="false" autocomplete="off">
                 </div>
                 <div class="form-group hidden" id="email-2fa-code">
                     <label for="email-2fa-code-input">Verification Code</label>
@@ -349,10 +322,6 @@
                     <label for="remove-key-password">Account Password</label>
                     <input type="password" id="remove-key-password" placeholder="Your password" spellcheck="false" autocomplete="off">
                 </div>
-                <div class="form-group hidden" id="remove-key-totp">
-                    <label for="remove-key-totp-input">Authenticator Code</label>
-                    <input type="text" id="remove-key-totp-input" placeholder="000000" maxlength="6" spellcheck="false" autocomplete="off">
-                </div>
                 <div id="remove-key-message"></div>
                 <div class="modal-actions">
                     <button type="button" id="remove-key-submit" class="btn btn-danger">Remove Key</button>
@@ -362,37 +331,18 @@
             </div>
         </div>
 
-        <div id="disable-totp-modal" class="modal-overlay hidden">
+        <div id="confirm-modal" class="modal-overlay hidden">
             <div class="modal-box">
-                <h3>Disable Authenticator Requirement</h3>
-                <p class="modal-desc">Enter your authenticator code to disable this requirement.</p>
+                <h3 id="confirm-title">Confirm Change</h3>
+                <p class="modal-desc" id="confirm-desc"></p>
                 <form onsubmit="return false">
                 <div class="form-group">
-                    <label for="disable-totp-code">Authenticator Code</label>
-                    <input type="text" id="disable-totp-code" placeholder="000000" maxlength="6" spellcheck="false" autocomplete="off">
+                    <label for="confirm-code">Code</label>
+                    <input type="text" id="confirm-code" placeholder="000000" maxlength="6" spellcheck="false" autocomplete="one-time-code">
                 </div>
-                <div id="disable-totp-message"></div>
                 <div class="modal-actions">
-                    <button type="button" id="disable-totp-submit" class="btn">Disable</button>
-                    <button type="button" id="disable-totp-cancel" class="btn-outline">Cancel</button>
-                </div>
-                </form>
-            </div>
-        </div>
-
-        <div id="disable-email-modal" class="modal-overlay hidden">
-            <div class="modal-box">
-                <h3>Disable Email Requirement</h3>
-                <p class="modal-desc">A verification code was sent to your email. Enter it below.</p>
-                <form onsubmit="return false">
-                <div class="form-group">
-                    <label for="disable-email-code">Verification Code</label>
-                    <input type="text" id="disable-email-code" placeholder="000000" maxlength="6" spellcheck="false" autocomplete="off">
-                </div>
-                <div id="disable-email-message"></div>
-                <div class="modal-actions">
-                    <button type="button" id="disable-email-submit" class="btn">Disable</button>
-                    <button type="button" id="disable-email-cancel" class="btn-outline">Cancel</button>
+                    <button type="submit" id="confirm-submit" class="btn">Confirm</button>
+                    <button type="button" id="confirm-cancel" class="btn-outline">Cancel</button>
                 </div>
                 </form>
             </div>

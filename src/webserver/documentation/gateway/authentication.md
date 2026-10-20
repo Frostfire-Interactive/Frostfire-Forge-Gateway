@@ -102,7 +102,7 @@ One address can create 5 guest accounts an hour, and the webserver creates at mo
 1. The player opens `/forgot-password` and enters an email address.
 2. The page sends `POST /reset-password` with `email`. The answer is always the same sentence, whether or not the address belongs to an account.
 3. If the account exists, a reset code is stored and a link to `/manage-profile` with the email and the code is emailed. The link is built from `DOMAIN`.
-4. The profile page shows the reset form and sends `POST /update-password` with `email`, `code`, `password` and `password2`. If the account has an authenticator app enabled, `totp` is required as well.
+4. The profile page shows the reset form and sends `POST /update-password` with `email`, `code`, `password` and `password2`. The emailed code proves the email. When the account has a security key or an authenticator app, that factor must confirm the reset as well (see [Confirming account changes](#/gateway/authentication/confirming-account-changes)).
 5. The server stores the new password hash and clears the reset code. The code works once.
 
 ## Two-factor authentication
@@ -119,17 +119,17 @@ The email code is sent and checked on the login page itself. TOTP and security k
 
 ### Authenticator app
 
-- `POST /api/profile/setup-totp` with the account password returns a QR code image and the `otpauth://` URI. The issuer shown in the app is `GAME_NAME`.
+- `POST /api/profile/setup-totp` with the account password, once confirmed, returns a QR code image and the `otpauth://` URI. The issuer shown in the app is `GAME_NAME`.
 - `POST /api/profile/verify-totp` with a six digit code enables the app.
 - Codes are standard TOTP: SHA-1, six digits, 30 second steps. One step before and after the current one is accepted.
-- Disabling asks for the password and then a code sent by email.
+- `POST /api/profile/disable-totp` with the account password, once confirmed, removes the app and turns off `require_totp`.
 
 ### Security keys
 
-- `POST /api/profile/register-webauthn` with the account password returns the registration options. The browser creates the credential and `POST /api/profile/verify-webauthn-registration` stores it with a name.
+- `POST /api/profile/register-webauthn` with the account password, once confirmed, returns the registration options. The browser creates the credential and `POST /api/profile/verify-webauthn-registration` stores it with a name.
 - Only ES256 keys are accepted. User verification is `preferred`.
 - The relying party id is the host name of the request, so keys are bound to the domain the player registered on.
-- Removing a key asks for the password plus an authenticator code, or an email code when no authenticator app is enabled.
+- `POST /api/profile/remove-webauthn` with the account password, once confirmed, removes a key. Removing the last key turns off `require_webauthn`.
 
 :::warning Changing the domain breaks registered keys
 Because the relying party id is the request host, a key registered on one host name does not work on another. Pending WebAuthn challenges are also kept in the memory of the webserver process, so a restart in the middle of a registration or login means starting that step again.
@@ -137,14 +137,36 @@ Because the relying party id is the request host, a key registered on one host n
 
 ### Requirements
 
-`POST /api/profile/2fa-requirements` with `method` (`webauthn`, `totp` or `email`) and `value` switches a requirement on or off. Switching one on needs the method to be set up. Switching one off needs proof with that same method: a key assertion, an authenticator code, or an email code.
+`POST /api/profile/2fa-requirements` with `method` (`webauthn`, `totp` or `email`) and `value` switches a requirement on or off. Switching one on needs the method to be set up and nothing else. Switching one off must be confirmed.
 
-## Sensitive profile changes
+## Confirming account changes
+
+Every change to an account's security is confirmed with the strongest second factor the account has set up, whether or not that factor is required at login:
+
+| Account has | Factor asked for | Request field |
+| --- | --- | --- |
+| At least one security key | A key assertion | `webauthnResponse`: `{ credentialId, clientDataJSON, authenticatorData, signature }` |
+| An enabled authenticator app, no key | A TOTP code | `totp` |
+| Neither | A code sent to the account's email | `emailCode` |
+
+The client sends the request without the answer first. The server then answers `200` with one of these, and the client sends the same request again with the answer added:
+
+| Answer | Meaning |
+| --- | --- |
+| `{"requiresWebAuthn": true, "options": {...}}` | Assertion options with a fresh challenge. Pass them to `navigator.credentials.get`. |
+| `{"requiresTotp": true}` | Ask for the authenticator code |
+| `{"requiresEmail": true}` | A code was emailed. Ask for it. |
+
+A wrong answer gets `400`. Checked answers are limited to 10 per address per 15 minutes. The account's state decides the factor, not the request, so a client cannot pick a weaker one.
 
 | Change | Proof asked for |
 | --- | --- |
-| Change email | A code sent to the current address, then a code sent to the new one. With TOTP or a security key enabled, an authenticator code first. |
-| Change password | Current password, plus an authenticator code if TOTP is enabled, otherwise an email code when the email requirement is on. |
+| Change email | Password and the confirming factor, then a code sent to the current address, then a code sent to the new one. With only email set up, the code to the current address is the confirming factor. |
+| Change password | Current password and the confirming factor |
+| Reset password | The emailed reset link, plus the confirming factor when it is a key or an authenticator app |
+| Set up or remove the authenticator app | Password and the confirming factor |
+| Register or remove a security key | Password and the confirming factor |
+| Switch a login requirement off | The confirming factor. Switching one on needs no confirmation. |
 | Reveal email | Current password. The profile API otherwise returns the address masked. |
 
 ## HTTP API
@@ -207,7 +229,6 @@ Any other path redirects to `/` with a `301`.
 | POST | `/api/profile/register-webauthn` | Token and password | Start security key registration |
 | POST | `/api/profile/verify-webauthn-registration` | Token | Finish registration and store the key |
 | POST | `/api/profile/remove-webauthn` | Token and password | Remove a security key |
-| POST | `/api/profile/auth-webauthn` | Token | Get assertion options to prove a key for a profile change |
 | POST | `/api/profile/2fa-requirements` | Token | Switch a login requirement on or off |
 
 ### Characters, subscriptions and documentation
@@ -258,5 +279,6 @@ The webserver counts requests per client address, the `X-Real-Client-IP` header 
 | `POST /verify` | 10 per address per 15 minutes |
 | `POST /api/2fa/send-email` | 5 per address per 15 minutes |
 | `POST /api/2fa/verify-totp`, `/api/2fa/verify-email`, `/api/2fa/verify-webauthn` | 10 per address per 15 minutes, counted together |
+| Answers that confirm an account change (`webauthnResponse`, `totp`, `emailCode` on the profile routes and `/update-password`) | 10 per address per 15 minutes, counted together |
 
 `POST /guest-bulk` has no limit; it needs the game server secret.
