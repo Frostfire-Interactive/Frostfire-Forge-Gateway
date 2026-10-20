@@ -151,7 +151,7 @@ The window checks each field with the server's own rules before sending, so most
 | Delete | `SPELL_EDITOR_DELETE` | Deletes the row if nothing uses the spell |
 | Learn | `SPELL_EDITOR_LEARN` | Adds the spell to your own character |
 
-Each answer comes back as `SPELL_EDITOR_RESULT`. After a successful change the server also sends `SPELL_EDITOR_UPDATED` to every other player who may have the editor open, so their lists reload.
+Open and reload are answered with `SPELL_EDITOR_DATA` and a search with `SPELL_EDITOR_RESULTS`. Save, Delete and Learn are answered with `SPELL_EDITOR_RESULT`. After a successful change the server also sends `SPELL_EDITOR_UPDATED` to every other player who may have the editor open, so their lists reload.
 
 :::note A spell in use cannot be deleted
 Delete is refused with "is still in use and was not deleted", followed by what uses it, while any player has learned the spell or anything else refers to it. Remove those uses first.

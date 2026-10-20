@@ -8,11 +8,12 @@ All three repositories ship Docker files in `src/docker` and matching `bun` scri
 
 ## What ships in each repository
 
-Every repository has the same four files:
+Every repository has the same five files:
 
 ```text title="src/docker/"
 Dockerfile.dev             development image, runs the development script
 Dockerfile.prod            production image, installs production dependencies only
+Dockerfile.prod.dockerignore  build context rules for Dockerfile.prod (no env files, certificates or logs)
 docker-compose.dev.yml     bridge network, published ports
 docker-compose.prod.yml    host networking
 ```
@@ -211,13 +212,13 @@ As in development, restart the gateway container once after the engine has creat
 
 ## Published images
 
-Each repository's release workflow builds its **development** image and pushes it to the GitHub container registry.
+Each repository's release workflow builds a **development** image and a **production** image and pushes both to the GitHub container registry. Production images are tagged with the release version and `latest`.
 
-| Server | Image name used by the workflow |
-| --- | --- |
-| Engine | `ghcr.io/lillious-networks/frostfire-forge-dev:latest` |
-| Gateway | `ghcr.io/lillious-networks/frostfire-forge-gateway:latest` |
-| Asset server | `ghcr.io/lillious-networks/frostfire-forge-assets:latest` |
+| Server | Development image | Production image |
+| --- | --- | --- |
+| Engine | `ghcr.io/lillious-networks/frostfire-forge-dev:latest` | `ghcr.io/lillious-networks/frostfire-forge:latest` |
+| Gateway | `ghcr.io/lillious-networks/frostfire-forge-gateway:latest` | `ghcr.io/lillious-networks/frostfire-forge-gateway-prod:latest` |
+| Asset server | `ghcr.io/lillious-networks/frostfire-forge-assets:latest` | `ghcr.io/lillious-networks/frostfire-forge-assets-prod:latest` |
 
 The asset server image can run on its own, with the assets that are baked into it. This is the command its workflow uses to test the image. Run it from the asset server repository so that `.env.development` is found:
 

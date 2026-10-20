@@ -89,10 +89,6 @@ You can save into the maps folder of a running asset server.
 
 Particle NPCs and a change of the world's size are not taken in while the servers run: restart the game server for those.
 
-:::warning Older servers
-Asset servers and game servers from before 2026-10-20 do not notice changes on disk. An older asset server keeps serving the old pack layout (`Error serving map chunk: incorrect header check`), and its next in-game save of warps or graveyards overwrites what Tiled saved. With older servers, stop the asset server while you save.
-:::
-
 ## Safety checks
 
 | Situation | What happens |
@@ -127,5 +123,5 @@ An open region also carries its world in the map properties `world.folder`, `wor
 | The world map shows only light and dark ground | The tileset images were not found. Open the world map again and choose the folder that holds them. |
 | A region shows empty tiles | Same cause: the tileset images were not found. |
 | `"<folder>" is not a world` | Choose the folder whose name ends in `.world`. It holds `manifest.json`, `collision.bits` and a `packs` folder. |
-| The asset server logs `a save had been cut short` | A save from Tiled met an asset server from before 2026-10-20. The server kept the new tiles and rebuilt collision from them; object edits from that save may be lost. Update the asset server. |
+| The asset server logs `a save had been cut short` | A save stopped after its packs were written and before its manifest was. The server kept the new tiles and rebuilt collision from them; object edits from that save may be lost. |
 | Players do not see the changes | They need to reload the page. The game server takes in the change within 10 seconds. |

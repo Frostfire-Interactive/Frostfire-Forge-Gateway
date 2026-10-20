@@ -22,6 +22,7 @@ The editor opens in its own window at route `/npc-editor`. Typing the command ag
 | Step | Needs | What happens without it |
 | --- | --- | --- |
 | Open the editor | `tools.npc_editor` or `tools.*` | "You don't have permission to use this command" |
+| Load the map's NPCs | `server.admin` or `server.*` | "You do not have permission to edit NPCs." |
 | Add an NPC | `server.admin` or `server.*` | "You do not have permission to add NPCs." |
 | Save an NPC | `server.admin` or `server.*` | "You do not have permission to save NPCs." |
 | Delete an NPC | `server.admin` or `server.*` | "You do not have permission to delete NPCs." |
@@ -53,7 +54,7 @@ The **At a glance** card beside the form shows the NPC as players find it.
 - **Click an NPC** in the game window to open it in the editor.
 - **Drag an NPC** in the game window to move it. The Position fact and the X and Y fields in the editor follow live. The new position is stored with the next save.
 - **Ctrl+Z** and **Ctrl+Y** in the game window undo and redo moves.
-- Field changes are sent to the game window as you type, so the NPC in the world previews your edits before you save.
+- Changes to Facing, Hidden, X, Y and a sound NPC's sound are sent to the game window as you make them, so the NPC in the world shows them before you save.
 
 ## General tab
 
@@ -62,6 +63,16 @@ The **At a glance** card beside the form shows the NPC as players find it.
 | Field | Notes |
 | --- | --- |
 | Name | Up to 64 characters. What players see the NPC called. Leave it empty for an NPC without a name. |
+| Sound NPC | The NPC plays a sound around where it stands, and nothing else: it is not drawn and cannot be talked to. A sound NPC has only the General tab and no Facing, and saving it clears everything the other tabs hold. |
+
+### Sound
+
+Shown when Sound NPC is on.
+
+| Field | Notes |
+| --- | --- |
+| Audio | A file from the asset server's audio folder. It loops while a player is in range. |
+| Radius | How far it is heard, 16 to 2,048 px. It starts at 256 and fades out toward the edge. Hidden sound NPCs are not heard. |
 
 ### Placement
 
@@ -158,7 +169,8 @@ Select **Add item** to add a card, then fill it in:
 | Field | Notes |
 | --- | --- |
 | Item | Picked from the items made in the [Item Editor](#/tools/item-editor), with search |
-| Price | What one costs to buy here, as gold, silver and copper. A newly picked item starts at four times its sell price. |
+| Own price | Off: the item sells here for its own buy price, set in the Item Editor. On: it sells for the Price below. |
+| Price | Shown when Own price is on. What one costs to buy here, as gold, silver and copper. It starts at the item's buy price. |
 
 The line under each card's title says what the item is sold for and what vendors pay for it. The arrows move a card up or down, which is the order players see, and the bin removes it. A vendor stocks up to 40 different items, and never runs out.
 
@@ -184,10 +196,10 @@ The NPC editor's conversation differs from the other editors. There is no search
 
 | Action | Packet | Server behaviour |
 | --- | --- | --- |
-| Open | `LIST_NPCS` | Sends the NPCs of your map, the quest list, and the sprite sheets and icons for the pickers |
-| Save a new NPC | `ADD_NPC` | Inserts the NPC, stores its quest links, and sends it to players |
-| Save an existing NPC | `SAVE_NPC` | Updates the NPC and its quest links, and sends the update to players. Answers "NPC saved successfully." |
-| Delete | `DELETE_NPC` | Removes the NPC |
+| Open | `LIST_NPCS`, `LIST_PARTICLES` | Sends the NPCs of your map, the quest list, the items, and the sprite sheets and icons for the pickers as `NPC_LIST`, and the particles as `PARTICLE_LIST` |
+| Save a new NPC | `ADD_NPC` | Inserts the NPC, stores its quest links, and sends it to players on the map as `NPC_UPDATED` |
+| Save an existing NPC | `SAVE_NPC` | Updates the NPC and its quest links, and sends the update to players on the map as `NPC_UPDATED`. Answers "NPC saved successfully." |
+| Delete | `DELETE_NPC` | Removes the NPC, sends `NPC_REMOVED` to players on the map, and answers "NPC deleted successfully." |
 
 NPCs are stored in the `npcs` table of the game database, and their quest links in `npc_quests`. Saved changes are live at once.
 
@@ -198,7 +210,7 @@ NPCs that exist only to carry particles placed in the map file are edited with t
 :::
 
 :::note NPCs placed by a map are not listed either
-A map file can place a whole NPC itself: a point of type `npc` on one of its object layers. The point is where the NPC stands, its name is the NPC's name, and its properties are `direction`, `dialog`, `gossip`, `sprite_type`, the `sprite_*` sheets and `innkeeper`. These NPCs are drawn and talked to like any other, and an innkeeper among them can be made a home, but they are changed in the map, not here. Each needs a name: its id is made from the map's name and its own, so renaming it or its map makes it a new NPC, and homes set at the old one fall back to the world's starting point.
+A map file can place a whole NPC itself: a point of type `npc` on one of its object layers. The point is where the NPC stands, its name is the NPC's name, and its properties are `direction`, `dialog`, `gossip`, `hidden`, `sprite_type`, the `sprite_*` sheets and `innkeeper`. These NPCs are drawn and talked to like any other, and an innkeeper among them can be made a home, but they are changed in the map, not here. Each needs a name: its id is made from the map's name and its own, so renaming it or its map makes it a new NPC, and homes set at the old one fall back to the world's starting point.
 :::
 
 ## Tips

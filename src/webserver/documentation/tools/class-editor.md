@@ -19,10 +19,10 @@ Each account has one character, named as the account is. Its class is kept in `a
 While at least one class exists, an account without a character makes one before it plays:
 
 1. After realm selection, the player goes to the character page at `/character` instead of the game. The page fills the screen, and behind it the view drifts slowly over the world's starting area: the realm's default map round its spawn, tiles only, with no players or creatures. The realm page draws that picture ahead while the player picks a realm, and the browser keeps it until the map changes.
-2. They pick a class and select **Create**.
+2. They pick a class and select **Create** followed by the class's name.
 3. The game opens. Its level 1 spells are learned at that first login.
 
-A game server also refuses a login without a character (packet `CHARACTER_REQUIRED`), which sends the client to the character page. With no class defined, accounts go straight into the game as before.
+A game server also refuses a login without a character (packet `CHARACTER_REQUIRED`), which sends the client to the character page. With no class defined, accounts go straight into the game.
 
 :::warning Making a character starts the account over
 Accounts made before classes existed have no character either. Making one brings the account back to level 1 with the class's stats. Its items, equipment, bags, spells, quests, gold and home are removed, and it starts at the world's starting point. Its friends, ignores, permissions, mounts and sound settings stay. The character page says so first, and asks the player to confirm it.

@@ -13,7 +13,8 @@ Casting spells and attacking creatures need a full account.
 ## Targeting
 
 - **Left-click** a player or creature to target it, or press **Tab** to target the nearest one in front of you. Press **Tab** again to cycle.
-- **Right-click** a creature to target it and start attacking it automatically. On a touch screen, tap the creature, then tap it again.
+- **Right-click** a creature to target it and start attacking it.
+- On a touch screen, tap a creature to target it, then tap it again to start attacking it.
 - Click empty ground to drop your target.
 
 The target frame shows your target's name, level, health and mana. A target that moves too far away is dropped.
@@ -77,7 +78,6 @@ Heals and other helpful spells only work on you and your party members. If you c
 | Kind | How it works |
 |------|--------------|
 | Targeted | Hits the player or creature you have targeted |
-| Area around the target | Also hits everything close to your target |
 | Area around you | Hits everything close to you. No target needed. |
 | Ground targeted | You choose a spot on the ground. See below. |
 | Charge and teleport | Moves you to your target at once. These fail if the path is blocked. |

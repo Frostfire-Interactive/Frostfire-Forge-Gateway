@@ -67,6 +67,7 @@ assets/
     missing_icon.png          fallback image
   audio/                    optional
     theme.mp3                 .mp3 .wav .ogg .oga .m4a .webm .flac .opus
+  tilesounds.json           optional, footstep sounds saved by the map editor
 ```
 
 `tilesets` and `maps` must exist, and `maps` must contain at least one `.json` file, or the server does not start. The other folders are optional: a missing one produces a warning and an empty list.
@@ -146,10 +147,10 @@ ASSETS_PATH=/srv/game/assets
 
 Things to know before you share the folder:
 
-- **The server writes to it.** Map editor saves rewrite `maps/<name>.json`, and world saves rewrite files inside `maps/<id>.world/`. The process needs write access to `maps`. The other folders are only read.
+- **The server writes to it.** Map editor saves rewrite `maps/<name>.json`, and world saves rewrite files inside `maps/<id>.world/`. New maps from the map editor are written into `maps`, and footstep sounds into `tilesounds.json`. The process needs write access to `maps` and to the assets folder itself, where `tilesounds.json` is written. The other folders are only read.
 - **One writer.** Each asset server keeps its maps in memory and writes them out on save. Two asset servers pointed at the same `maps` folder would overwrite each other's edits.
-- **Restart after changing files by hand.** New or changed files are picked up at the next start. See [Overview](#/assets/overview/loading-at-startup).
-- **The engine has its own copy of the maps.** It keeps them in its own `src/assets/maps` folder and updates them from the asset server at startup. Do not edit the engine's copy by hand: a map that differs from the asset server's version is overwritten at the next sync.
+- **Restart after changing files by hand.** New or changed files are picked up at the next start. See [Overview](#/assets/overview/loading-at-startup). Worlds are the exception: see [Changes made outside the server](#/assets/world-maps/changes-made-outside-the-server).
+- **The engine has its own copy of the maps.** It keeps them in its own `src/assets/maps` folder and updates them from the asset server at startup. Do not edit the engine's copy by hand: a map that differs from the asset server's version is overwritten at the next sync, and a map the asset server does not have is removed.
 
 ## Docker volume mapping
 

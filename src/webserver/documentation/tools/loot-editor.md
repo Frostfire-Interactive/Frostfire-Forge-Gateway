@@ -30,12 +30,12 @@ The editor uses the shared workbench described in [Tools Overview](#/tools/overv
 | Area | Contents |
 | --- | --- |
 | Side pane | Search field, the loot tables, and New |
-| Top bar | The open table as "Table N" with its row count, the state, then Reload and Delete |
+| Top bar | The open table's name, "Table N" with its row count, the state, then Reload and Delete |
 | Page | The field that adds an item, and the rows of the table |
 
 The search field filters the tables by name. A table's number finds it too.
 
-The state reads "Changes save automatically" when the server has everything, and "Saving" while a change is on its way. Ctrl+S has nothing to do here.
+The state reads "Changes save automatically" when the server has everything, and "Saving" while a change is on its way. Ctrl+S sends the row you are typing in without leaving the field.
 
 **Reload** reads the tables again from the server. Use it when another admin may have changed them.
 
@@ -66,8 +66,8 @@ Type part of an item name in "Add an item to this table". Matching items are lis
 
 A new row starts as one item that always drops: Fewest 1, Most 1, Chance 100.
 
-:::warning Only items you carry can be found
-The add field searches the items your game window knows, which are the items in your own character's inventory. If the item you want is not suggested, give it to yourself first, for example with "Give item" in the [Control Panel](#/tools/control-panel), then come back.
+:::note
+The add field searches every item the server has. It lists up to 20 matches; type more of the name to narrow them.
 :::
 
 ## Deleting a table
@@ -99,7 +99,7 @@ If no answer arrives in time, the editor says that nothing was confirmed. Press 
 
 ## Other ways to edit loot
 
-- The Items and Loot page of the [Control Panel](#/tools/control-panel) has the same tables, with a quality choice per row.
+- The Items & Loot page of the [Control Panel](#/tools/control-panel) has the same tables, with a quality choice per row.
 - The `/loottable` chat command creates tables and rows from the chat. See [Admin Commands](#/engine/admin-commands).
 
 ## Tips

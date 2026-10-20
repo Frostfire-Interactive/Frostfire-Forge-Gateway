@@ -8,14 +8,15 @@ The world is made of maps that are linked together. Two tools help you find your
 
 ## The world map
 
-Press **M** to open the world map. It fills the screen and opens centred on you. The name of the map you are on is shown as its title.
+Press **M** to open the world map. It fills the screen and opens centred on you. The name of the map you are on is shown as its title. There is no world map inside a building.
 
 The map marks:
 
 - **You**, so you always know where you are.
-- **Houses**, each drawn as a small house standing on its door. The pictures grow as you zoom in. A house with an inn in it shows the inn's name when you zoom in.
+- **Houses**, each drawn as a small house standing on its door. The pictures grow as you zoom in. A house with an inn in it shows the innkeeper's name when you zoom in.
 - **Caves**, each drawn as a cave mouth over the way in. In the underworld these are the ways back up.
 - **Other warps**, as blue diamonds. Zoom in to read where each one leads.
+- **Tornadoes**, each in a pulsing red ring, while there are any.
 
 | Action | Mouse and keyboard | Touch |
 |--------|--------------------|-------|
@@ -44,12 +45,12 @@ The minimap is always on screen and shows the area around you.
 | Pale pin with a door | An inn. The pin's point stands on the door of the house the innkeeper is in. See [Inns and Your Home](#/player-guide/inns). |
 | Pale pin with a gold coin | A merchant. The pin's point stands on the door of the house the merchant sells in. See [Vendors](#/player-guide/vendors). |
 | Pale pin with a cave mouth | A cave: a way down into the underworld, or back up from it. The pin's point stands on the entrance. |
-
-A house that holds both an inn and a merchant shows the two pins side by side. A merchant or innkeeper who stands out in the open is marked where they stand.
 | Top label | The current time in the game world |
 | Bottom label | The name of the map you are on |
 
-Scroll the mouse wheel over the minimap to zoom it in or out. Your zoom level is remembered.
+A house that holds both an inn and a merchant shows the two pins side by side. A merchant or innkeeper who stands out in the open is marked where they stand.
+
+Scroll the mouse wheel over the minimap to zoom it in or out. Your zoom level is remembered. Inside a building the minimap stays zoomed all the way in.
 
 ## Travelling between maps
 

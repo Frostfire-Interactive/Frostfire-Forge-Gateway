@@ -23,23 +23,20 @@ SQL_SSL_MODE=DISABLED
 ```env title="SQLite"
 DATABASE_ENGINE=sqlite
 DATABASE_NAME=frostfire_forge
-# Still required by startup validation, although SQLite does not use them:
-DATABASE_HOST=localhost
-DATABASE_USER=local
-DATABASE_PASSWORD=change-me
-SQL_SSL_MODE=DISABLED
+# Or name the file in full (DATABASE_NAME is then not needed):
+# DATABASE_PATH=./data/frostfire_forge.sqlite
 ```
 :::
 
 | | MySQL | SQLite |
 |---|-------|--------|
-| Setup script | `bun setup` (uses `.env.production`) | `bun setup-localdb` (uses `.env.development`) |
-| Where the data lives | Your MySQL server | `<system temp dir>/frostfire_forge/<DATABASE_NAME>.sqlite` |
+| Setup script | `bun setup` (uses `.env.production`) | `bun setup-localdb` (uses `.env.development`), or `bun setup` (uses `.env.production`) |
+| Where the data lives | Your MySQL server | `DATABASE_PATH` when set, otherwise `<system temp dir>/frostfire_forge/<DATABASE_NAME>.sqlite` |
 | Connection | TLS optional (`SQL_SSL_MODE`) | A local file, opened in WAL mode with foreign keys on |
 | Text comparison in `WHERE` | Case insensitive | Case sensitive |
 
 :::warning SQLite data sits in the temp directory
-The SQLite file is created under the operating system's temporary directory (`os.tmpdir()`). Cleaning that directory deletes your local database. Do not use SQLite for data you want to keep.
+Without `DATABASE_PATH`, the SQLite file is created under the operating system's temporary directory (`os.tmpdir()`). Cleaning that directory deletes your local database. For data you want to keep, set `DATABASE_PATH` to a file outside it.
 :::
 
 :::note
@@ -90,7 +87,7 @@ bun setup-localdb
 
 | Script | File | Environment file |
 |--------|------|------------------|
-| `bun setup` | `src/utility/database_setup.ts` | `.env.production` |
+| `bun setup` | `src/utility/database_setup_dispatch.ts`: runs `database_setup_sqlite.ts` when `DATABASE_ENGINE=sqlite`, otherwise `database_setup.ts` | `.env.production` |
 | `bun setup-production` | `create-config --environment production`, then `bun setup` | `.env.production` |
 | `bun setup-localdb` | `src/utility/database_setup_sqlite.ts` | `.env.development` |
 
@@ -103,8 +100,8 @@ bun --env-file=.env.development ./src/utility/database_setup.ts
 Besides the tables, the scripts seed:
 
 - The permission types (`admin.*`, `server.*`, `tools.*` and so on). See [Permissions](#/engine/permissions).
-- A default spell, a default mount and demo quests.
-- The weathers `clear`, `thunderstorm`, `darkness`, `rainy` and `snowy`.
+- Default spells, a default mount, the home item `Home Stone` and demo quests.
+- The weathers `clear`, `thunderstorm`, `darkness`, `rainy`, `snowy`, `sandstorm`, `tornado` and `blizzard`.
 - The world `overworld` with the weather `rainy` (the SQLite script also adds a world named `default`).
 - Indexes.
 
@@ -170,11 +167,15 @@ Table and column names are not placeholders. Never build them from user input. A
 
 ```ts title="src/controllers/sqldatabase.ts"
 export default async function query<T>(sql: string, values?: any[]): Promise<T[]> {
+  return ask<T[]>({ sql, values: values || [] });
+}
+
+function ask<T>(work: { sql: string; values: any[] } | { transaction: TransactionStatement[] }): Promise<T> {
   return new Promise((resolve, reject) => {
     const queryId = `query_${++queryIdCounter}_${Date.now()}`;
     const worker = getNextWorker();
     // ... a 30 second timeout is armed, then:
-    worker.postMessage({ id: queryId, sql, values: values || [] });
+    worker.postMessage({ id: queryId, ...work });
   });
 }
 ```
@@ -280,6 +281,10 @@ These calls accept a batch today:
 | `currency.remove(username, amount, batch)` | Resolves to the balance after |
 | `player.increaseXp(username, xp, batch)` | Resolves to the experience and level after |
 | `writeQuestRowsIn(batch, username, write)` | From `src/systems/quests/log.ts`, for quest log rows |
+| `collectables.add(collectable, batch)` | Resolves to `true` when a statement was added, `false` when the player has it already |
+| `mail.deliverIn(batch, recipient, letter)` | A mail from the game itself, such as a reward that did not fit in the bags |
+| `tradeLog.write(batch, trade)` | From `src/systems/tradelog.ts`. Returns the record, which has its id once the batch is kept. |
+| `grant(username, quest, rewardChoiceIndex, batch)` | From `src/systems/quests/rewards.ts`, for a quest's rewards |
 
 Quest hand-ins, corpse loot, chest loot and saving inventory slots use this, so each of them is kept whole or not at all.
 

@@ -11,7 +11,7 @@ Frostfire Forge ships its content tools inside the game client. An admin logs in
 | Tool | Chat command | Route | Permission |
 | --- | --- | --- | --- |
 | [Control Panel](#/tools/control-panel) | `/cp` or `/controlpanel` | `/control-panel` | Admin role |
-| [Map Editor](#/tools/map-editor) | `/te` or `/tileeditor` | `/map-editor` | `tools.tile_editor` or `tools.*`, plus the admin role |
+| [Map Editor](#/tools/map-editor) | `/te` or `/tileeditor` | `/map-editor` | `tools.tile_editor` or `tools.*` (the admin role is needed to share live edits, `server.admin` or `server.*` to save) |
 | [Spell Editor](#/tools/spell-editor) | `/se` or `/spelleditor` | `/spell-editor` | Admin role, `tools.spell_editor`, `tools.*`, `server.admin` or `server.*` |
 | [Weather Editor](#/tools/weather-editor) | `/we` or `/weathereditor` | `/weather-editor` | Admin role, `tools.weather_editor`, `tools.*`, `server.admin` or `server.*` |
 | [Class Editor](#/tools/class-editor) | `/cle` or `/classeditor` | `/class-editor` | Admin role, `tools.class_editor`, `tools.*`, `server.admin` or `server.*` |
@@ -56,7 +56,7 @@ This has a few practical consequences:
 - **Keep the game tab open.** Closing or reloading the game window closes every tool window that belongs to it.
 - **The server you edit is the realm you are logged in to.** Tools act on the game server your character is connected to.
 - **Guests cannot use tools.** The server rejects every chat command from a guest account.
-- **A dead character cannot open tools.** While your character is a corpse, only party, whisper and guild chat commands are accepted.
+- **A dead character cannot open tools.** While your character is a corpse, only party, whisper, guild and officer chat commands are accepted.
 
 The tool routes themselves need no login. They are plain pages served by the gateway webserver and hold no data until a game window feeds them.
 
@@ -80,9 +80,12 @@ Tool access is decided by the game server from two things on your account:
 | `tools.weather_editor` | Weather Editor |
 | `tools.class_editor` | Class Editor |
 | `tools.quest_editor` | Quest Editor |
+| `tools.mailbox_editor` | Mailbox Editor |
+| `tools.gathering` | Gathering Editor |
+| `tools.achievement_editor` | Achievement Editor |
 | `tools.*` | All of the above |
 | `admin.loot` | Loot Editor, and the loot table controls of the Control Panel |
-| `server.admin` | Player Editor |
+| `server.admin` | Player Editor, and the spell, weather, class, mailbox, gathering and achievement editors |
 
 The full permission system, including how to grant and revoke, is described in [Permissions](#/engine/permissions) and [Admin Commands](#/engine/admin-commands).
 
@@ -102,7 +105,7 @@ A builder who should use every tool needs three things: the admin role, `tools.*
 
 ## The editor workbench
 
-The spell, weather, player, quest, NPC, creature, item, loot and particle editors share one layout, built by `js/core/tooleditor.ts`.
+The spell, weather, class, mailbox, gathering, achievement, player, quest, NPC, creature, item, loot and particle editors share one layout, built by `js/core/tooleditor.ts`.
 
 | Area | What it holds |
 | --- | --- |

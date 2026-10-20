@@ -30,11 +30,11 @@ The map editor is checked in three places, each with its own rule.
 | Step | Needs | What happens without it |
 | --- | --- | --- |
 | Run `/te` | `tools.tile_editor` or `tools.*` | "You don't have permission to use this command" |
-| Sync with the server when the editor opens, share live edits and layer locks | The admin role | The server ignores the request. The game stays on "Syncing map state..." and the tool window reports that the game window is not answering. |
+| Sync with the server when the editor opens, share live edits and layer locks | The admin role | The editor still opens, but the server does not send you the unsaved edits of others and does not relay your edits or layer locks. |
 | Save the map | `server.admin` or `server.*` | "You do not have permission to save map changes." |
 
 :::warning A map builder needs all three
-The editor waits for the server's sync answer before it shows the map, and the server only answers accounts with the admin role. An account with `tools.tile_editor` but no admin role therefore gets a window that never loads, and one without `server.admin` can paint but not save. Give map builders the admin role, `tools.tile_editor` (or `tools.*`) and `server.admin`. See [Permissions](#/engine/permissions).
+An account with `tools.tile_editor` but no admin role can open the editor, but it does not share edits or layer locks with the other editors on the map. One without `server.admin` can paint but not save. Give map builders the admin role, `tools.tile_editor` (or `tools.*`) and `server.admin`. See [Permissions](#/engine/permissions).
 :::
 
 ## The tool window
@@ -44,9 +44,9 @@ The editor waits for the server's sync answer before it shows the map, and the s
 | Part | Meaning |
 | --- | --- |
 | Title | The name of the map, with the number of layers and tilesets under it |
-| Status | "No unsaved edits", or "Not saved yet" with the layers that have unsaved changes |
+| Status | The selected layer, the tool in use, and "No unsaved edits" or how many layers have unsaved edits |
+| New map | Makes a new, blank map or world and moves you onto it |
 | Undo, Redo | Step back and forward through your own edits |
-| Clear edits | Takes back every edit of yours that is not saved |
 | Save | Sends the map to the server |
 
 ### Layers
@@ -80,6 +80,7 @@ The object layers are **Graveyards** and **Warps**. Selecting one switches the g
 | Paste | `V` | Puts the picked tiles down as they were copied |
 | Rotate | `Z` | Turns the picked tiles a quarter turn |
 | Grid | none | Shows or hides the grid in the game window |
+| Clear edits | none | Takes back every edit of yours that is not saved |
 | Zoom | Ctrl + wheel | Size of the tiles in the palette, from 1x to 4x |
 
 Paint, Erase and Paste are off while the selected layer is locked. All four tile tools are off while an object layer is selected.
@@ -180,7 +181,7 @@ How the asset server stores maps is described in [Asset Server Integration](#/as
 
 ## Tips
 
-- Select the layer before you paint. With nothing selected the tools are off and the palette says "Select a layer on the left to paint on it".
+- Select the layer before you paint. With nothing selected the tools do nothing and the top bar shows "No layer selected".
 - Lock finished layers such as the ground so a stray click cannot change them.
 - Hide upper layers while you work on the ones below. Hiding only affects your view.
 - Use right drag to copy a finished building or tree and Paste to stamp it elsewhere.

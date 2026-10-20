@@ -54,6 +54,7 @@ On startup a game server calls `POST /register` on the gateway and keeps retryin
   "useSSL": true,
   "maxConnections": 2000,
   "whitelisted": false,
+  "pvp": false,
   "authKey": "change-me"
 }
 ```
@@ -70,6 +71,7 @@ On startup a game server calls `POST /register` on the gateway and keeps retryin
 | `useSSL` | Whether the game server's HTTP API is served over TLS. |
 | `maxConnections` | Player capacity. The gateway assumes 1000 when it is missing. |
 | `whitelisted` | Whether the realm whitelist is on. |
+| `pvp` | Whether PvP is on for the realm. The realm list shows a `PvP` badge from it. |
 | `authKey` | Must equal the gateway's `GATEWAY_AUTH_KEY`. |
 
 The gateway answers `{"success": true, "serverId": "realm-one"}`. A wrong key gets `401`, a missing `id`, `host` or `port` gets `400`.
@@ -124,9 +126,9 @@ A clean shutdown calls `POST /unregister`, which removes the realm at once.
 After login the player lands on `/realm-selection`.
 
 - The page loads the realm list and refreshes it every 5 seconds while the tab is visible.
-- Each card shows the realm id, `Players: active/max`, a state badge and a `whitelist` badge when the flag is set.
+- Each card shows the realm id, `Players: active/max`, a state badge, a `whitelist` badge when the flag is set and a `PvP` badge when PvP is on.
 - The latency shown is measured by the browser itself: it times a `GET /ping` request sent straight to each game server at `publicHost:port`.
-- Selecting a card shows the realm description. "Enter Realm" stores the id in the browser's local storage as `selectedServerId` and opens `/game`.
+- Selecting a card shows the realm description. "Enter Realm" stores the id in the browser's local storage as `selectedServerId` and opens `/game`, or `/character` first when the account has no character yet.
 
 When the game client starts it:
 
@@ -147,33 +149,37 @@ The gateway only displays the flag. Whether a player may enter is decided by the
 
 ## Connection tokens
 
-A game server only accepts WebTransport sessions that present a token signed with `GATEWAY_GAME_SERVER_SECRET`. The webserver issues them.
+A game server only accepts WebTransport sessions that present a token signed with `GATEWAY_GAME_SERVER_SECRET`. The webserver issues them to a logged-in account.
 
 ```json title="GET /api/gateway/connection-token"
 {
   "token": "<64 hex characters>",
   "timestamp": 1760000000000,
   "expiresAt": 1760000060000,
-  "signature": "<hex HMAC>"
+  "signature": "<hex HMAC>",
+  "origin": "https://play.example.com",
+  "account": "<64 hex characters>"
 }
 ```
 
 - `expiresAt` is 60 seconds after `timestamp`.
-- `signature` is the HMAC SHA-256 of the string `token:timestamp:expiresAt` with the shared secret, in hexadecimal.
-- If the caller's account has an open two-factor challenge the route answers `403` and no token is issued.
+- `origin` is the origin of the page that asked. `account` is the SHA-256 of the caller's session token, in hexadecimal.
+- `signature` is the HMAC SHA-256 of the string `token:timestamp:expiresAt:origin:account` with the shared secret, in hexadecimal.
+- Without a valid session token the route answers `401`.
+- If the caller's account has an open two-factor challenge, has not verified its email, or needs a subscription, the route answers `403` and no token is issued. Guests need no verified email.
 - If `GATEWAY_GAME_SERVER_SECRET` is not set the route answers `500`.
 
-The client sends the four values, plus its page origin, in an `AUTH_CONNECT` frame as the first thing on the new session. The game server recomputes the signature, checks the expiry and, when its `CORS_ALLOWED_ORIGINS` is set, checks the origin. It then answers `AUTH_CONNECT_SUCCESS` and the normal login handshake begins. See [Networking](#/engine/networking).
+The client sends these six values, plus its user agent, in an `AUTH_CONNECT` frame as the first thing on the new session. The game server recomputes the signature, checks the expiry, checks the origin when its `CORS_ALLOWED_ORIGINS` is set, and refuses a token it has already accepted once. It then answers `AUTH_CONNECT_SUCCESS` and the normal login handshake begins. At login it only accepts the session token whose SHA-256 equals `account`. See [Networking](#/engine/networking).
 
 ```ts title="How the signature is made"
 const signature = crypto
   .createHmac("sha256", process.env.GATEWAY_GAME_SERVER_SECRET)
-  .update(`${token}:${timestamp}:${expiresAt}`)
+  .update(`${token}:${timestamp}:${expiresAt}:${origin}:${account}`)
   .digest("hex");
 ```
 
 :::note What the token proves
-The token shows that the client came through this gateway within the last minute. It does not identify the player and it is not tied to one realm. The player is identified afterwards with the session token from [Authentication](#/gateway/authentication/session-token).
+The token shows that the client came through this gateway within the last minute, for one account, from one page origin. It opens one connection only and it is not tied to one realm. The player still logs in afterwards with the session token from [Authentication](#/gateway/authentication/session-token).
 :::
 
 ## Failover
@@ -188,7 +194,7 @@ When the session to a game server closes unexpectedly and `GATEWAY_ENABLED` is `
 
 The gateway server proxies any path it does not handle itself to a registered game server over HTTP. It picks a server at random and remembers the choice in a `gateway_http_session` cookie for one hour, so later requests go to the same server.
 
-When the sweep removes a dead server, these proxy sessions are moved to the remaining servers that still have room, in round robin order. If no server has room they are dropped. The dashboard API reports the number of moved sessions and the last 10 migrations. A proxy session idle for longer than `SESSION_TIMEOUT` is forgotten.
+When the sweep removes a dead server, these proxy sessions are moved to the remaining servers that still have room, in round robin order. If no server has room they are dropped. The dashboard API reports the number of moved sessions and the last 10 migrations. A proxy session is forgotten `SESSION_TIMEOUT` after it was created or moved.
 
 :::note Sessions here are HTTP proxy sessions
 The migration in the gateway server concerns its own HTTP proxy sessions. It does not move a player's WebTransport connection, which runs directly between browser and game server. That part is handled by the reconnect logic in the client.
@@ -211,7 +217,7 @@ Served on `GATEWAY_PORT` (9999), or `GATEWAY_PORTSSL` (9443) with TLS. `OPTIONS`
 | POST | `/api/logout` | None | End the dashboard session |
 | GET | `/api/stats` | Dashboard cookie | Servers with CPU, memory, latency and health, plus migration history |
 | GET | `/dashboard` | Dashboard cookie | The dashboard page. Redirects to `/` without a valid session. |
-| GET | `/css/...`, `/js/...`, `/images/...` | None | Static files for the two pages above |
+| GET | `/css/...`, `/js/...`, `/img/...`, `/images/...` | None | Static files for the two pages above |
 | Any | Anything else | None | Proxied to a registered game server, `503` when there is none |
 
 ```bash title="Check the realm list"
@@ -234,6 +240,7 @@ curl http://localhost:9999/status
       "maxConnections": 2000,
       "latency": 2,
       "whitelisted": false,
+      "pvp": false,
       "status": "online"
     }
   ]

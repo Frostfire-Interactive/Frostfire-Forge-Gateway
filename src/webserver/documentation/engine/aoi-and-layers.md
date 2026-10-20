@@ -122,7 +122,7 @@ The grid is kept up to date when `USE_SPATIAL_GRID` is `true`: on login, on ever
 Two details are worth knowing:
 
 - Player to player visibility does not query the grid. Candidates are always on the same layer, and a layer holds at most `MAX_PLAYERS_PER_LAYER` players, so `aoi.ts` simply walks the layer's members. At a crowded spawn point a grid query would return thousands of players on other layers only to discard them.
-- The creature system does query the grid, to find players near a creature for aggro. Because a player's cell is only refreshed after they moved `UPDATE_THRESHOLD` pixels, the creature code pads its radius by that distance.
+- The creature system does query the grid, to find players near a creature for aggro. Because a player's cell is only refreshed after they moved `UPDATE_THRESHOLD` pixels, the creature code pads its radius by that distance plus 32 pixels (at least 128).
 
 :::note Cell size
 The shared grid is created as `new SpatialGrid(512)`. `GRID_CELL_SIZE` in `aoi.json` sets the `gridX` and `gridY` values stored on each player's `aoi` object, not the size of the shared grid's cells. Keep it at 512 so both agree.
@@ -218,6 +218,8 @@ Both timers are started once, from `server.ts`:
 ```ts title="src/socket/server.ts"
 gameLoop.start();
 await creatures.init();
+await gathering.init();
+await achievements.init();
 startAutoPartyLayerSync(sendAnimationTo);
 startAutoLayerCondensation(sendAnimationTo);
 ```

@@ -4,7 +4,7 @@ description: The packet type registry, with every packet name, its direction and
 order: 180
 ---
 
-Every message between the client and the game server is a packet with a `type`. This page lists all 264 types in the registry, says which way each one travels, and explains how packets are built, sent and dispatched, and how a plugin adds one.
+Every message between the client and the game server is a packet with a `type`. This page lists all 348 types in the registry, says which way each one travels, and explains how packets are built, sent and dispatched, and how a plugin adds one.
 
 The transport underneath (WebTransport streams, datagrams and frame batching) is covered on the [Networking](#/engine/networking) page.
 
@@ -135,13 +135,13 @@ In `server.ts`:
 1. An empty message is ignored. The message is parsed as JSON once, and one that does not parse is logged and dropped.
 2. If packet rate limiting is enabled and the client is over its limit, the packet is dropped and the client gets `RATE_LIMITED`.
 3. The player's idle timestamp is refreshed. Any packet counts as activity.
-4. `MOVEXY` is handed to the receiver at once. Every other handled type goes through the connection's backpressure queue.
+4. `MOVEXY`, `STATS`, `SERVER_TIME` and `ANIMATION` are handed to the receiver at once. Every other type goes through the connection's backpressure queue.
 
 In `receiver.ts`:
 
 ```ts title="src/socket/receiver.ts"
 if (!validPacketTypes.has(type as unknown as string)) {
-  wt.close(1007, "Invalid packet type");
+  return wt.close(1007, "Invalid packet type");
 }
 
 const currentPlayer = playerCache.get(wt.data.id) || null;
@@ -166,7 +166,7 @@ switch (type) {
 
 | Step | What happens |
 |------|--------------|
-| 1 | A message over the size limit closes the connection with code 1009. The limit is `webtransport.maxPayloadMB` from the settings, 1 MB when unset. `BENCHMARK` packets are exempt |
+| 1 | A message over the size limit closes the connection with code 1009. The limit is 16 KB before login and 256 KB for a logged-in player. An admin, a player who holds any permission, and everyone on a benchmark server get `webtransport.maxPayloadMB` from the settings, 1 MB when unset |
 | 2 | A packet with no `type` closes it with code 1007 |
 | 3 | A `type` that is not in the valid set closes it with code 1007 |
 | 4 | The sender's player is looked up. It is `null` until the client has logged in |
@@ -231,8 +231,9 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `STOPTYPING` | Both | Chat | A player stopped typing |
 | `COMMAND` | To server | Chat | A slash command, see [Admin Commands](#/engine/admin-commands) |
 | `WHISPER` | To client | Chat | A private message. May carry `links` as `CHAT` does |
+| `OFFICER_CHAT` | Both | Chat | A guild officer chat message: `{ message }` from the client. It is sent to the guild members whose rank may listen to officer chat, and needs a rank that may speak in it. May carry `links` as `CHAT` does |
 | `PARTY_CHAT` | To client | Chat | A party chat message. With `system: true` it is a line from the game (an achievement earned), with no speaker, plus `who`, `achievement` and `achievementId` for the link. Player lines may carry `links` as `CHAT` does |
-| `GUILD_CHAT` | Both | Chat | A guild chat message. With `system: true` it is a line from the game (an achievement earned), with no speaker, plus `who`, `achievement` and `achievementId` for the link. Player lines may carry `links` as `CHAT` does |
+| `GUILD_CHAT` | Both | Chat | A guild chat message. With `system: true` it is a line from the game, with no speaker: an achievement earned, plus `who`, `achievement` and `achievementId` for the link, or the guild's message of the day at login, with `motd: true`. Player lines may carry `links` as `CHAT` does |
 | `NOTIFY` | To client | Chat | A notification line |
 | `STATS` | Unused | Stats | A builder exists (`packetManager.stats`) but nothing calls it. Stats are sent as `UPDATESTATS` |
 | `UPDATESTATS` | To client | Stats | A change to a player's stats, with the damage or healing that caused it |
@@ -311,10 +312,18 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `LEAVE_PARTY` | To server | Social | Leave the party |
 | `INVITE_GUILD` | To server | Social | Invite a player to the guild |
 | `CREATE_GUILD` | To server | Social | Create a guild |
-| `UPDATE_GUILD` | To client | Social | The guild's name and members |
+| `UPDATE_GUILD` | To client | Social | The guild as the player's rank may see it: name, members, message of the day, ranks, the roster with notes, and the player's own rank |
 | `KICK_GUILD_MEMBER` | To server | Social | Remove a member from the guild |
 | `LEAVE_GUILD` | To server | Social | Leave the guild |
 | `DISBAND_GUILD` | To server | Social | Disband the guild |
+| `GUILD_PROMOTE` | To server | Social | Move a lower-ranked member up one rank: `{ username }` |
+| `GUILD_DEMOTE` | To server | Social | Move a lower-ranked member down one rank: `{ username }` |
+| `GUILD_SET_MOTD` | To server | Social | Set the guild's message of the day: `{ motd }` |
+| `GUILD_SET_NOTE` | To server | Social | Set a member's note: `{ username, note, officer }`. `officer: true` sets the officer note |
+| `GUILD_ADD_RANK` | To server | Social | The guild leader adds a rank below the lowest: `{ name }` |
+| `GUILD_EDIT_RANK` | To server | Social | The guild leader renames a rank or changes its permissions: `{ index, name, permissions }` |
+| `GUILD_DELETE_RANK` | To server | Social | The guild leader removes the lowest rank. Refused while a member holds it |
+| `GUILD_TRANSFER_LEADER` | To server | Social | The guild leader hands the guild to another member: `{ username }` |
 | `INVENTORY` | To client | Inventory | The whole inventory and its slot count |
 | `ADD_INVENTORY_ITEM` | To client | Inventory | An item was added, or its quantity grew |
 | `REMOVE_INVENTORY_ITEM` | To client | Inventory | An item was removed |
@@ -367,6 +376,7 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `WEATHER` | To client | Weather | The weather of the world the player is in |
 | `CHANGE_WEATHER` | To client | Weather | The weather changed |
 | `LIGHTNING` | To client | Weather | A lightning flash |
+| `TORNADOES` | To client | Weather | `{ map, tornadoes: [{ id, x, y }] }`: where each tornado on the player's map is. Sent about five times a second while there are any, and once with none when the last has gone |
 | `TOGGLE_TILE_EDITOR` | To client | Map editor | Open or close the map editor |
 | `SAVE_MAP` | To server | Map editor | Save map changes. Needs `server.admin` or `server.*` |
 | `EDITOR_OPEN` | To server | Map editor | An admin opened the editor on this map |
@@ -374,6 +384,10 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `EDITOR_TILE_EDIT` | Both | Map editor | Live tile edits, relayed to other admins editing the same map |
 | `EDITOR_LAYER_LOCK` | Both | Map editor | A layer was locked or unlocked, relayed to other admins |
 | `EDITOR_SYNC_READY` | To client | Map editor | Unsaved edits were replayed and the editor is in sync |
+| `CREATE_MAP` | To server | Map editor | Make a new blank map or world: `{ name, kind, width, height, infinite, tilesets }`. The admin is moved onto it. Needs `server.admin` or `server.*` |
+| `CREATE_MAP_FAILED` | To client | Map editor | A new map was refused: `{ message }` |
+| `SAVE_TILE_SOUNDS` | To server | Map editor | Save the footstep sounds set on tiles: `{ changes }`. Needs `server.admin` or `server.*` |
+| `TILE_SOUNDS` | To client | Map editor | Every footstep sound set on tiles: `{ tilesets }`. Sent to everyone online after a save |
 | `TOGGLE_PARTICLE_EDITOR` | To client | Particle editor | Open or close the particle editor |
 | `SAVE_PARTICLE` | To server | Particle editor | Save a particle |
 | `DELETE_PARTICLE` | To server | Particle editor | Delete a particle |
@@ -433,6 +447,17 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `CLASS_EDITOR_DELETE` | To server | Class editor | Delete a class |
 | `CLASS_EDITOR_RESULT` | To client | Class editor | Whether a change worked |
 | `CLASS_EDITOR_UPDATED` | To client | Class editor | The class list changed |
+| `MAILBOXES` | To client | Mail | `{ map, mailboxes: [{ id, x, y }], iconUrl }`: where the mailboxes of the player's map stand. Sent with `MAP_MARKERS`, and again when an admin changes the map's mailboxes |
+| `MAIL_OPEN` | To server | Mail | Open the mail window. The player has to be alive and at a mailbox |
+| `MAIL_INBOX` | To client | Mail | `{ mail, postage, itemsMax, subjectMax, bodyMax }`: the player's mail. Opens the mail window, or brings it up to date |
+| `MAIL_SEND` | To server | Mail | Send a mail. Refused while trading |
+| `MAIL_SENT` | To client | Mail | Whether a mail was sent: `{ ok, message }` |
+| `MAIL_TAKE` | To server | Mail | Take from a mail: `{ mailId, part }`. `part` is `"all"`, `"coins"` or the index of an item |
+| `MAIL_READ` | To server | Mail | Mark a mail read: `{ mailId }` |
+| `MAIL_DELETE` | To server | Mail | Delete a mail: `{ mailId }` |
+| `MAIL_RETURN` | To server | Mail | Send a mail back to its sender: `{ mailId }` |
+| `MAIL_NOTICE` | To client | Mail | `{ unread }`: how many mails are unread |
+| `MAIL_CLOSED` | To client | Mail | The player may no longer use the mailbox: `{ message }` |
 | `TOGGLE_MAILBOX_EDITOR` | To client | Mailbox editor | Open or close the mailbox editor |
 | `MAILBOX_EDITOR_LIST` | To server | Mailbox editor | Ask for the editor's data |
 | `MAILBOX_EDITOR_DATA` | To client | Mailbox editor | The editor's data |
@@ -441,7 +466,7 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `MAILBOX_EDITOR_RESULT` | To client | Mailbox editor | Whether a change worked |
 | `MAILBOX_EDITOR_UPDATED` | To client | Mailbox editor | Another admin changed a map's mailboxes |
 | `GATHER` | To server | Gathering | Gather a node: `{ nodeId }` |
-| `GATHER_NODE_SPAWN` | To client | Gathering | Nodes coming into view: `{ nodes: [{ id, x, y, item, icon }] }` |
+| `GATHER_NODE_SPAWN` | To client | Gathering | Nodes coming into view: `{ nodes: [{ id, x, y, item, icon, size }] }` |
 | `GATHER_NODE_DESPAWN` | To client | Gathering | Nodes gone or out of view: `{ ids }` |
 | `TOGGLE_GATHERING_EDITOR` | To client | Gathering editor | Open or close the gathering editor |
 | `GATHERING_EDITOR_LIST` | To server | Gathering editor | Ask for the areas of the map you are on |
@@ -607,7 +632,7 @@ The receiver builds its set of valid types once, when `receiver.ts` is first imp
 
 `const validPacketTypes = new Set<string>(Object.values(packetTypes) as string[]);`
 
-That happens before any plugin loads. `addPacketTypes` adds the name to the `packetTypes` object but not to this set. As the code stands, a packet with a plugin-defined type still reaches the interceptors and your handler, because the check does not `return`, but the same check also calls `wt.close(1007, "Invalid packet type")` on the sender's connection.
+That happens before any plugin loads. `addPacketTypes` adds the name to the `packetTypes` object but not to this set. As the code stands, a packet with a plugin-defined type never reaches the interceptors or your handler: the check closes the sender's connection with `wt.close(1007, "Invalid packet type")` and returns.
 
 Until the set is kept in step with the registry, do not send new type names from the client. Two approaches work today:
 

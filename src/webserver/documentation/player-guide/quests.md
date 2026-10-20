@@ -25,8 +25,9 @@ Walk up to a character and press **E**. On a touch screen, tap the character.
 - A character with a single quest for you opens that quest straight away.
 - A character with several quests shows a list. Select the quest you want, or **Goodbye** to leave.
 - A character without quests simply speaks in a bubble over their head. Talk again to hear their next line.
+- Vendors and innkeepers show a list with **Browse goods** or **Make this inn your home** under their quests, even when they have only one quest for you. A vendor with no quests for you opens their goods straight away. See [Vendors](#/player-guide/vendors) and [Inns and Your Home](#/player-guide/inns).
 
-You have to stand close. If you are not, you see "You are too far from that NPC." If you walk away while the window is open, it closes.
+You have to stand close. If you step back while the window is open, your choice is refused with "You are too far from that NPC." If you walk further away, the window closes.
 
 ## Accepting a quest
 

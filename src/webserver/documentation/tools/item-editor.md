@@ -53,10 +53,12 @@ The **At a glance** card beside the form shows the item as its fields describe i
 | Quality | Common, Uncommon, Rare, Epic or Legendary. Sets the colour of the name and the icon frame. |
 | Icon | Picked from the icons the asset server has |
 | Level requirement | Shown here for items that are not equipment. At least 1 when set. |
-| Vendor sell price | What any vendor pays a player for one, as gold, silver and copper. A new item starts at 1 copper. Nothing at all means vendors will not buy it. Quest items are never bought, whatever is set. |
+| Sell price | What any vendor pays a player for one, as gold, silver and copper. A new item starts at 1 copper. Nothing at all means vendors will not buy it. Quest items are never bought, whatever is set. |
+| Buy price | What a vendor charges for one, as gold, silver and copper, when the NPC sets no price of its own. A new item starts at 4 copper. It cannot be below the sell price, except on quest items. |
+| Soulbound | The item cannot be traded or mailed |
 | Description | Shown in the item's tooltip. Up to 255 characters. |
 
-Players see the sell price at the bottom of the item's tooltip. Which NPCs sell an item, and what they charge for it, is set on the NPC: see the Vendor & Inn tab of the [NPC Editor](#/tools/npc-editor).
+Players see the sell price at the bottom of the item's tooltip. Which NPCs sell an item is set on the NPC, and an NPC can set its own price for it: see the Vendor & Inn tab of the [NPC Editor](#/tools/npc-editor).
 
 :::note A vendor never charges less than this
 An item is always sold for at least its sell price, whatever price a vendor's stock gives it. Otherwise a player could buy it and sell it straight back for a profit. Raising an item's sell price therefore raises what it costs at any vendor that was selling it for less.
@@ -136,7 +138,7 @@ Leave a stat empty for an item that does not give it.
 | Save | `ITEM_EDITOR_SAVE` | Validates, then inserts or updates the `items` row and refreshes the item cache |
 | Delete | `ITEM_EDITOR_DELETE` | Deletes the row and refreshes the item cache |
 
-The answer is `ITEM_EDITOR_RESULT`. After a successful change, every other online account that may use the editor receives `ITEM_EDITOR_UPDATED`.
+Open is answered with `ITEM_EDITOR_DATA` and a search with `ITEM_EDITOR_RESULTS`. Save and Delete are answered with `ITEM_EDITOR_RESULT`. After a successful change, every other online account that may use the editor receives `ITEM_EDITOR_UPDATED`.
 
 A refused save comes back as sentences such as "An item with that name already exists." or "Equipable items need an equipment slot." The editor shows them at the top of the page, marks the field each one is about and points at its tab.
 

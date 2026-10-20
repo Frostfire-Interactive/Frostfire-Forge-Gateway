@@ -95,7 +95,7 @@ The **stage** under the steps shows the selected frame around the centre point 0
 
 ## Keyboard shortcuts
 
-Shortcuts are ignored while the cursor is in a text field or a dialog is open.
+Shortcuts are ignored while a dialog is open. Apart from `Ctrl+Z` and `Ctrl+Y`, they are also ignored while the cursor is in a text field.
 
 | Key | Action |
 | --- | --- |

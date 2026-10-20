@@ -70,6 +70,8 @@ The key travels in the request body. Over plain HTTP on a public network it can 
 | GET | `/sprite-sheets` | None | All sprite sheets: `{ "spriteSheets": [{ "name", "slot", "icon", "hasTemplate", "hasImage" }] }`. |
 | GET, HEAD | `/audio` | `name`: with or without extension | An audio file. Supports `Range` requests and `ETag`. |
 | GET | `/audios` | None | All audio files: `{ "audio": [{ "name", "mime" }] }`. |
+| GET | `/tile-sounds` | None | The footstep sounds set on tiles in the map editor: `{ "tilesets": { "<tileset>": { "<tile id>": "<sound>" } } }`. |
+| GET | `/tileset-list` | None | Names of the tileset images: `{ "tilesets": ["environment.png"] }`. Used by the map editor's New map form. |
 
 ### Authenticated endpoints
 
@@ -83,6 +85,8 @@ All of these take a JSON body that includes `authKey`.
 | POST | `/save-map-chunks` | `mapName`, `chunks`, optional `bounds`, `serverId` | Saves edited chunks of a map or world to disk. |
 | POST | `/save-map-properties` | `mapName`, optional `graveyards`, `warps` | Saves the graveyards and warps of a map or world to disk. |
 | POST | `/update-map` | `mapName`, `mapData`, `serverId` | Replaces a whole map in the cache. Not written to disk. Refused for worlds. |
+| POST | `/create-map` | `name`, `kind` (`map` or `world`), `width`, `height`, `infinite`, `tilesets` | Writes a new, blank map or world into the maps folder. Sent by the map editor's New map form. |
+| POST | `/save-tile-sounds` | `changes`: `[{ "tileset", "ids", "sound" }]` | Saves footstep sounds of tiles to `tilesounds.json` in the assets folder. |
 
 ### General behaviour
 
@@ -114,12 +118,14 @@ The engine keeps its own copy of every map so that it can run collision, warps a
   "success": true,
   "outdatedMaps": [
     { "name": "overworld.json", "checksum": "<sha256>", "data": { "width": 100, "height": 100, "layers": [] } }
-  ]
+  ],
+  "maps": ["inside.json", "overworld.json"]
 }
 ```
 
 - The asset server compares each of its maps with the checksum the engine sent. A map the engine does not have, or has in a different version, is returned in full.
 - The engine writes each returned map into its `src/assets/maps` folder, then loads its maps from there.
+- `maps` names every map the asset server has. Before it loads its maps, the engine removes a local map that is not in this list.
 - The response can be several megabytes and is gzipped.
 - An engine that sends an empty `checksums` object receives every map.
 
@@ -158,7 +164,7 @@ For every file whose hash differs from the engine's local copy:
 
 The answer is the raw file with the content type `application/octet-stream`, gzipped when the client accepts it. Only `manifest.json`, `collision.bits` and `nopvp.bits` can be requested. Any other file name is answered with `400 Unknown world file`, and the pack files are never sent.
 
-The engine never deletes a local world, and it skips the world sync quietly when the asset server has no worlds or cannot be reached. The format of these files is described in [World maps](#/assets/world-maps).
+The engine removes a local world that the asset server no longer lists, and it skips the world sync when the asset server cannot be reached. The format of these files is described in [World maps](#/assets/world-maps).
 
 ## What the browser downloads
 

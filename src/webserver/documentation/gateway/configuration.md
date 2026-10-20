@@ -82,6 +82,7 @@ ASSET_SERVER_URL=https://assets.example.com
 | `DATABASE_ENGINE` | `mysql` | `mysql`, `postgres` or `sqlite`. |
 | `DATABASE_HOST` | none | Database host. Required for `mysql` and `postgres`. |
 | `DATABASE_NAME` | none | Database name. Required for `mysql` and `postgres`. With `sqlite` it names the file: `<tmp>/frostfire_forge/<DATABASE_NAME>.sqlite`. |
+| `DATABASE_PATH` | none | `sqlite` only. The full path of the database file, used in place of the path above. |
 | `DATABASE_USER` | none | Database user. Required for `mysql` and `postgres`. |
 | `DATABASE_PASSWORD` | none | Database password. Required for `mysql` and `postgres`. |
 | `DATABASE_PORT` | `3306` (`5432` for `postgres`) | Database port. |
@@ -122,7 +123,7 @@ One certificate serves both the website and the gateway port. See [TLS](#/gatewa
 | `GATEWAY_GAME_SERVER_SECRET` | none | Shared secret used to sign connection tokens (HMAC SHA-256). Must be the same value on every game server. Also guards `POST /guest-bulk`. |
 | `HEARTBEAT_INTERVAL` | `30000` | How often, in milliseconds, the gateway looks for dead game servers. |
 | `SERVER_TIMEOUT` | `90000` | A game server with no heartbeat for this long, in milliseconds, is removed. |
-| `SESSION_TIMEOUT` | `300000` | An HTTP proxy session idle for this long, in milliseconds, is forgotten. |
+| `SESSION_TIMEOUT` | `300000` | An HTTP proxy session is forgotten this long, in milliseconds, after it was created or moved. |
 
 :::danger An empty auth key is not a locked door
 If `GATEWAY_AUTH_KEY` is not set, the gateway compares incoming keys against `null`. Always set it, and set the same value in each game server's environment.
@@ -137,7 +138,8 @@ If `GATEWAY_AUTH_KEY` is not set, the gateway compares incoming keys against `nu
 | `BRAND_NAME` | none | Replaces "Frostfire Forge" in the page titles, brand headers, loading screen and editor title bars that players and admins see. Trimmed and cut to 40 characters. Empty or unset changes nothing. The documentation and the emails are not affected (emails use `GAME_NAME`). |
 | `GUEST_MODE_ENABLED` | off | `true` or `1` allows `POST /guest-login` and `POST /guest-bulk`. |
 | `LOG_LEVEL` | `info` | `debug` also writes debug lines, `trace` writes everything. |
-| `CACHE` | `memory` | `redis` switches the asset cache service to Redis. |
+| `CACHE` | `memory` | Read only by `src/services/assetCache.ts`, which no gateway process loads, so it has no effect. |
+| `TOKEN_LIFETIME_HOURS` | `168` | How long a session token works after it is issued, in hours. Also the lifetime of the `token` cookie. |
 | `NODE_ENV` | none | `development` only changes the banner printed at startup. |
 | `STRIPE_SECRET_KEY` | none | The secret key of your Stripe account (`sk_live_...` or `sk_test_...`). Player subscriptions are on only when this and the next two are all set. Never sent to a browser and never logged. |
 | `STRIPE_WEBHOOK_SECRET` | none | The signing secret of the webhook endpoint (`whsec_...`). |
@@ -215,6 +217,8 @@ Nothing under `src/` imports `config.json`. The gateway server takes the same se
 | `bun production` | Loads `.env.production` and runs `src/start.ts`. |
 | `bun setup-development` | Runs `src/utility/database_setup.ts` with `.env.development`. |
 | `bun setup` | Runs `src/utility/database_setup.ts` with `.env.production`. |
+| `bun create-admin <username> <email>` | Runs `src/utility/create_admin.ts` with `.env.production`. Creates an admin account with `admin.*`, `server.*` and `permission.*` and prints a one-time link that sets its password. |
+| `bun create-admin-development <username> <email>` | The same with `.env.development`. |
 | `bun docker:dev` | Starts `src/docker/docker-compose.dev.yml` in the background. |
 | `bun docker:dev:rebuild` | The same, forcing a rebuild and recreate. |
 | `bun docker:dev:down` | Stops the development containers. |
@@ -232,7 +236,7 @@ bun check
 
 It is Bun's own type checker, and it replaced ESLint and `tsc`.
 
-The setup script creates the database if it is missing, creates the `allowed_ips` and `blocked_ips` tables, whitelists `127.0.0.1` and `::1`, and adds the two-factor columns to `accounts` (`totp_secret`, `totp_enabled`, `webauthn_credentials`, `webauthn_enabled`, `twofa_pending`, `pending_email`, `require_webauthn`, `require_totp`, `require_email_2fa`, `email_verified`).
+The setup script creates the database if it is missing, creates the `allowed_ips` and `blocked_ips` tables, whitelists `127.0.0.1` and `::1`, and adds the two-factor columns to `accounts` (`totp_secret`, `totp_enabled`, `webauthn_credentials`, `webauthn_enabled`, `twofa_pending`, `pending_email`, `require_webauthn`, `require_totp`, `require_email_2fa`, `email_verified`) and `token_expires`.
 
 :::warning Run the gateway setup again after the engine setup
 The two-factor columns are added with `ALTER TABLE accounts`. The `accounts` table itself is created by the game engine's setup. If it does not exist yet, each column is skipped with only a debug log line. Running the gateway setup once more after the engine setup is safe: existing columns are skipped the same way.

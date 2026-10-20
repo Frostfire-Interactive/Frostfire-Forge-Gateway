@@ -43,7 +43,7 @@ This page shows how the three servers fit together: the processes each one runs,
 
 ### Gateway
 
-`bun development` or `bun production` in the gateway repository runs `src/start.ts`. It first transpiles the browser client, then starts three child processes:
+`bun development` or `bun production` in the gateway repository runs `src/start.ts`. It first transpiles the page scripts in `src/webserver/public/js/web`, then starts three child processes:
 
 | Process | File | Listens on | Purpose |
 | --- | --- | --- | --- |
@@ -60,7 +60,7 @@ The engine is one process (`src/socket/server.ts`) with worker threads. It opens
 | Listener | Transport | Port | Purpose |
 | --- | --- | --- | --- |
 | WebTransport | UDP (QUIC, HTTP/3) | `WEBSRV_PORTSSL`, default 3000 | The game connection. |
-| HTTP API | TCP | Same number, app on `127.0.0.1:WEBSRV_INTERNAL_PORT` (3002) | `/status`, `/ping`, `/wt-cert-hash` and routes added by plugins. |
+| HTTP API | TCP | Same number, app on `127.0.0.1:WEBSRV_INTERNAL_PORT` (3002) | `/status`, `/ping`, `/wt-cert-hash`, `/start-area` and routes added by plugins. |
 
 Because the WebTransport listener owns the UDP side of the port, HTTP/3 is always off for the engine's HTTP API. See [Networking](#/engine/networking).
 
@@ -137,7 +137,7 @@ The gateway keeps the list of realms in memory and exposes it at `GET /status`. 
 
 While it starts, and before it loads any map, the engine does two things:
 
-1. **Maps.** It computes a checksum for every map in `src/assets/maps` and sends the list to `POST /map-checksums`. The asset server answers with the full data of every map whose checksum differs, and the engine writes those files to disk.
+1. **Maps.** It computes a checksum for every map in `src/assets/maps` and sends the list to `POST /map-checksums`. The asset server answers with the full data of every map whose checksum differs, and the engine writes those files to disk. It also removes local maps the asset server does not list.
 2. **Worlds.** It asks `POST /world-list` for the large worlds the asset server has, then fetches each outdated file with `POST /world-file`. Only the manifest and the collision and no-PvP data are copied. The tiles stay on the asset server.
 
 Both calls carry `ASSET_SERVER_AUTH_KEY`. The same map sync runs once more right after the engine registers with the gateway. The full list of endpoints is in [asset server integration](#/assets/integration).
@@ -147,11 +147,11 @@ Both calls carry `ASSET_SERVER_AUTH_KEY`. The same map sync runs once more right
 1. **The browser loads the site** from the gateway's reverse proxy (`/`). The proxy checks the request and forwards it to the webserver.
 2. **The player logs in** (the form posts to `/login`). If two-factor login is enabled for the account, the player completes it on `/2fa-challenge`. See [Authentication](#/gateway/authentication).
 3. **The player picks a realm** on `/realm-selection`. The page calls `GET /api/gateway/servers`; the webserver fetches the list from the gateway server's `/status` endpoint and returns each realm's `publicHost`, `port`, `wtPort`, connection counts and status (`online`, `full` or `offline`).
-4. **The game page loads** (`/game`) and asks for a connection token at `GET /api/gateway/connection-token`. The webserver returns a random token, a timestamp, an expiry 60 seconds later, and an HMAC-SHA256 signature made with `GATEWAY_GAME_SERVER_SECRET`.
+4. **The game page loads** (`/game`) and asks for a connection token at `GET /api/gateway/connection-token`. The webserver returns a random token, a timestamp, an expiry 60 seconds later, the page origin, a hash of the player's session token, and an HMAC-SHA256 signature over all of them made with `GATEWAY_GAME_SERVER_SECRET`.
 5. **The client prepares the WebTransport connection.** It needs the engine's certificate hash unless the certificate is publicly trusted:
    - If the gateway was started with `GAME_WT_CERT_HASH`, that value is used (`off` disables pinning).
    - Otherwise the client fetches `/wt-cert-hash` from the engine's HTTP API at `publicHost:port`.
-6. **The client opens WebTransport** to `https://{publicHost}:{wtPort}` and sends the token in an `AUTH_CONNECT` frame. The engine checks the signature with its own copy of `GATEWAY_GAME_SERVER_SECRET` and the expiry time, then continues with the normal login handshake.
+6. **The client opens WebTransport** to `https://{publicHost}:{wtPort}` and sends the token in an `AUTH_CONNECT` frame. The engine checks the signature with its own copy of `GATEWAY_GAME_SERVER_SECRET`, the expiry time and that the token was not used before, then continues with the normal login handshake. The login must use the session token the connection token was issued for.
 7. **The engine sends the map metadata**, which includes the public asset server URL. The client then downloads tilesets (`/tileset`) and the map chunks around the player (`/map-chunk`) straight from the asset server, and the world appears.
 
 :::warning Three values must match

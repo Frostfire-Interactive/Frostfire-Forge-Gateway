@@ -117,7 +117,7 @@ While the chat box is open, press the **Up** arrow to bring back the last messag
 ## Chat limits
 
 - A message can be at most 500 characters long. Shorter is safer: very long messages may not be sent.
-- You can send up to 5 say messages within 3 seconds. Faster than that and you see "You are sending messages too fast."
+- You can send up to 5 messages within 3 seconds, counting all channels together. Faster than that and you see "You are sending messages too fast."
 - Party chat needs a party, and guild chat needs a guild. Otherwise you see "You are not in a party" or "You are not in a guild".
 
 ## Chat while dead

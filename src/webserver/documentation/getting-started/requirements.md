@@ -34,7 +34,7 @@ The gateway and the engine use the **same** database: the engine creates the gam
 | SQLite | Local development of the engine | `DATABASE_ENGINE=sqlite`, set up with `bun setup-localdb` in the engine repository. The file is created in the system temp folder as `frostfire_forge/<DATABASE_NAME>.sqlite`. |
 
 :::warning SQLite and the gateway
-The gateway's `bun setup` script issues MySQL statements. The engine's SQLite setup creates the tables the gateway needs (`accounts`, `allowed_ips`, `blocked_ips`), but MySQL is the path this documentation covers end to end.
+The gateway's `bun setup` script also works with SQLite and opens the same file as the engine. The engine's SQLite setup creates the tables the gateway needs (`accounts`, `allowed_ips`, `blocked_ips`), but MySQL is the path this documentation covers end to end.
 :::
 
 The asset server needs no database.
@@ -45,7 +45,8 @@ The asset server and the gateway are plain Bun programs. The engine loads a nati
 
 | OS | Architectures |
 | --- | --- |
-| Linux (glibc and musl) | x64, arm64 |
+| Linux (glibc) | x64, arm64 |
+| Linux (musl) | x64 |
 | macOS | x64, arm64 |
 | Windows | x64 |
 

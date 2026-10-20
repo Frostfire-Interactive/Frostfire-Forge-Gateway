@@ -34,9 +34,9 @@ Your target's name, level, health and mana appear in the target frame. A target 
 |-----|--------|
 | W, A, S, D | Move up, left, down, right |
 | Tab | Target the nearest player or creature in front of you, press again to cycle |
-| 1 to 9, 0 | Cast the spell in hotbar slot 1 to 10 |
+| 1 to 9, 0 | Cast the spell, or use the consumable, in hotbar slot 1 to 10 |
 | Q | Mount or dismount |
-| E | Talk to a nearby character. Next to loot you can take: tap to pick up the nearest item, hold to pick up everything nearby |
+| E | Talk to a nearby character. Next to loot you can take: tap to pick up the nearest item, hold to pick up everything nearby. Beside a defeated creature with loot for you, a mailbox or a resource node: loot it, open your mail, or gather it |
 | F | Open a nearby loot chest |
 | B | Open or close the inventory |
 | C | Open or close the character window (stats and equipment) |
@@ -76,16 +76,20 @@ The keys are fixed. There is no key binding screen at the moment.
 |--------|--------|
 | Left-click a player, creature or character | Target it |
 | Left-click empty ground | Clear your target |
-| Right-click a creature | Target it and start attacking |
-| Right-click a defeated creature that has loot for you | Open its loot window |
+| Left-click a defeated creature that has loot for you | Open its loot window |
+| Left-click a resource node | Gather it |
+| Left-click a mailbox | Open your mail |
 | Right-click a player | Open the player menu |
+| Right-click a creature | Target it and start attacking it |
 | Right-click a party member's frame | Kick (leader), or leave the party on your own frame |
-| Right-click a name in the guild window | Kick (Guild Master only; other ranks that may kick use the member's panel), or leave the guild on your own name |
-| Right-click a name in the friends list | Remove that friend |
+| Right-click a name in the guild window | Kick, Promote or Demote (Guild Master only; other ranks use the member's panel), or leave the guild on your own name |
+| Right-click a name in the friends list | Remove that friend, or ignore them |
+| Right-click a name in the ignored list | Stop ignoring that player |
 | Right-click one of your buffs | Cancel that buff |
 | Left-click a hotbar slot | Cast that spell |
 | Left-click a spell in the spellbook | Cast that spell |
 | Drag a spell from the spellbook to the hotbar | Put the spell in that slot |
+| Drag a consumable from the inventory to the hotbar | Put it in that slot |
 | Shift + drag a hotbar slot | Move the spell to another slot, or drop it outside the hotbar to remove it |
 | Double-click an equipment item in the inventory | Equip it |
 | Double-click an equipped item | Take it off |
@@ -102,8 +106,11 @@ Right-clicking another player opens a small menu:
 | Inspect | Shows that player's stats and equipment |
 | Send Message | Starts a whisper to that player in the chat box |
 | Invite to Party | Sends a party invitation |
+| Trade | Asks the player to trade. See [Trading](#/player-guide/trading). |
 | Add Friend or Remove Friend | Sends a friend request, or ends the friendship |
 | Invite to Guild | Sends a guild invitation |
+| Ignore or Stop Ignoring | Stops you seeing what that player says, or lets you see it again |
+| Report Player | Tells the admins about that player |
 
 ## Touch controls
 
@@ -120,13 +127,15 @@ On phones and tablets the game adds on-screen controls. Hold your device sideway
 | Tap the creature you already target | Start attacking it |
 | Tap a defeated creature that has loot for you | Open its loot window |
 | Tap a character | Talk to them |
+| Tap a resource node | Gather it |
+| Tap a mailbox | Open your mail |
 | Hold your finger on a player | Open the player menu |
 | Tap a hotbar slot | Cast that spell |
 | Drag a spell from the spellbook to the hotbar | Put the spell in that slot |
 | Hold a hotbar slot, then drag | Move the spell, or drop it outside the hotbar to remove it |
 | Double-tap an equipment item | Equip it, or take it off if it is equipped |
-| Tap a party member, guild member or friend | Open their menu |
-| Tap outside an open window | Close the window |
+| Tap a party member or friend | Open their menu |
+| Tap a guild member | Open their panel in the guild window |
 
 The wheel of windows holds Inventory, Spellbook, Quest Log, World Map, Character, Friends, Guild, Collectables, Achievements and Settings.
 
@@ -175,6 +184,9 @@ Press **Esc** to open the menu. It has three buttons:
 | FPS | Limits how many frames per second the game draws, from 30 up to 240 and above |
 | Music | Music volume |
 | Effects | Sound effect volume |
+| Ambience | Volume of the sounds of the places around you |
+| Weather | Volume of rain, wind and thunder |
 | Muted | Turns all sound off |
+| Auto loot | Takes everything from a defeated creature at once, without opening its loot window |
 
 Your settings are saved with your character.

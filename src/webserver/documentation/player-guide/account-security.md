@@ -52,7 +52,7 @@ Two-factor sign-in means a password alone is not enough to get into your account
 | Authenticator app | An authenticator app on your phone | You type the 6 digit code the app shows. |
 | Security key | A FIDO2 security key | You insert the key and tap it when the browser asks. |
 
-Each method has a **Required for sign-in** switch on the profile page. A method only protects your logins while its switch is on.
+Each method has a **Required at sign-in** switch on the profile page. A method only protects your logins while its switch is on.
 
 ### Email codes
 
@@ -65,9 +65,9 @@ New accounts start with this switched on. Use the switch in the **Email Address*
 3. Scan the QR code with your authenticator app.
 4. Type the 6 digit code from the app and select **Verify & Enable**.
 
-Then turn on **Required for sign-in** in the same section so the app is asked for at login.
+Then turn on **Required at sign-in** in the same section so the app is asked for at login.
 
-To turn the requirement off, you enter a current code from the app. To remove the app from your account, select **Disable** and confirm with your password. You may be asked for a code sent to your email as well.
+To turn the requirement off, you enter a current code from the app. To remove the app from your account, select **Disable** and confirm with your password. Then enter the code that is sent to your email.
 
 ### Security keys
 
@@ -76,15 +76,15 @@ To turn the requirement off, you enter a current code from the app. To remove th
 3. Give the key a name you will recognise, then select **Register Key**.
 4. Follow your browser's prompt and tap your key.
 
-Your keys are listed in the same section. You can register more than one, which is a good idea in case you lose one. Turn on **Required for sign-in** to use your keys at login. Turning it off again requires a tap on one of your keys.
+Your keys are listed in the same section. You can register more than one, which is a good idea in case you lose one. Turn on **Required at sign-in** to use your keys at login. Turning it off again requires a tap on one of your keys.
 
-To remove a key, select its remove button and confirm with your password. If you use an authenticator app, its code is asked for too. Otherwise you may be asked for a code sent to your email.
+To remove a key, select its remove button and confirm with your password. If you use an authenticator app, its code is asked for too. Otherwise you enter a code that is sent to your email.
 
 ### Signing in with two-factor
 
 1. Enter your username and password as usual.
 2. If email codes are on, enter the code from your email.
-3. If an authenticator app or security key is required, the **Two-Factor Authentication** page opens. With both set up, you choose between **Verify with Security Key** and **Use Authenticator App**.
+3. If an authenticator app or security key is required, the **Two-Factor Authentication** page opens. With both required, you choose between **Verify with Security Key** and **Use Authenticator App**.
 
 :::warning Keep a way back in
 Before you rely on an authenticator app or a security key, make sure you can still reach the email address on your account. Your email is how you reset a forgotten password.
@@ -107,6 +107,6 @@ A reset link works once. If you need another try, request a new link.
 ## Good habits
 
 - Use a password you do not use anywhere else.
-- Turn on at least one two-factor method and switch on **Required for sign-in** for it.
+- Turn on at least one two-factor method and switch on **Required at sign-in** for it.
 - Never share verification codes with anyone. Nobody needs them except you.
 - Select **Logout** from the menu when you finish playing on a shared computer.

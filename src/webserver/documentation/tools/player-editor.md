@@ -28,7 +28,7 @@ Two parts of the editor ask for more:
 
 | Change | Also needs |
 | --- | --- |
-| Give a permission | `permission.add` or `permission.*`, and you must hold the permission you give (or `permission.*` or `server.*`) |
+| Give a permission | `permission.add` or `permission.*`, and you must hold the permission you give (or `server.*`, or `permission.*` for permissions outside `server.`) |
 | Take a permission away | `permission.remove` or `permission.*` |
 
 The server reads your stored permissions on every packet the editor sends. It does not trust the copy made when you logged in.

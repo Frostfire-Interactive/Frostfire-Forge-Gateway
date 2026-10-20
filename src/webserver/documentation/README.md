@@ -34,13 +34,13 @@ Opening paragraph. Do not repeat the title as a heading, the site renders it.
 Rules:
 
 - Use only `##` and `###` headings. They build the "On this page" outline.
-- Link to other pages with `[Plugins](#/engine/plugins)` and to a heading with `[Engine API](#/engine/plugins/engine-api)`. The last part is the heading text in lower case with dashes.
+- Link to other pages with `[Plugins](#/engine/plugins)` and to a heading with `[Where plugins live](#/engine/plugins/where-plugins-live)`. The last part is the heading text in lower case with dashes.
 - Tables with ten or more rows get a filter box automatically.
 - Never put a URL path segment such as `console` or `.env` into a real link on this site, the reverse proxy blocks those.
 
 ## Code blocks
 
-Always name the language. Supported: `ts`, `js`, `json`, `bash`, `sql`, `env`, `html`, `css`, `yaml`, `text`.
+Always name the language. Supported: `ts`, `tsx`, `js`, `jsx`, `json`, `jsonc`, `bash`, `powershell`, `sql`, `env`, `ini`, `toml`, `yaml`, `html`, `xml`, `css`, `dockerfile`, `diff`, `md`, `text`.
 Add `title="..."` to show a file name or label.
 
 ````md

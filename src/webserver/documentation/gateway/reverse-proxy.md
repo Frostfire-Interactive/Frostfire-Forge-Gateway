@@ -28,7 +28,8 @@ The filter runs in this order. The first check that fails ends the request.
 | 4 | Client IP is on the blacklist | `403` |
 | 5 | A path segment matches a `security.cfg` rule (skipped for whitelisted IPs) | IP is blacklisted, then `403` |
 | 6 | The request host matches `DOMAIN` | `403` |
-| 7 | Forward to the webserver | `502` if the webserver cannot be reached |
+| 7 | With `DOCS_ENABLED=false`, the path is not `/docs`, under `/docs/` or `/api/docs` | `404` |
+| 8 | Forward to the webserver | `502` if the webserver cannot be reached |
 
 Every rejection in steps 4 to 6 has the same body, `{"message":"Invalid request"}`, so a scanner cannot tell which rule it hit.
 

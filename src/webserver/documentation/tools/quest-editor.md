@@ -129,11 +129,11 @@ Each item reward is a card titled "Item reward N". "Add item reward" adds one.
 | Action | Packet | Server behaviour |
 | --- | --- | --- |
 | Open | `QUEST_EDITOR_DATA` | Sends the objective types, repeat modes and the lists the pickers use |
-| Search | `QUEST_EDITOR_SEARCH` | Returns matching quests |
+| Search | `QUEST_EDITOR_SEARCH` | Returns matching quests as `QUEST_EDITOR_RESULTS` |
 | Save | `QUEST_EDITOR_SAVE` | Validates the whole quest and stores it with its objectives, rewards, prerequisites and NPC links |
-| Delete | `QUEST_EDITOR_DELETE` | Removes the quest with its objectives, rewards and prerequisite links |
+| Delete | `QUEST_EDITOR_DELETE` | Removes the quest with its objectives, rewards, prerequisite links, NPC links and every player's progress on it |
 
-The answer is `QUEST_EDITOR_RESULT`. After a successful save or delete, every other online account that may use the editor receives `QUEST_EDITOR_UPDATED`.
+The answer to a save or delete is `QUEST_EDITOR_RESULT`. After a successful save or delete, every other online account that may use the editor receives `QUEST_EDITOR_UPDATED`.
 
 The server validates everything again, whatever the window checked. Problems come back as lines such as "Objective 2: target is required." The editor shows each line at the top of the page, marks the field it is about and puts a count on that field's tab. Among the rules:
 
@@ -143,7 +143,7 @@ The server validates everything again, whatever the window checked. Problems com
 - The next quest and every prerequisite must exist.
 
 :::warning Deleting does not ask who is on the quest
-Delete removes the quest definition. It is also removed from every other quest's prerequisites. Check that players are not in the middle of it first, for example with the Quests tab of the [Player Editor](#/tools/player-editor).
+Delete removes the quest definition. Players who are on it lose it, with what they had done for it. It is also removed from every other quest's prerequisites and "Next quest". Check that players are not in the middle of it first, for example with the Quests tab of the [Player Editor](#/tools/player-editor).
 :::
 
 ## Tips

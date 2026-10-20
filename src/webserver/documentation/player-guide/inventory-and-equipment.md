@@ -93,9 +93,11 @@ Coins convert upwards automatically, so you never carry more than 99 copper or 9
 A creature you defeated may leave loot on its body.
 
 1. Stand close to the body.
-2. **Right-click** it. On a touch screen, tap it.
+2. **Left-click** it, or press **E**. On a touch screen, tap it.
 3. The **Loot** window lists the items and coins.
-4. Select **Take All**, or untick what you do not want and select **Take Selected**.
+4. Click a row to take that item or the coins. The window closes once the body is empty.
+
+With **Auto loot** ticked in **Settings**, everything is taken at once and the window does not open.
 
 Messages you may see:
 
@@ -123,7 +125,7 @@ Ground loot does not wait forever. It disappears after 30 minutes. An item with 
 
 ## Loot chests
 
-When you find a loot chest, stand next to it and press **F**. The **Loot Chest** window opens with **Take Selected** and **Take All**, just like creature loot.
+When you find a loot chest, stand next to it and press **F**. The **Loot Chest** window opens with **Take Selected** and **Take All**.
 
 A chest gives every player their own contents, so nobody can empty it before you. Once you have taken everything, the chest tells you "This chest is empty for you."
 

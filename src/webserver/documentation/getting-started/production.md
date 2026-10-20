@@ -194,8 +194,8 @@ ASSET_SERVER_INTERNAL_URL=https://127.0.0.1:8083
 
 The engine uses these for registration, heartbeats, map sync and editor saves, and keeps `ASSET_SERVER_URL` for the browser. The ports are each server's internal port, which only listens on `127.0.0.1`.
 
-:::warning Server to server HTTPS does not verify certificates
-Calls between the servers over `https://` are made with certificate verification turned off, which is what lets an address like `https://127.0.0.1:9998` work with a certificate issued for your domain. Keep these links on loopback or a network you trust.
+:::warning Server to server HTTPS skips verification on loopback only
+The engine verifies the certificate on its calls to the gateway and the asset server, except calls to a loopback address (`localhost`, `127.x.x.x` or `::1`). That is what lets an address like `https://127.0.0.1:9998` work with a certificate issued for your domain. A CA bundle in `TLS_CA_PATH` is trusted as well. The gateway and the asset server do not verify certificates on their own server to server calls, so keep those links on loopback or a network you trust.
 :::
 
 ## 4. Start the asset server
@@ -245,10 +245,6 @@ bun create-admin <username> <email>
 ```
 
 The link is built from `DOMAIN` and works once. The account is created verified, so the admin can log in before a mail server is configured.
-
-:::warning Databases set up before this change
-Earlier versions of the engine setup inserted an account named `demo_user` with a publicly documented password and admin permissions. Setup no longer creates it, but it does not remove one that already exists. Change its password or delete the account.
-:::
 
 ## Firewall
 

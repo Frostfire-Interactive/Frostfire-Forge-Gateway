@@ -23,7 +23,7 @@ Any one of these lets you in:
 - `tools.creature_editor` or `tools.*`
 - `server.*`
 
-The same rule is applied to every packet the editor sends. A refused packet answers "You do not have permission to use the creature editor."
+The same rule is applied to every packet the editor sends. A refused packet answers "You don't have permission to use the creature editor."
 
 ## The window
 
@@ -110,7 +110,7 @@ A creature has five tabs: General, Appearance, Rewards, Abilities and Spawns. Th
 
 | Field | Notes |
 | --- | --- |
-| Sprite type | Animated is built from sprite sheets, like a player. Static is one still image. None draws nothing. |
+| Sprite type | Animated is built from sprite sheets, like a player. Static is one still image. None draws a plain placeholder body. |
 | Body sheet, Head sheet | For an animated creature |
 | Static image | For a static creature |
 | Scale | 1 is normal size. Bigger creatures also reach further in melee. |

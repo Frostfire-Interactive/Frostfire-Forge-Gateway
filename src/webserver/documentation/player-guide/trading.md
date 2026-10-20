@@ -37,7 +37,7 @@ There are two ways to put an item on your side:
 - **Drag** it from your bags onto your side of the window.
 - **Right-click** it in your bags.
 
-On a phone or tablet, **double-tap** the item in your bags instead. The trade window sits at the left of the screen there, so your bags stay open beside it.
+On a phone or tablet, **double-tap** the item in your bags instead. On a phone, the trade window sits at the top left of the screen, so your bags stay open beside it.
 
 One of the item goes in. To offer more of a stack, raise the number on the item.
 
@@ -50,6 +50,8 @@ Type the gold, silver and copper you want to give into the three fields under yo
 ### What cannot be traded
 
 - Quest items.
+- Soulbound items. Their tooltip says **Soulbound**.
+- Your home item.
 - The item you are wearing, and a bag that is in one of your bag slots. If you hold more of the same item, the extra ones can be traded.
 
 You cannot put on equipment or bags while a trade is open.

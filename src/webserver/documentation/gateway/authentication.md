@@ -24,7 +24,7 @@ An account is a row in the `accounts` table of the shared game database.
 
 Passwords are hashed with `Bun.password.hash` and never stored in plain text. A banned account (`banned = 1`) cannot log in.
 
-Creating an account also creates the player's rows in `stats`, `clientconfig`, `quest_log`, `currency`, `equipment` and `collectables`.
+Creating an account also creates the player's rows in `stats`, `clientconfig`, `currency`, `equipment` and `collectables`.
 
 ## Registration and email verification
 
@@ -73,13 +73,14 @@ After login the player picks a realm and the client asks for a connection token.
 The session token is 64 hexadecimal characters (32 random bytes), stored in `accounts.token`.
 
 ```text title="Cookie set at login"
-Set-Cookie: token=<64 hex characters>; Path=/
+Set-Cookie: token=<64 hex characters>; Path=/; SameSite=Lax; Max-Age=604800
 ```
 
-- The cookie is a session cookie: it has no `Max-Age` and no `Expires`. Some responses add `SameSite=Lax`.
+- The cookie lives as long as the token: `Max-Age` follows `TOKEN_LIFETIME_HOURS` (7 days by default). With `HTTP_USE_SSL=true` it is also `Secure`.
 - It is not `HttpOnly`. The page scripts and the game client read it, and the game client presents it to the game server when it authenticates.
 - API routes accept the token from the cookie or from an `Authorization: Bearer <token>` header.
-- A login reuses the token already stored for the account and only creates a new one when none exists.
+- The token expires `TOKEN_LIFETIME_HOURS` after it is issued (`accounts.token_expires`). The API routes and the game server refuse an expired token.
+- A login reuses the token already stored for the account and only creates a new one when none exists or it has expired.
 - Verifying the email of a new account clears the token, which is why the player signs in again afterwards.
 
 ## Guest mode
@@ -160,8 +161,11 @@ All routes are served by the webserver behind the reverse proxy. "Token" in the 
 | GET | `/2fa-challenge` | None | TOTP and security key challenge. The page calls the API with the token. |
 | GET | `/realm-selection` | None | Realm list. The page sends visitors without a `token` cookie back to `/`. |
 | GET | `/manage-profile` | None | Profile, password and two-factor settings. Also the target of reset links. |
+| GET | `/character` | None | Character creation. Realm selection sends an account here when it has no character yet. |
 | GET | `/game` | None | The game client. It authenticates against the game server. |
 | GET | `/map-editor`, `/control-panel` and the other tool routes | None | Tool windows. See [Tools Overview](#/tools/overview). |
+| GET | `/docs` | None | This documentation. `404` when `DOCS_ENABLED=false`. |
+| GET | `/gateway` | None | Redirects (`302`) to `/dashboard` on the gateway server port. See [Dashboard](#/gateway/dashboard). |
 | GET | `/service-worker.js` | None | Service worker that caches sprites and assets |
 | GET | `/img/...`, `/fonts/...` | None | Images and fonts, cached for one hour |
 
@@ -185,7 +189,7 @@ Any other path redirects to `/` with a `301`.
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | `/api/gateway/servers` | None | The realm list, read from the gateway server |
-| GET | `/api/gateway/connection-token` | None | A signed connection token valid for 60 seconds. Refused with `403` while the caller's account has an open 2FA challenge. |
+| GET | `/api/gateway/connection-token` | Token | A signed connection token for the caller's account, valid for 60 seconds. Refused with `403` while the account has an open 2FA challenge, has not verified its email, or needs a subscription. |
 | POST | `/api/client-log` | Token | Forward browser console errors to the server log. Limited to 120 lines per minute per player. |
 
 ### Profile
@@ -205,6 +209,18 @@ Any other path redirects to `/` with a `301`.
 | POST | `/api/profile/remove-webauthn` | Token and password | Remove a security key |
 | POST | `/api/profile/auth-webauthn` | Token | Get assertion options to prove a key for a profile change |
 | POST | `/api/profile/2fa-requirements` | Token | Switch a login requirement on or off |
+
+### Characters, subscriptions and documentation
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/character` | Token, no open challenge | Whether the account still has to create its character, and the classes to choose from |
+| POST | `/api/character` | Token, no open challenge | Create the character of the class in `classId` |
+| GET | `/api/subscription` | Token, no open challenge | The account's subscription state |
+| POST | `/api/subscription/checkout` | Token, no open challenge | Start a Stripe checkout. Refused for guests. |
+| POST | `/api/subscription/portal` | Token, no open challenge | Open the Stripe customer portal |
+| POST | `/api/stripe/webhook` | Stripe signature | Subscription events from Stripe. See [Configuration](#/gateway/configuration/player-subscriptions). |
+| GET | `/api/docs` | Token for sections that are not public | The documentation manifest, one page with `?page=<id>`, or the search index with `?search` |
 
 ### Two-factor challenge
 

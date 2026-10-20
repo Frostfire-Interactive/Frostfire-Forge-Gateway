@@ -34,7 +34,7 @@ bun development     # uses .env.development
 bun production      # uses .env.production
 ```
 
-It has no database and no build step. On start it resolves the assets folder, loads everything, then begins answering requests. The variables it reads are listed in [Configuration](#/assets/configuration).
+It has no database and no build step. On start it resolves the assets folder, opens its listeners, then loads everything. The variables it reads are listed in [Configuration](#/assets/configuration).
 
 ## Loading at startup
 
@@ -63,7 +63,7 @@ Files are read at startup only. There is no file watcher and no reload endpoint,
 
 ## The in-memory cache
 
-Everything that was loaded is kept in a cache and served from there. No request reads an asset file from disk, with one exception: the tiles of a world.
+Everything that was loaded is kept in a cache and served from there. No request reads an asset file from disk, with one exception: the tiles and files of a world.
 
 | Cache key | Contents |
 | --- | --- |

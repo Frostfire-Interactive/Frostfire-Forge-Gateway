@@ -33,7 +33,7 @@ packs/
   ...
 ```
 
-Worlds are written by the project's map generator and can be edited in Tiled with the [Frostfire Worlds for Tiled](#/tools/tiled-worlds) extension. The asset server reads them, serves them and applies editor saves to them.
+Worlds are written by the project's map generator, or made blank with **New map** in the [map editor](#/tools/map-editor), and can be edited in Tiled with the [Frostfire Worlds for Tiled](#/tools/tiled-worlds) extension. The asset server reads them, serves them and applies editor saves to them.
 
 :::warning A world and a map cannot share a name
 If `maps/continent.json` and `maps/continent.world` both exist, the world is skipped at startup and an error is logged. Remove one of the two.
@@ -150,6 +150,7 @@ A pack file (`packs/r<px>_<py>.ffp`) holds the tiles of `packChunks * packChunks
 | 14 | u16 | `packChunks` |
 | 16 | u16 | Number of tile layers |
 | 20 | u32 | Pack revision |
+| 24 | u64 | Generation id of the world |
 | 32 | u64 | Pack hash |
 
 The asset server checks the magic number, version, header size, position, chunk size, pack size and layer count against the manifest before it trusts a pack.
@@ -165,6 +166,7 @@ The entry for a chunk is at index `localY * packChunks + localX`, where `localX 
 | 8 | u32 | Length after decompression |
 | 12 | u8 | Codec: `0` none, `1` zlib |
 | 14 | u16 | Layer mask: bit `i` is set when tile layer `i` has tiles in this chunk |
+| 16 | u64 | xxHash64 of the record before compression |
 | 24 | u32 | Revision of this chunk |
 
 ### Chunk records

@@ -114,8 +114,8 @@ Every gameplay hook the engine emits. The `Area` column is there for the filter 
 | Session | `onPlayerLogout` | `{ player }` | The client sent `LOGOUT` and the player's location was saved |
 | Session | `onPlayerDisconnect` | `{ player }` | A logged-in player's connection ended and their in-memory state was cleaned up |
 | Session | `onPlayerStealthChange` | `{ player, isStealth }` | An admin toggled stealth |
-| Combat | `onPlayerDamaged` | `{ attacker, target, damage, isCrit }` | A player took damage from a spell, an area splash, a damage-over-time tick or a creature. For a creature `attacker` is `{ id, username, isCreature: true }`. It can be `null` for a tick whose caster is offline |
-| Combat | `onPlayerHealed` | `{ caster, target, amount, source }` | A player was healed by a direct heal or a heal-over-time tick. `source` is the spell name |
+| Combat | `onPlayerDamaged` | `{ attacker, target, damage, isCrit }` | A player took damage from a spell, an area splash, a damage-over-time tick, a creature or a tornado. For a creature `attacker` is `{ id, username, isCreature: true }`, and for a tornado `{ id: "tornado", username: "Tornado", isCreature: true }`. It can be `null` for a tick whose caster is offline |
+| Combat | `onPlayerHealed` | `{ caster, target, amount, source }` | A player was healed by a direct heal, a heal-over-time tick or a consumable. `source` is the spell name, or the item name for a consumable |
 | Combat | `onPlayerDeath` | `{ player, killer }` | A player died and the death packets were sent |
 | Combat | `onPlayerGhostReleased` | `{ player }` | A dead player released their spirit |
 | Combat | `onPlayerRevived` | `{ player }` | A player came back to life: `/revive`, an accepted revive offer, or a graveyard revive |
@@ -138,9 +138,10 @@ Every gameplay hook the engine emits. The `Area` column is there for the filter 
 | Social | `onPlayerChat` | `{ player, message, mapName }` | A local chat message was sent. `message` is the text other players see |
 | Social | `onPartyChat` | `{ player, message, partyMembers }` | A party chat message was sent. `partyMembers` is a list of usernames |
 | Social | `onGuildChat` | `{ player, message, guildMembers, guildId }` | A guild chat message was sent. `guildMembers` is a list of usernames |
+| Social | `onOfficerChat` | `{ player, message, officers, guildId }` | A guild officer chat message was sent. `officers` is the list of usernames whose rank may listen |
 | Social | `onPartyInvite` | `{ inviterUsername, invitedUsername }` | A party invitation was sent through the `INVITE_PARTY` packet |
 | Social | `onPartyChanged` | `{ type, username, kickedUsername, members }` | A party gained or lost a member, see the shapes below |
-| Social | `onGuildChanged` | `{ type, guildId, guildName, playerUsername, kickedUsername }` | A guild was created, joined, left or disbanded, or a member was kicked |
+| Social | `onGuildChanged` | `{ type, guildId, guildName, playerUsername, kickedUsername, targetUsername }` | A guild was created, joined, left or disbanded, a member was kicked, promoted or demoted, a note, the message of the day or a rank changed, or the leader handed the guild on |
 | Social | `onVendorBuy` | `{ player, npcId, item, quantity, coins }` | A player bought from a vendor, or bought back something they sold. `coins` is the copper paid for all of it |
 | Social | `onVendorSell` | `{ player, npcId, item, quantity, coins }` | A player sold an item to a vendor. `coins` is the copper they were paid |
 | Social | `onItemUsed` | `{ player, item, health, stamina, home }` | A player used a consumable. `health` and `stamina` are what it gave back. For the home item both are 0 and `home` is where they arrived, `{ map, x, y }`: it fires once the cast has finished and they have been moved. Otherwise `home` is `null` |
@@ -166,7 +167,7 @@ Every gameplay hook the engine emits. The `Area` column is there for the filter 
 
 ### Declared but never emitted
 
-Three names exist in `Events` and have payload types, but no code emits them. A handler for them never runs.
+Three names exist in `Events`, but no code emits them. A handler for them never runs.
 
 | Constant | Name |
 |----------|------|
@@ -229,8 +230,14 @@ listener.on(Events.PLAYER_LEVEL_UP, ({ player, level }) => {
 | `leave` | The player who left | not set |
 | `kick` | The player who kicked | The player who was removed |
 | `disband` | The leader who disbanded it | not set |
+| `promote` | The player who promoted | not set |
+| `demote` | The player who demoted | not set |
+| `motd` | The player who set the message of the day | not set |
+| `note` | The player who set the note | not set |
+| `rank` | The leader who added, changed or removed a rank | not set |
+| `transfer` | The leader who handed the guild on | not set |
 
-`guildId` and `guildName` identify the guild in every case.
+`guildId` and `guildName` identify the guild in every case. For `promote`, `demote`, `note` and `transfer`, `targetUsername` is the member it was done to.
 
 ### onSpellFailed reasons
 
@@ -243,8 +250,11 @@ listener.on(Events.PLAYER_LEVEL_UP, ({ player, level }) => {
 | `no_effects` | The spell has no damage and no effects |
 | `nopvp` | PvP is not allowed where the caster or the target stands |
 | `range` | The target is out of range |
-| `path_blocked` | No line of sight to the target |
+| `path_blocked` | No line of sight to the target, or the caster or the target is in stealth |
 | `direction` | The caster is not facing the target |
+| `invalid_direction` | The caster has no facing direction |
+| `dead` | The caster is dead |
+| `different_map` | The target is on another map |
 | `invalid_target` | Creature targets only: the creature cannot be targeted, or the spell cannot be used on creatures |
 | `unknown` | Any other failed check |
 

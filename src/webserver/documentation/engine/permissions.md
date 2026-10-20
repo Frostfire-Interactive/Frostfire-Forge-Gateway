@@ -15,7 +15,7 @@ An account has two separate things, and most admin features need the right one o
 | Admin role | `accounts.role` (`1` is admin) | A single on or off flag, toggled with `/admin`. On the player object it is `isAdmin`. |
 | Permissions | `permissions` table, one row per player | A comma-separated list of node names such as `admin.ban,tools.*` |
 
-The role and the list are independent. Holding `admin.*` does not make a player an admin, and being an admin gives no permission node. The two meet in one rule: `/permission add` and `/permission set` only work on a player who already has the admin role.
+The role and the list are independent. Holding `admin.*` does not make a player an admin, and being an admin gives no permission node. The two meet in two rules: `/permission add` and `/permission set` only work on a player who already has the admin role, and taking the admin role away clears the player's permissions.
 
 ## Storage
 
@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS permission_types (
 
 `permissions.permissions` holds the whole list for one player as text, for example `admin.*,server.*,permission.*`. A player with no permission has no row.
 
-`permission_types` is the list of names that may be granted. The setup script fills it and nothing writes to it while the server runs.
+`permission_types` is the list of names that may be granted. The setup script fills it. When the server starts, the class, mailbox, gathering and achievement editors add their own node if it is missing. Nothing else writes to it.
 
 :::warning The list is limited to 255 characters
 The column is 255 characters wide. The player editor and the control panel refuse a list that is longer. Use the wildcard nodes to keep lists short.
@@ -50,7 +50,7 @@ permissions: typeof playerData.permissions === "string"
 
 Most checks read that array. `/permission` and the player editor update it for an online player as soon as they change the database, so a change applies without a relog.
 
-A few checks do not trust the login copy and read the stored list on every packet instead: saving a map, the particle and NPC save packets, and the spell, weather and player editors. Those reads are answered from the engine's data cache, not from the database. See [Caching](#/engine/caching).
+A few checks do not trust the login copy and read the stored list on every packet instead: saving or creating a map, saving tile sounds, the particle save, rename, delete and test packets, and the spell, weather, class, mailbox, gathering, achievement and player editors. Those reads are answered from the engine's data cache, not from the database. See [Caching](#/engine/caching).
 
 ## How a check works
 
@@ -74,15 +74,15 @@ What follows from that:
 - `admin.*` is a literal node. It works because every `admin.` check lists it, not because `*` is expanded.
 - A wildcard only covers its own group. `admin.*` does not satisfy a `server.` or `tools.` check.
 - A name that no check lists does nothing, even if it looks like it should. `admin.ba*` or `*` grant nothing.
-- A few checks accept more than one group. The item, quest and creature editors also accept `server.*`, and the spell and weather editors also accept `server.admin` and `server.*`.
+- A few checks accept more than one group. The item, quest and creature editors also accept `server.*`, and the spell, weather, class, mailbox, gathering and achievement editors also accept `server.admin` and `server.*`.
 
 ## Wildcards
 
 | Wildcard | Covers |
 |----------|--------|
 | `admin.*` | Every `admin.` node in the table below |
-| `server.*` | Every `server.` node. Also opens the item, quest, creature, spell and weather editors, and lets its holder grant any permission |
-| `permission.*` | `permission.add`, `permission.remove` and `permission.list`. Also lets its holder grant any permission |
+| `server.*` | Every `server.` node. Also opens the item, quest, creature, spell, weather, class, mailbox, gathering and achievement editors, and lets its holder grant any permission |
+| `permission.*` | `permission.add`, `permission.remove` and `permission.list`. Also lets its holder grant any permission outside the `server.` group |
 | `tools.*` | Every `tools.` node |
 
 ## All nodes
@@ -109,9 +109,10 @@ Every node name found in the engine source, and where it is checked.
 | `admin.weather` | `/weather` | Yes |
 | `admin.reloadmap` | `/reloadmap` | No |
 | `admin.whitelist` | `/whitelist` | Yes |
+| `admin.subscription` | `/subscription` | Yes |
 | `admin.permission` | `/permission` (the command itself) | Yes |
-| `admin.items` | `/give`, `/drop`, `/spawnchest` | MySQL only |
-| `admin.loot` | `/loottable`, `/looteditor`, every loot editor packet | MySQL only |
+| `admin.items` | `/give`, `/drop`, `/spawnchest` | Yes |
+| `admin.loot` | `/loottable`, `/looteditor`, every loot editor packet | Yes |
 | `admin.drag` | Dragging another player (`DRAG_PLAYER_START`, `DRAG_UPDATE`, `DRAG_PLAYER_STOP`) | Yes |
 | `admin.disconnect` | Nothing. Seeded, but no check reads it | Yes |
 | `permission.*` | Wildcard for the three nodes below | Yes |
@@ -119,7 +120,7 @@ Every node name found in the engine source, and where it is checked.
 | `permission.remove` | `/permission remove` and `clear`, removing permissions in the player editor | Yes |
 | `permission.list` | `/permission list` | Yes |
 | `server.*` | Wildcard for every `server.` node | Yes |
-| `server.admin` | `/admin`, `/player edit` and the player editor, saving a map, saving, renaming, deleting and testing particles, adding, saving, moving and deleting NPCs, the spell and weather editors | Yes |
+| `server.admin` | `/admin`, `/player edit` and the player editor, saving and creating maps, saving tile sounds, saving, renaming, deleting and testing particles, listing, adding, saving, moving and deleting NPCs, the spell, weather, class, mailbox, gathering and achievement editors | Yes |
 | `server.gateway` | Opening the gateway monitoring dashboard (with the admin role). See [Monitoring Dashboard](#/gateway/dashboard/logging-in) | Yes |
 | `server.notify` | `/notify`, `/broadcast` | Yes |
 | `server.restart` | `/restart` | Yes |
@@ -128,10 +129,10 @@ Every node name found in the engine source, and where it is checked.
 | `tools.tile_editor` | `/tileeditor` | Yes |
 | `tools.npc_editor` | `/npceditor`, listing particles for the NPC editor | Yes |
 | `tools.particle_editor` | `/particleeditor`, listing particles | Yes |
-| `tools.creature_editor` | `/creatureeditor` and every creature editor packet | MySQL only |
-| `tools.item_editor` | `/itemeditor` and every item editor packet | MySQL only |
-| `tools.spell_editor` | `/spelleditor` and every spell editor packet | MySQL only |
-| `tools.quest_editor` | `/questeditor` and every quest editor packet | MySQL only |
+| `tools.creature_editor` | `/creatureeditor` and every creature editor packet | Yes |
+| `tools.item_editor` | `/itemeditor` and every item editor packet | Yes |
+| `tools.spell_editor` | `/spelleditor` and every spell editor packet | Yes |
+| `tools.quest_editor` | `/questeditor` and every quest editor packet | Yes |
 | `tools.weather_editor` | `/weathereditor` and every weather editor packet | Yes |
 | `tools.class_editor` | `/classeditor` and every class editor packet | Yes (and added at server start) |
 | `tools.mailbox_editor` | `/mailbox` and every mailbox editor packet | Yes (and added at server start) |
@@ -139,7 +140,7 @@ Every node name found in the engine source, and where it is checked.
 | `tools.achievement_editor` | `/achievements` and every achievement editor packet | No (added at server start only) |
 | `tools.entity_editor` | Nothing. Seeded by the SQLite setup only, no check reads it | SQLite only |
 
-"Seeded" means the setup script inserts the name into `permission_types`. "MySQL only" means `src/utility/database_setup.ts` inserts it and `src/utility/database_setup_sqlite.ts` does not.
+"Seeded" means the setup script inserts the name into `permission_types`. "SQLite only" means `src/utility/database_setup_sqlite.ts` inserts it and `src/utility/database_setup.ts` does not.
 
 ### Nodes that are not seeded
 
@@ -159,8 +160,6 @@ INSERT INTO permission_types (name) VALUES
   ('admin.reloadmap');
 ```
 
-The same applies to the "MySQL only" rows on a SQLite development database.
-
 :::note Restart after editing permission_types
 The engine reads `permission_types` into its data cache at startup and nothing refreshes it while the server runs. Restart the engine after inserting rows.
 :::
@@ -174,9 +173,9 @@ These do not look at the permission list at all. They only ask whether the playe
 | `/controlpanel` and every control panel packet | Admin role, has a username, not a guest |
 | `NOCLIP` and `STEALTH` packets | Admin role |
 | Map editor live sync (`EDITOR_OPEN`, `EDITOR_TILE_EDIT`, `EDITOR_LAYER_LOCK`) | Admin role |
-| Item, quest, creature, spell and weather editors | Admin role is enough by itself, a matching `tools.` node also works |
+| Item, quest, creature, spell, weather, class, mailbox, gathering and achievement editors | Admin role is enough by itself, a matching `tools.` node also works |
 
-The loot editor and the player editor are the exceptions among the tools: being an admin is not enough for them. The loot editor needs `admin.loot` or `admin.*`, and the player editor needs `server.admin` or `server.*`.
+The map, particle, NPC, loot and player editors are the exceptions among the tools: being an admin is not enough for them. The map, particle and NPC editors need their `tools.` node or `tools.*`, the loot editor needs `admin.loot` or `admin.*`, and the player editor needs `server.admin` or `server.*`.
 
 ## Granting permissions
 
@@ -188,7 +187,7 @@ The loot editor and the player editor are the exceptions among the tools: being 
 /permission list alice
 ```
 
-The granter needs `admin.permission` (or `admin.*`) plus the permission of the mode, and can only hand out a node they hold themselves unless they hold `permission.*` or `server.*`. The full rules are on the [Admin Commands](#/engine/admin-commands/permissions) page.
+The granter needs `admin.permission` (or `admin.*`) plus the permission of the mode, and can only hand out a node they hold themselves, directly or through its group's wildcard. `permission.*` covers every node outside the `server.` group, and `server.*` covers every node. The full rules are on the [Admin Commands](#/engine/admin-commands/permissions) page.
 
 ### With the tools
 
@@ -210,7 +209,7 @@ The engine reloads a player's cached rows when they log in, so a row written wit
 
 ## The permissions module
 
-`src/systems/permissions.ts` is the only code that reads or writes the two tables. It keeps each player's row in the data cache and writes the database first, then the cache.
+`src/systems/permissions.ts` is the module the commands and tools use to read and write the two tables. It keeps each player's row in the data cache and writes the database first, then the cache.
 
 | Method | Returns | What it does |
 |--------|---------|--------------|

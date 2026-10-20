@@ -4,7 +4,7 @@ description: The admin dashboard of a game server: live charts, players, message
 order: 20
 ---
 
-The control panel is a dashboard for the admins of one game server. It shows how the server is doing and gives a control for every admin command, each running under that command's own permission. This page walks through its six pages and explains how its actions are checked.
+The control panel is a dashboard for the admins of one game server. It shows how the server is doing and gives a control for every admin command, each running under that command's own permission. This page walks through its seven pages and explains how its actions are checked.
 
 ## Opening it
 
@@ -46,6 +46,7 @@ Inside the panel, every control stands for one admin command and is checked with
 | See, give, take, set and clear permissions | `/permission` | `admin.permission` or `admin.*`, plus `permission.list`, `permission.add` or `permission.remove` (or `permission.*`) for the part used |
 | Send message | `/broadcast` | `server.notify` or `server.*` |
 | Whitelist switch, add and remove | `/whitelist` | `admin.whitelist` or `admin.*` |
+| Subscription switches | `/subscription` | `admin.subscription` or `admin.*` |
 | Schedule restart, Cancel restart | `/restart` | `server.restart` or `server.*` |
 | Shut down | `/shutdown` | `server.shutdown` or `server.*` |
 | Reload map | `/reloadmap` | `admin.reloadmap` or `admin.*` |
@@ -172,6 +173,7 @@ The reported player is never told about a report, and the list refreshes on its 
 | Status | State, time running, start time, players online with the peak, memory in use and server lag |
 | Creatures | How many creatures exist, are awake and are in combat, the number of maps with creatures, and how long a typical, a slow and the slowest round of moving them takes |
 | Whitelist | The on and off switch, and a username field with "Add to whitelist" and "Remove from whitelist" |
+| Subscriptions | Shown when the server supports subscriptions. One switch per part of the game, such as Log In, Chat or Trade: switched on, that part needs a subscription. The switches are off while Stripe is not set up. |
 | Restart | "Schedule restart" and "Cancel restart" |
 | Shut down | Stops the server |
 
@@ -187,10 +189,10 @@ Things to know:
 | --- | --- |
 | Worlds | Every world, the weather it has now with its readings, and how many players are in it. Your own world is marked. |
 | Weather | The weather over the map you are on now, with its temperature, humidity, wind and how much rain or snow falls, and a control to change it |
-
-What a world is set to is not always what it has. A world set to `random` shows whichever weather the server settled on, and a world set to `weather_api` shows the last reading of the real place it follows. Both name the weather they have now, with what it is set to beside it. Temperatures are in Fahrenheit and wind in miles an hour, as the weather table keeps them. A clear sky has no readings.
 | Reload a map | Reads a map again and sends it to everyone on it |
 | Your character | Warp to another map, plus the Noclip and Stealth switches |
+
+What a world is set to is not always what it has. A world set to `random` shows whichever weather the server settled on, and a world set to `weather_api` shows the last reading of the real place it follows. Both name the weather they have now, with what it is set to beside it. Temperatures are in Fahrenheit and wind in miles an hour, as the weather table keeps them. A clear sky has no readings.
 
 - Warping puts you in the middle of the map you pick.
 - Noclip lets you walk through anything that would stop you.
@@ -209,7 +211,7 @@ Weathers themselves are made in the [Weather Editor](#/tools/weather-editor).
 A chest is filled in one of two ways:
 
 - **From a loot table.** The chest rolls what it holds from the table when it is opened.
-- **With chosen items.** You list the rows yourself, up to 20, each with an item and an amount.
+- **With chosen items.** You list the rows yourself, up to 20, each with an item, the fewest and most that drop, and a chance in percent.
 
 Each row of a loot table has an item, the fewest and most that drop, a chance in percent and a quality (common, uncommon, rare, epic or legendary). The same tables can be edited in the dedicated [Loot Editor](#/tools/loot-editor).
 

@@ -104,7 +104,7 @@ A single Bun process can drive a few thousand WebTransport clients before its ow
   Benchmark Complete
 ------------------------------------------------------------
 
-  Test Duration: 120.4s
+  Test Duration: 120.40s
   All 500 clients remained connected
 
   Latency Statistics:
@@ -230,7 +230,7 @@ Connections are opened in batches of 10 with a 100 ms pause between batches, abo
     Total Attempted: 1000
     Opened:         1000
     Failed:         0
-    Active at End:  1000 (All connections held)
+    Active at End:  1000 ✓ All connections held
 ```
 
 | Line | Meaning |

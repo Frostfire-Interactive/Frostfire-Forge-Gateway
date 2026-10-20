@@ -130,7 +130,7 @@ Type `/g` and press **Space** to keep the chat box in guild mode. See [Chat and 
 
 ## Officer chat
 
-Officer chat is a second guild channel, shown in green. Only members whose rank has **Hear officer chat** receive it, and only ranks with **Talk in officer chat** can send to it.
+Officer chat is a second guild channel, shown in yellow-green. Only members whose rank has **Hear officer chat** receive it, and only ranks with **Talk in officer chat** can send to it.
 
 ```text title="Officer chat"
 /o Raid plan is up

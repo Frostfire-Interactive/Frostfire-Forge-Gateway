@@ -32,7 +32,7 @@ The project is a work in progress. Expect configuration and file formats to chan
 - **In-memory caches**, optionally backed by Redis. See [Caching](#/engine/caching).
 - **Data driven gameplay**: [spells](#/engine/spells), [quests](#/engine/quests), items, loot tables, creatures with AI and pathfinding, NPCs, mounts, particles and [weather](#/engine/weather).
 - **Social systems**: parties, guilds, friends, chat and currency.
-- **Large worlds** of up to 10240 x 10240 tiles, loaded as `.world` directories. See [World maps](#/engine/world-maps).
+- **Large worlds** of up to 16384 x 16384 tiles, loaded as `.world` directories. See [World maps](#/engine/world-maps).
 - **Plugins** that add packets, HTTP routes, spells and event listeners without touching engine code. See [Plugins](#/engine/plugins), [Engine API](#/engine/engine-api) and [Listener events](#/engine/listener-events).
 - **Admin tooling**: [admin commands](#/engine/admin-commands), a [permission system](#/engine/permissions) and a per realm [whitelist](#/engine/realm-whitelist).
 - **Load testing** tools for connections and simulated players. See [Benchmarking](#/engine/benchmarking).

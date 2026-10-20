@@ -74,7 +74,7 @@ A quest can have several givers and several enders, and the giver and the ender 
 
 ## A complete example
 
-The setup script seeds two chained quests. This is the same data written as plain SQL.
+The setup script seeds two chained quests, without NPC links. This is the same data written as plain SQL, with the links added.
 
 ```sql title="A quest with one objective of each type"
 INSERT INTO quests
@@ -149,6 +149,8 @@ The client sends `NPC_INTERACT` with the NPC's id. The server:
 | More than one | `NPC_GOSSIP` with the list, and the player picks one (`QUEST_SELECT`) |
 
 Quests that are locked by level or by a missing prerequisite are hidden, and do not count toward the "exactly one" rule.
+
+A vendor or an innkeeper never skips the list: with one or more quests it always answers `NPC_GOSSIP`. A vendor (that is not also an innkeeper) with nothing to show opens its goods instead.
 
 Each player may send at most 5 quest packets of one kind in 3 seconds. Extra ones are dropped.
 
@@ -244,7 +246,7 @@ Counts never go above `required_count`.
 
 ### Turning in
 
-The client sends `QUEST_TURN_IN` with `npcId`, `questId` and, when the quest has a choice set, `rewardChoiceIndex`. The server checks distance, the NPC's `ender` role and that the quest is `ready`, grants the rewards, then marks the quest `completed`.
+The client sends `QUEST_TURN_IN` with `npcId`, `questId` and, when the quest has a choice set, `rewardChoiceIndex`. The server checks distance, the NPC's `ender` role and that the quest is `ready`, takes the items that `collect` objectives asked for from the player's bags, grants the rewards, then marks the quest `completed`. All of this is saved together or not at all.
 
 On success the client gets `QUEST_LOG_ENTRY` (entry removed), `QUEST_COMPLETED` with `questId`, `xp`, `copper`, `items` and `nextQuestId`, and fresh inventory, currency and stats. `nextQuestId` is the quest's `next_quest_id`, which lets the client open the follow-up straight away.
 
@@ -264,6 +266,7 @@ Every refusal is a `QUEST_ERROR` packet with a `code` and a `message`.
 | `not_active` | The quest is not in the player's log |
 | `not_ready` | Objectives are not all met |
 | `bad_choice` | The quest has a choice set and no valid choice was sent |
+| `missing_items` | The player no longer holds the spare items the `collect` objectives ask for |
 | `bag_full` | The rewards do not fit in the player's bags |
 | `bad_item` | A reward names an item that does not exist |
 | `bad_quantity` | A reward has an invalid quantity |
@@ -352,7 +355,7 @@ UPDATE quests SET repeatable = 'daily' WHERE id = 1;
 
 ## Quest markers
 
-The server sends `QUEST_MARKERS` with one marker per NPC on the player's map. It is sent after login, after every accept, abandon, turn-in and talk credit, and when the player levels up.
+The server sends `QUEST_MARKERS` with one marker for each NPC on the player's map that has one to show. It is sent after login, on entering a map, after every accept, abandon, turn-in, talk credit and kill credit, and when the player levels up.
 
 | Marker | When | Drawn by the client as |
 |--------|------|------------------------|

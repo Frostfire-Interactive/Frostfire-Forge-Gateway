@@ -27,7 +27,7 @@ Your details have to follow these rules:
 
 | Field | Rule |
 |-------|------|
-| Username | 3 to 15 characters. Letters, numbers and underscores only. |
+| Username | 3 to 15 characters. Letters, numbers and underscores only. It cannot start with "guest_" or be taken by another account. |
 | Password | 8 to 20 characters, with at least one uppercase letter, one lowercase letter, one number and one special character. |
 | Email | A valid address that is not already used by another account. |
 
@@ -59,7 +59,7 @@ If you log in somewhere else while your character is in the game, the older sess
 
 ## Play as a guest
 
-If the game has guest play switched on, select **Continue as guest** on the home page. You get a temporary character straight away, with no email or password.
+If the game has guest play switched on, select **Continue as guest** on the home page. You get a temporary account straight away, with no email or password.
 
 Guests can walk around and look at the world, but a lot is locked. As a guest you cannot:
 
@@ -67,8 +67,9 @@ Guests can walk around and look at the world, but a lot is locked. As a guest yo
 - Cast spells or attack creatures
 - Loot creatures
 - Join a party or guild, or add friends
+- Trade, send mail, or report or ignore players
 
-Other players cannot attack guests either. When you try a locked feature you will see "Please create an account to use that feature."
+Other players cannot attack guests either. When you try most locked features you will see "Please create an account to use that feature."
 
 :::note Guest characters are temporary
 Do not expect a guest character to be kept. Create an account if you want to keep your progress.
@@ -87,8 +88,11 @@ Each realm in the list shows:
 | Status | **Online**, **Full** or **Offline**. Offline realms cannot be selected. |
 | Latency | How quickly the realm answers you, in milliseconds. Lower is better. |
 | whitelist | Shown on realms that only let approved accounts in. |
+| PvP | Shown on realms where players can attack each other. |
 
 Select a realm to read its description, then select **Enter Realm**. The list refreshes by itself every few seconds.
+
+If your account has no character yet, you go to **Create Your Character** first. Choose a class and select **Create**, followed by the class name. Each account has one character.
 
 :::tip
 If you have a choice, pick the realm with the lowest latency. The game will feel more responsive.

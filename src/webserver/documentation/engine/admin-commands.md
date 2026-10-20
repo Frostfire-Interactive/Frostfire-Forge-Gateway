@@ -16,7 +16,7 @@ The client strips the leading `/` and sends the rest in a `COMMAND` packet. The 
 2. Decrypts the text if the client sent it encrypted (`mode: "decrypt"`).
 3. Splits it into parts on whitespace. Text inside double quotes stays one part.
 4. Upper-cases the first part and uses it as the command name. Command names are not case sensitive.
-5. Refuses everything except the chat channels (`P`, `PARTY`, `W`, `WHISPER`, `G`, `GUILD`) while the player is a corpse, with `You cannot do that while dead.`
+5. Refuses everything except the chat channels (`P`, `PARTY`, `W`, `WHISPER`, `G`, `GUILD`, `O`, `OFFICER`) while the player is a corpse, with `You cannot do that while dead.`
 
 ```ts title="src/socket/receiver.ts"
 const commandParts = decryptedMessage.match(/[^\s"]+|"([^"]*)"/g) || [];
@@ -60,9 +60,10 @@ Most commands take `<username | id>`. A value that is not a number is matched ag
 | `/restart` | none | `server.restart` or `server.*` | Starts, or cancels, a 15 minute restart countdown |
 | `/shutdown` | none | `server.shutdown` or `server.*` | Stops the server after a 5 second warning |
 | `/whitelist <on \| off \| add \| remove> [username]` | none | `admin.whitelist` or `admin.*` | Switches the realm whitelist or edits its list |
+| `/subscription <list \| lock \| unlock> [id]` | none | `admin.subscription` or `admin.*` | Lists or changes what players without a subscription cannot do |
 | `/warp <map>` | none | `admin.warp` or `admin.*` | Moves you to another map |
 | `/reloadmap <map>` | none | `admin.reloadmap` or `admin.*` | Reloads a map and resends it to everyone on it |
-| `/weather <name \| clear \| random \| weather_api>` | none | `admin.weather` or `admin.*` | Sets the weather of the world you are in |
+| `/weather <name \| clear \| random \| weather_api \| tornado>` | none | `admin.weather` or `admin.*` | Sets the weather of the world you are in |
 | `/give <username \| id> <item> [amount]` | none | `admin.items` or `admin.*` | Adds an item to a player's inventory |
 | `/drop <item> [amount]` | none | `admin.items` or `admin.*` | Drops loot on the ground at your position, for anyone to pick up |
 | `/spawnchest table <id>` or `/spawnchest inline ...` | none | `admin.items` or `admin.*` | Spawns a loot chest at your position |
@@ -109,7 +110,7 @@ Disconnects an online player. It refuses yourself (`You cannot disconnect yourse
 /unban <username | id>
 ```
 
-`/ban` looks for an online player first and then for the account in the database, so it works on offline players. It refuses yourself, an admin who is online, and an account that is already banned. An online target is disconnected as part of the ban.
+`/ban` looks for an online player first and then for the account in the database, so it works on offline players. It refuses yourself, an admin, and an account that is already banned. An online target is disconnected as part of the ban.
 
 `/unban` always looks the account up in the database.
 
@@ -182,7 +183,7 @@ Every completed trade is written to the `trade_log` table in the same transactio
 /setadmin <username | id>
 ```
 
-Flips the admin role of an account (`accounts.role`) and answers with `<Name> is now an admin` or `<Name> is now not an admin`. You cannot change your own role. If the target is online their client is told to reconnect so the new role applies.
+Flips the admin role of an account (`accounts.role`) and answers with `<Name> is now an admin` or `<Name> is now not an admin`. You cannot change your own role, or the role of a player who holds a permission you could not hand out yourself. Taking the role away also clears the account's permissions, stealth and noclip. If the target is online their client is told to reconnect so the new role applies.
 
 The admin role is separate from permissions. It gates the control panel, stealth, noclip and the map editor's live sync, and it is required before `/permission add` or `/permission set` will give anyone a permission.
 
@@ -277,7 +278,8 @@ Rules the handler enforces:
 - You cannot change your own permissions. `list` on yourself is allowed.
 - `add` and `set` only work on a player who has the admin role (`You can only grant permissions to admin players`). `remove`, `clear` and `list` work on anyone.
 - Every name must exist in the `permission_types` table, otherwise the answer is `Invalid permission: <name>`.
-- You can only hand out a permission you hold yourself, unless you hold `permission.*` or `server.*`.
+- You can only hand out a permission you hold yourself, directly or through its group's wildcard. `permission.*` lets you hand out any permission outside the `server.` group, and `server.*` lets you hand out any permission. Otherwise the answer is `You cannot grant the <name> permission`.
+- Every mode except `list` is refused on a player who holds a permission you could not hand out yourself.
 - Each change is written to the server log with a `[PERMISSION_AUDIT]` prefix.
 
 ```text title="Examples"
@@ -341,6 +343,20 @@ Warns every player, waits 5 seconds, closes every connection, waits for the data
 
 `on` and `off` switch the realm whitelist at runtime. `add` and `remove` only work while it is on, and neither accepts your own username. See [Realm Whitelist](#/engine/realm-whitelist) for what the switch does.
 
+### /subscription
+
+```text title="Syntax"
+/subscription list
+/subscription lock <id>
+/subscription unlock <id>
+```
+
+`list` says whether subscriptions are on and which features are locked for players who are not subscribed, then lists every lock id. `lock` and `unlock` change one lock. An id that is not a lock answers with the usage line.
+
+```text title="Example"
+/subscription lock trade
+```
+
 ## World
 
 ### /warp
@@ -366,10 +382,10 @@ Reads the map again and sends a fresh `LOAD_MAP` to every player on it.
 ### /weather
 
 ```text title="Syntax"
-/weather <weather_name | clear | random | weather_api>
+/weather <weather_name | clear | random | weather_api | tornado>
 ```
 
-Sets the weather of the world you are standing in and sends `CHANGE_WEATHER` to everyone on that map. A name must exist in the weather data unless it is one of the three keywords. See [Weather](#/engine/weather) for what each keyword means.
+Sets the weather of the world you are standing in and sends `CHANGE_WEATHER` to everyone on that map. A name must exist in the weather data unless it is one of the four keywords. See [Weather](#/engine/weather) for what each keyword means.
 
 ```text title="Example"
 /weather rainy
@@ -457,7 +473,7 @@ These commands only tell the client to open a window. Each editor checks permiss
 | `/controlpanel` | `/cp` | Admin role, not a guest | [Control panel](#/tools/control-panel) |
 
 :::warning Opening an editor is not the same as saving from it
-Saving a map (`SAVE_MAP`), saving, renaming, deleting or testing a particle, and adding, saving, moving or deleting an NPC each check `server.admin` or `server.*`. A player who only holds `tools.tile_editor`, `tools.particle_editor` or `tools.npc_editor` can open the window but cannot save from it.
+Saving or creating a map, saving tile sounds, saving, renaming, deleting or testing a particle, and listing, adding, saving, moving or deleting NPCs each check `server.admin` or `server.*`. A player who only holds `tools.tile_editor`, `tools.particle_editor` or `tools.npc_editor` can open the window but cannot save from it.
 :::
 
 `/player edit` takes the connection id of an online player or an account id. The target can be offline.

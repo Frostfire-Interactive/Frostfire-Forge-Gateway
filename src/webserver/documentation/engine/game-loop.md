@@ -8,7 +8,7 @@ The engine has no single "update everything" loop. Movement runs on a 30 Hz loop
 
 ## The movement loop
 
-`src/services/gameloop.ts` exports one `gameLoop` object. It ticks every `1000 / 30` milliseconds and does nothing at all when nobody is moving.
+`src/services/gameloop.ts` exports one `gameLoop` object. It ticks every `1000 / 30` milliseconds. Each tick first runs the tick hooks (the tornado pull is one), then steps the movers. When nobody is moving, the hooks are all it does.
 
 ```ts title="src/services/gameloop.ts"
 private readonly FRAME_TIME = 1000 / 30;
@@ -19,6 +19,13 @@ start(): void {
 }
 
 private async tick(): Promise<void> {
+  for (const hook of this.tickHooks) {
+    try {
+      await hook();
+    } catch (error) {
+      log.error(`A game loop hook failed: ${error}`);
+    }
+  }
   if (this.movingPlayers.size === 0) return;
 
   const tickPromises: Promise<void>[] = [];
@@ -38,6 +45,7 @@ A player enters the loop when they start walking and leaves it when they stop.
 | Method | Purpose |
 |--------|---------|
 | `start()` / `stop()` | Start or stop the interval |
+| `addTickHook(hook)` | Run a function at the start of every tick, before the movers step, whether or not anyone is moving |
 | `registerMovingPlayer(playerId, moveCallback)` | Add a mover, or replace the callback of one that is already moving |
 | `unregisterMovingPlayer(playerId)` | Remove a mover |
 | `isPlayerMoving(playerId)` | Whether the player is in the loop |
@@ -122,10 +130,10 @@ The gameplay events (`onPlayerDeath`, `onSpellCast` and the rest) are listed on 
 
 | Event | Built in work |
 |-------|---------------|
-| `onFixedUpdate` (100 ms) | Creature AI, movement and combat. Release of connections whose packet rate limit has expired. |
-| `onServerTick` (1 s) | Removes players whose connection is gone. Regenerates stamina (5% of the maximum) and, outside PvP, health (1% of the maximum), and sends the new values to the player and everyone who sees them. Drops the PvP flag 5 seconds after a player's last attack. Reports the connection count to the gateway client. Refreshes creature spells and navigation grids. Checks "reach this point" quest objectives. Every 5 minutes, reads the list of account names again. |
-| `onServerTick`, every 60 s | Compares each player's connection id with `accounts.session_id` in the database. A player whose account was logged in elsewhere is told so and disconnected. |
-| `onSave` (60 s) | Writes stats and location of every online, non guest player to the database |
+| `onFixedUpdate` (100 ms) | Creature AI, movement and combat. Gathering node spawns. Tornadoes forming, dying and hurting players. Release of connections whose packet rate limit has expired. |
+| `onServerTick` (1 s) | Removes players whose connection is gone. Regenerates stamina (5% of the maximum) and, outside PvP, health (1% of the maximum), and sends the new values to the player and everyone who sees them. Drops the PvP flag 5 seconds after a player's last attack. Reports the connection count to the gateway client. Refreshes creature spells and navigation grids. Checks "reach this point" quest objectives. Ends trades whose players may no longer trade. Every 5 minutes, reads the list of account names again. |
+| `onServerTick`, every 60 s | Compares each player's connection id with `accounts.session_id` in the database. A player whose account was logged in elsewhere is told so and disconnected. Reads the subscription tables again. |
+| `onSave` (60 s) | Writes stats and location of every online, non guest player to the database, and achievement progress |
 
 Dead players and ghosts do not regenerate.
 
@@ -218,7 +226,7 @@ The imports at the top of `server.ts` run first, and several of them do real wor
 
 1. **Certificate.** `ensureLocalCertificate` creates or renews a local certificate if needed. The certificate and key are read. Missing, unreadable or expired: the server throws. See [Networking](#/engine/networking/tls-is-mandatory).
 2. **Rate limit options** are read from `settings.json`, and the RSA key pair for chat encryption is generated.
-3. **Cached tables.** `await loadTables()` reads every table cache (parties, guilds and others) before any connection can ask for one. See [Caching](#/engine/caching).
+3. **Cached tables.** Missing tables and columns (subscriptions, classes, mail, achievements and others) are added first. Then `await loadTables()` reads every table cache (parties, guilds and others) before any connection can ask for one. See [Caching](#/engine/caching).
 4. **Whitelist.** If `WHITELIST=true`, the realm's usernames are loaded in the background.
 5. **Sprites.** `await spriteDataCacheReady`.
 6. **CORS origins** are parsed from `CORS_ALLOWED_ORIGINS`.
@@ -227,7 +235,7 @@ The imports at the top of `server.ts` run first, and several of them do real wor
 9. **WebTransport** starts on the UDP side of the game port. The server then connects to itself once, pinning its own certificate, to prove the listener accepts connections. A failure here stops startup.
 10. **Gateway.** `await gatewayClient.registerWithRetry()` blocks until the gateway accepts the registration. Map checksums are then synced in the background.
 11. **`onAwake` and `onStart`** are emitted. On `onAwake` the engine resets leftover account state and deletes guest data (`player.clear()`).
-12. **Game systems.** `gameLoop.start()`, `await creatures.init()`, then the party layer sync and layer condensing timers.
+12. **Game systems.** `gameLoop.start()`, `await creatures.init()`, `await gathering.init()`, `await achievements.init()`, then the party layer sync and layer condensing timers.
 13. **Plugins.** `loadPlugins`, `mergePluginSpellsIntoCache`, then `registerAllPlugins` with the `EngineAPI` object. A failure is logged as a warning and the server keeps running.
 14. **Tick timers** for `onFixedUpdate`, `onSave` and `onServerTick` start.
 
@@ -239,6 +247,8 @@ listener.emit(Events.START);
 
 gameLoop.start();
 await creatures.init();
+await gathering.init();
+await achievements.init();
 startAutoPartyLayerSync(sendAnimationTo);
 startAutoLayerCondensation(sendAnimationTo);
 
@@ -262,7 +272,7 @@ Step 10 never gives up. If the gateway is down, the engine keeps retrying (after
 
 ## Shutdown
 
-`SIGINT` and `SIGTERM` call `gracefulShutdown`: the movement loop stops, the server unregisters from the gateway, the WebTransport server and the HTTP servers are stopped, and the process exits with code 0.
+`SIGINT` and `SIGTERM` call `gracefulShutdown`: the movement loop stops, the server unregisters from the gateway, the WebTransport server and the HTTP servers are stopped, achievement progress is written (waiting at most 5 seconds), and the process exits with code 0.
 
 ```ts title="src/socket/server.ts"
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));

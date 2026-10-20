@@ -36,7 +36,7 @@ The editor uses the shared workbench described in [Tools Overview](#/tools/overv
 | Side pane | Search field, the list of all weathers, and New |
 | Top bar | The open weather, its state, then Duplicate, Delete and Save |
 | Banner | Which worlds are showing this weather right now |
-| Page | Four cards of fields, with the "In plain words" card beside them |
+| Page | Four cards of fields and three cards of sounds, with the "In plain words" card beside them |
 
 There are few weathers, so the whole list is held in the window. The search field only filters it as you type.
 
@@ -51,7 +51,7 @@ When the open weather is live somewhere, the banner reads "Showing now on" follo
 | Name | Lower case letters, digits, underscores and hyphens, starting with a letter or digit. Up to 45 characters. Fixed once saved. |
 
 :::warning The name decides what the game draws
-The client chooses its visuals by the weather's name, not by its numbers. Only the four names below draw rain, snow, lightning or darkness. A weather with any other name only carries its wind.
+The client chooses its visuals by the weather's name, not by its numbers. Only the names below draw rain, snow, sand, lightning or darkness. A weather with any other name only carries its wind.
 :::
 
 | Name | What the game draws |
@@ -60,6 +60,9 @@ The client chooses its visuals by the weather's name, not by its numbers. Only t
 | `thunderstorm` | Rain (snow below 32 degrees) and lightning strikes. Shadows are off and the scene is darkened as much as Ambience says. |
 | `snowy` | Snow as heavy as Precipitation says, which melts where it lands |
 | `darkness` | A near black scene, darkened as much as Ambience says, with no sun and no shadows. Lights and glowing particles carry it. |
+| `tornado` | A `thunderstorm` with one or two tornadoes on the map, which pull players in and hurt them. It also blows a sandstorm in desert zones and a blizzard in snow zones. Any thunderstorm also has a rare chance of a tornado. |
+| `sandstorm` | Only where the player stands in a desert zone, clear elsewhere: an orange tint, rolling dust and blowing sand, harsher the higher Wind speed is |
+| `blizzard` | Only where the player stands in a snow zone, clear elsewhere: a cold whiteout, rolling snow and driven flakes, harsher the higher Wind speed is. Flakes fall as much as Precipitation says. |
 
 These words can never be used as a name, because `/weather` gives them a meaning of their own: `random`, `none` and `weather_api`.
 
@@ -76,7 +79,7 @@ Wind draws wind streaks, slants rain and snow, and pushes particles that are set
 
 | Field | Range | Notes |
 | --- | --- | --- |
-| Ambience | 0 to 1 | How much `thunderstorm` and `darkness` darken the scene: 0 not at all, 1 fully black. No other name uses it. |
+| Ambience | 0 to 1 | How much `thunderstorm`, `tornado` and `darkness` darken the scene: 0 not at all, 1 fully black. No other name uses it. |
 
 ### Climate
 
@@ -85,6 +88,20 @@ Wind draws wind streaks, slants rain and snow, and pushes particles that are set
 | Temperature | -100 to 200 | Degrees Fahrenheit. Below 32, rain falls as snow. |
 | Humidity | 0 to 100 % | Only stored. Nothing in the game reads it. |
 | Precipitation | 0 to 100 % | How much rain or snow falls. It does not make rain fall on its own: the name does. |
+
+### Sounds
+
+There is a card for each kind of sound: **Rain sounds**, **Wind sounds** and **Thunder sounds**. Each holds up to 12 sounds, added with its Add button. A kind with no sounds is silent.
+
+| Field | Range | Notes |
+| --- | --- | --- |
+| Audio | Up to 100 characters | A file from the asset server's audio folder. The play button listens to it. |
+| From, To | Rain and thunder: 0 to 100 % of Precipitation. Wind: 0 to 150 mph of wind speed with its gusts. | Where the sound is heard. To must not be under From. |
+| Volume | 0 to 1 | 1 as loud as the game makes it, 0 silent |
+
+- Rain and wind sounds are loops. Where two ranges overlap, the lower fades into the higher.
+- Sounds with the same range are variants: one of them is picked each time the weather is shown.
+- A thunder sound is heard just after each lightning strike: one of the sounds whose range holds Precipitation, at random.
 
 The **In plain words** card beside the form describes what the open weather does in the game, including what its name draws.
 
@@ -96,7 +113,7 @@ The **In plain words** card beside the form describes what the open weather does
 | Save | `WEATHER_EDITOR_SAVE` | Validates and writes the `weather` row |
 | Delete | `WEATHER_EDITOR_DELETE` | Removes the row and moves affected worlds to `clear` |
 
-Each answer comes back as `WEATHER_EDITOR_RESULT` with the fresh list. Other admins with the editor open are told with `WEATHER_EDITOR_UPDATED`.
+The list comes back as `WEATHER_EDITOR_DATA`. Each answer to a save or delete comes back as `WEATHER_EDITOR_RESULT` with the fresh list. Other admins with the editor open are told with `WEATHER_EDITOR_UPDATED`.
 
 A saved weather is shown at once to the players of every world that shows it, including a world set to `random` that has settled on it.
 
@@ -110,7 +127,7 @@ Delete always asks for confirmation first.
 
 ## Tips
 
-- To make a variant of a storm, open `thunderstorm`, Duplicate it and change the numbers. Remember that the copy needs one of the four drawn names to show rain or lightning, and names must be unique, so a variant with a new name only keeps the wind.
+- To make a variant of a storm, open `thunderstorm`, Duplicate it and change the numbers. Remember that the copy needs one of the drawn names to show rain or lightning, and names must be unique, so a variant with a new name only keeps the wind.
 - For a calm overcast or windy day, create a weather with any new name and set only Wind speed and Wind direction.
 - Use Ambience in small steps. Values near 1 make the scene almost unreadable without light sources.
 - Test on a development world with `/weather <name>` before giving a new weather to a busy world.

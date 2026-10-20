@@ -117,11 +117,11 @@ The preview has no wind, so "Affected by weather" can only be judged in the game
 
 ## Saving
 
-The particle editor's conversation is indirect. The server does not answer a request from here by name. Instead the game window asks for the particle list again shortly after each change and passes it to the tool window, which checks whether what it asked for is now there and then reports "done" or "not done".
+The particle editor's conversation is indirect. The server does not answer a request from here by name. Instead the game window asks for the particle list again shortly after each create, duplicate, rename or delete and passes it to the tool window, which checks whether what it asked for is now there and then reports "done" or "not done".
 
 | Action | Packet | Server behaviour |
 | --- | --- | --- |
-| Open, refresh | `LIST_PARTICLES` | Sends every particle |
+| Open, refresh | `LIST_PARTICLES` | Sends every particle as `PARTICLE_LIST` |
 | Create, Save, Duplicate | `SAVE_PARTICLE` | Adds the particle or updates the one with that name, then sends the update to players |
 | Rename | `RENAME_PARTICLE` | Renames the particle and every NPC, spell and mount reference to it |
 | Delete | `DELETE_PARTICLE` | Removes the particle |

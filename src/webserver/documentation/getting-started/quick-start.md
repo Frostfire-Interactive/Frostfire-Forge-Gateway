@@ -141,7 +141,7 @@ bun development
 
 ```bash title="Check"
 curl http://localhost:9999/status
-# {"totalServers":0,"servers":[], ...}
+# {"totalServers":0,"servers":[]}
 ```
 
 :::note Port 80

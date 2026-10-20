@@ -17,10 +17,6 @@ While the server runs, almost nothing is read from the database on demand. Stati
 | `effectManager` | `src/services/effectmanager.ts` | Active spell effects of players who logged out | Disconnect to next login |
 | Row and table caches | `src/services/datacache.ts` | Copies of database rows | See [below](#/engine/caching/datacache-copies-of-database-rows) |
 
-:::note
-Older notes mention `src/services/entityCache.ts`. That file no longer exists: creatures are kept by the creature system's own registry.
-:::
-
 ## assetCache
 
 `assetCache` is a key and value store for game data that rarely changes. `src/modules/assetloader.ts` fills it at startup from the database and the asset server.
@@ -305,9 +301,9 @@ for (const username of new Set(accounts)) {
 
 | Kind | Names |
 |------|-------|
-| Per player rows | `accounts`, `stats`, `inventory`, `equipment`, `bags`, `currency`, `collectables`, `friends`, `permissions`, `learned_spells`, `quest_log`, `quest_progress` |
+| Per player rows | `accounts`, `stats`, `clientconfig`, `inventory`, `equipment`, `bags`, `currency`, `collectables`, `friends`, `ignores`, `permissions`, `learned_spells`, `quest_log`, `quest_progress`, `player_home`, `mail`, `player_achievements` |
 | Other rows | `account_ids`, `spell_usage` |
-| Tables | `parties`, `guilds`, `guild_ranks`, `guild_members`, `loot_tables`, `permission_types`, `account_names`, `stored_spells` |
+| Tables | `parties`, `guilds`, `guild_ranks`, `guild_members`, `loot_tables`, `permission_types`, `account_names`, `stored_spells`, `achievements`, `classes`, `gathering_areas`, `mailbox_spots`, `mutes`, `reports`, `trade_log`, `subscription_locks`, `subscription_status` |
 
 :::note Worker threads do not cache
 The login workers import the same systems on their own threads, where a write on the main thread could never reach them. `datacache` checks `Bun.isMainThread`: off the main thread every read goes straight to the database.

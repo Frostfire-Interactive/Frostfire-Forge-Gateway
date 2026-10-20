@@ -384,7 +384,7 @@ What it does:
 |------|--------|
 | `spell` is missing or has no `name` | Logs a warning and returns |
 | `effects` is missing or not an array | Set to `[]` |
-| `damage`, `mana`, `range`, `cast_time`, `cooldown` or `can_move` is not a number | Set to `0` |
+| `damage`, `mana`, `range`, `cast_time`, `cooldown` or `can_move` is missing (`null` or `undefined`) | Set to `0` |
 | `type` is empty | Set to `"spell"` |
 | A spell with the same `name` is already cached | Logs a warning and returns. The existing spell is kept |
 | Otherwise | The spell is added at the front of the cached list |

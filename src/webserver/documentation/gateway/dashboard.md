@@ -46,11 +46,11 @@ Opening `/dashboard` without a valid session redirects back to the login page.
 | Who is asking | `GET /api/session` answers `signed-out`, `forbidden` or `allowed`, read from the website's `token` cookie |
 | Login route | `POST /api/login` with no body. It opens a session for the qualifying account behind the `token` cookie |
 | Session cookie | `dashboard_session`, `HttpOnly`, `SameSite=Strict`, one hour |
-| Session lifetime | One hour of inactivity. Every data refresh extends it. |
+| Session lifetime | On the server, one hour of inactivity, and every data refresh extends it. The cookie itself is set once at login and ends after one hour; the page then goes back to the login page, which opens a new session when the account still qualifies. |
 | Re-check | About once a minute the session confirms the account is still logged in on the website, still an admin and still holds the permission. If not, the session ends. |
 | Logout | The "Logout" button calls `POST /api/logout` and clears the cookie. It ends the dashboard session only; the website login stays. |
 
-:::note The gateway key no longer opens the dashboard
+:::note The gateway key does not open the dashboard
 `GATEWAY_AUTH_KEY` is only for game servers that register with the gateway. Knowing it does not give access to the dashboard.
 :::
 

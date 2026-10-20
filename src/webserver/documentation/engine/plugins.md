@@ -59,6 +59,7 @@ Things that follow from that order:
 | `manifest.json` is valid JSON | `Failed to load plugin from <folder>` is logged, plugin skipped |
 | `name`, `entry` and `provides` are present | `Invalid plugin manifest in <folder>: missing required fields`, plugin skipped |
 | The `entry` file exists | `Plugin entry file not found`, plugin skipped |
+| The `entry` file is inside the plugin folder (links resolved) | `Plugin entry <entry> is outside the folder of <name>`, plugin skipped |
 | The module's default export has a `register` function | `Plugin <name> does not export a default object with a register function`, plugin skipped |
 
 Two plugins with the same `name` overwrite each other in the loader's table, so keep names unique.

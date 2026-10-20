@@ -18,6 +18,12 @@ For the player-facing version of this page see [Chat and Commands](#/player-guid
 | `/whisper <username> <message>` | `/w` | Server | Sends a private message to one online player |
 | `/invite <username>` | none | Server | Invites an online player to your party |
 | `/ginvite <username>` | none | Server | Invites an online player to your guild. Needs a rank with the Invite permission |
+| `/officer <message>` | `/o` | Server | Sends a message to your guild's officer chat |
+| `/gpromote <username>` | none | Server | Moves a lower-ranked guild member up one rank |
+| `/gdemote <username>` | none | Server | Moves a lower-ranked guild member down one rank |
+| `/gremove <username>` | none | Server | Removes a lower-ranked member from your guild |
+| `/gmotd <text>` | none | Server | Sets the guild message of the day |
+| `/gleader <username>` | none | Server | Makes another member Guild Master. Guild Master only |
 | `/ignore <username>` | none | Server | Stops you receiving anything from a player |
 | `/unignore <username>` | none | Server | Takes a player off your ignore list |
 | `/ignorelist` | none | Server | Lists who you ignore |
@@ -28,7 +34,7 @@ For the player-facing version of this page see [Chat and Commands](#/player-guid
 | Player state | What is allowed |
 |--------------|-----------------|
 | Guest account | Nothing. Every command, and local chat, answers `Please create an account to use that feature.` |
-| Corpse (dead, not released) | Only `/p`, `/party`, `/w`, `/whisper`, `/g` and `/guild`. Anything else answers `You cannot do that while dead.` |
+| Corpse (dead, not released) | Only `/p`, `/party`, `/w`, `/whisper`, `/g`, `/guild`, `/o` and `/officer`. Anything else answers `You cannot do that while dead.` |
 | Ghost | Every command. Local chat is replaced by spirit speech (see below). |
 | Alive | Every command on this page |
 
@@ -38,7 +44,7 @@ A command the server does not recognise answers `Invalid command`.
 
 Plain text typed into the chat box is not a command. The client sends it as a `CHAT` packet and the server shows it to everyone on the same map.
 
-`/say` and `/s` never reach the server. Typing either of them followed by a space only switches the chat box back to local chat after it was set to party, guild or whisper.
+`/say` and `/s` never reach the server. Typing either of them followed by a space only switches the chat box back to local chat after it was set to party, guild, officer or whisper.
 
 Rules the `CHAT` handler enforces:
 
@@ -82,11 +88,56 @@ In the client, typing `/party` or `/p` followed by a space puts the chat box int
 /g <message>
 ```
 
-Sends the message to every online member of your guild as a `GUILD_CHAT` packet. It fails with `Please provide a message` or `You are not in a guild`. Emits `onGuildChat`.
+Sends the message to every online member of your guild whose rank may hear guild chat, as a `GUILD_CHAT` packet. You always see your own line. It fails with `Please provide a message` or `You are not in a guild`, and with `You do not have permission to do that.` when your rank may not talk in guild chat. Emits `onGuildChat`.
 
 ```text title="Example"
 /g Anyone up for the cellar quest?
 ```
+
+## Officer chat
+
+```text title="Syntax"
+/officer <message>
+/o <message>
+```
+
+Sends the message to every online member of your guild whose rank may hear officer chat, as an `OFFICER_CHAT` packet. You always see your own line. It fails with `Please provide a message` or `You are not in a guild`, and with `You do not have permission to do that.` when your rank may not talk in officer chat. Emits `onOfficerChat`.
+
+In the client, typing `/officer` or `/o` followed by a space puts the chat box into officer mode.
+
+## Guild ranks
+
+```text title="Syntax"
+/gpromote <username>
+/gdemote <username>
+/gremove <username>
+/gmotd <text>
+/gleader <username>
+```
+
+Each command needs a permission on your guild rank. The permission names are the ones on the [Guilds](#/player-guide/guilds) page.
+
+| Command | Rank permission | What it does |
+|---------|-----------------|--------------|
+| `/gpromote` | Promote | Moves a member below your rank up one rank, never to your own rank or above |
+| `/gdemote` | Demote | Moves a member below your rank down one rank |
+| `/gremove` | Kick | Removes a member below your rank from the guild. They are told if they are online |
+| `/gmotd` | Set MOTD | Sets the message of the day, up to 128 characters. Empty text clears it |
+| `/gleader` | Guild Master only | Makes another member Guild Master |
+
+Each kind of change can be made once a second. A repeat inside that second is dropped without an answer.
+
+| Problem | Answer |
+|---------|--------|
+| No username given | `Please provide a username` |
+| You are not in a guild | `You are not in a guild` |
+| Your rank may not do it | `You do not have permission to do that.` |
+| The player is not in your guild | `That player is not in your guild` |
+| The member is not below your rank | `You can only do that to members below your rank.` |
+| You named yourself (`/gremove`, `/gleader`) | `You cannot do that to yourself.` |
+| The member is one rank below yours (`/gpromote`) | `You can only promote members up to one rank below yours.` |
+| The member is at the lowest rank (`/gdemote`) | `That member is already at the lowest rank.` |
+| The message of the day is too long or not allowed | `That text is too long or not allowed.` |
 
 ## Whisper
 

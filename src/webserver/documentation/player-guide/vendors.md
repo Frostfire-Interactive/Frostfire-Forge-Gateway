@@ -14,7 +14,7 @@ Vendors are marked on your minimap with a pale pin that shows a gold coin. The p
 
 Walk up to the character and talk to them, the same way you talk to a quest giver. If they have something to sell, the vendor window opens and your bags open with it.
 
-If the character also has quests for you, you see their conversation first. Choose **Browse goods** to open the vendor window.
+If the character also has quests for you, or keeps an inn, you see their conversation first. Choose **Browse goods** to open the vendor window.
 
 The window closes when you walk away, press **Escape** or select **Close**.
 

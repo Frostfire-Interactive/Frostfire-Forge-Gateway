@@ -30,7 +30,7 @@ An achievement is earned once per player. Only what players do after an achievem
 | Item and Quantity | An item given when it is earned, 1 to 999 of it. If it does not fit in the bags it is mailed instead, from "Achievement Rewards", and the popup says so. A mailed reward cannot be sent back, and it is deleted with its items if not taken within 30 days. |
 | Mount | A mount added to the player's collectables when it is earned. |
 
-The server checks every field again when you save: the name is there and not taken, the kind is known, the target exists, the number is at least 1, the item and the mount exist, and the quantity is 1 to 999.
+The server checks every field again when you save: the name is there, not taken and not too long, the description is not too long, the kind is known, the target exists, the number is 1 to 1,000,000, the item and the mount exist, and the quantity is 1 to 999.
 
 ## What can be counted
 
@@ -44,7 +44,7 @@ The server checks every field again when you save: the name is there and not tak
 | Gather items | An item, or any | A gather succeeds. Counts how many were gathered |
 | Loot items | An item, or any | Loot is picked up from the ground, or an item is taken from a creature's corpse. Counts how many. A corpse counts only the items actually added to the bags |
 | Collect mounts | A mount, or any | A mount is added to the player's collectables. Only mounts count, not other collectables |
-| Visit a map | A map (needed) | A player is moved to the map: a warp, a teleport or a summon |
+| Visit a map | A map (needed) | A player is moved to the map: a warp, a teleport, a summon or the home item |
 | Cast spells | A spell, or any | A spell is cast |
 | Complete trades | None | A trade completes. Both players count it |
 | Add friends | None | A friend request is accepted. A friendship counts for both players: the one who asked and the one who accepts |

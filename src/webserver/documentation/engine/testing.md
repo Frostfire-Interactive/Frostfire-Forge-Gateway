@@ -284,7 +284,7 @@ describe("readingToWeather", () => {
   });
 
   test("a dry sky has no precipitation", () => {
-    const result = api.readingToWeather(reading({ weather: [{ id: 800 }], rain: undefined }));
+    const result = api.readingToWeather(reading({ weather: [{ id: 800 }], rain: undefined, wind: { speed: 0, deg: 0 } }));
     expect(result?.look).toBe("clear");
     expect(result?.row.precipitation).toBe(0);
   });

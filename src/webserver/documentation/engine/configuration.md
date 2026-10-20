@@ -18,7 +18,7 @@ bun create-config --environment production
 | File | Written when | Notes |
 |------|--------------|-------|
 | `.env.development` | Missing and `--environment development` | Filled with local defaults |
-| `.env.production` | Missing and `--environment production` | Every value empty: fill it in before starting |
+| `.env.production` | Missing and `--environment production` | Every value empty except `LOG_LEVEL` and `PVP`: fill it in before starting |
 | `src/config/settings.json` | Missing | An existing file is only migrated (old `websocket` keys become `webtransport` keys) |
 | `src/config/aoi.json` | Missing | An existing file gets missing keys backfilled, and `USE_SPATIAL_GRID` is forced to `true` |
 | `src/config/security.cfg` | Missing | Never changed once it exists |
@@ -92,11 +92,12 @@ AUTH_POOL_SIZE=8
 | Name | Default | Purpose |
 |------|---------|---------|
 | `DATABASE_ENGINE` | Required (`mysql` inside the worker) | `mysql` or `sqlite`. The query worker also has a `postgres` branch, but no setup script exists for it. |
-| `DATABASE_HOST` | Required | Database host |
+| `DATABASE_HOST` | Required, except with SQLite | Database host |
 | `DATABASE_PORT` | `3306` | Database port |
-| `DATABASE_USER` | Required | Database user |
-| `DATABASE_PASSWORD` | Required | Database password |
-| `DATABASE_NAME` | Required | Database name. With SQLite it is the file name: `<tmp>/frostfire_forge/<DATABASE_NAME>.sqlite`. |
+| `DATABASE_USER` | Required, except with SQLite | Database user |
+| `DATABASE_PASSWORD` | Required, except with SQLite | Database password |
+| `DATABASE_NAME` | Required, except with SQLite when `DATABASE_PATH` is set | Database name. With SQLite it is the file name: `<tmp>/frostfire_forge/<DATABASE_NAME>.sqlite`. |
+| `DATABASE_PATH` | none | SQLite only: the full path of the database file, used instead of the name above. Its folder is created when missing. |
 | `SQL_SSL_MODE` | No TLS | Unset or `DISABLED` connects without TLS. Any other value loads `src/certs/db.crt` and connects with TLS. |
 | `DB_WORKER_POOL_SIZE` | `8` | Number of database worker threads, capped at 64 |
 
@@ -129,10 +130,6 @@ See [Database](#/engine/database) for the engines and the setup scripts.
 | `SKIP_CERT_TRUST` | off | `true` stops the engine from adding a generated certificate to the Windows user root store |
 | `LAN_CA_KEY_PATH` | mkcert's default path | Only read by `bun renew-lan-cert`: the key of the local CA that signs the renewed certificate |
 
-:::note
-`.env.example` still lists `TLS_INSECURE_SKIP_VERIFY`. The engine no longer reads it: the startup probe pins the server's own certificate by hash instead.
-:::
-
 Details are on the [Networking](#/engine/networking) page.
 
 ### Realm, gateway and asset server
@@ -145,11 +142,12 @@ Details are on the [Networking](#/engine/networking) page.
 | `SERVER_HOST` | `localhost` | Host the gateway uses to reach this server. Also added to a generated certificate. |
 | `PUBLIC_HOST` | `SERVER_HOST` | Host that browsers connect to. Also added to a generated certificate. |
 | `WHITELIST` | off | `true` starts the realm with its [whitelist](#/engine/realm-whitelist) on |
+| `PVP` | on | `false` stops every harmful spell one player casts on another. Beneficial spells and spells on creatures still work. Sent to the gateway at registration. |
 | `GATEWAY_URL` | `http://localhost:9999` | Gateway address for registration and heartbeats |
 | `GATEWAY_INTERNAL_URL` | none | Used instead of `GATEWAY_URL` when set (a server to server address) |
 | `GATEWAY_AUTH_KEY` | none | Sent with register, heartbeat and unregister requests |
 | `GATEWAY_GAME_SERVER_SECRET` | none | Shared secret that signs connection tokens. Without it every connection is refused. |
-| `ASSET_SERVER_URL` | `http://localhost:8000` | Asset server address for map and world sync |
+| `ASSET_SERVER_URL` | none | Asset server address for map and world sync. Without it, map sync at startup is skipped, and other requests fall back to `http://localhost:8000` or `http://localhost:8081`. |
 | `ASSET_SERVER_INTERNAL_URL` | none | Used instead of `ASSET_SERVER_URL` for server to server requests when set |
 | `ASSET_SERVER_AUTH_KEY` | `GATEWAY_AUTH_KEY` | Sent with every asset server request |
 | `WORLD_SYNC_INTERVAL` | `10` | Seconds between checks for worlds changed on the asset server. `0` turns the check off. See [Changes made outside the game](#/engine/world-maps/changes-made-outside-the-game). |
@@ -161,6 +159,7 @@ Details are on the [Networking](#/engine/networking) page.
 | `CORS_ALLOWED_ORIGINS` | empty | Comma separated origins. Empty blocks every cross origin HTTP request. When set, a WebTransport connection must also come from one of these origins. `*` allows every origin for HTTP only. |
 | `SESSION_KEY` | generated | Overwritten with a random value on every start. Do not set it. |
 | `RSA_PASSPHRASE` | generated | Overwritten with a random value on every start (it protects the chat key pair). Do not set it. |
+| `TOKEN_LIFETIME_HOURS` | `168` (7 days) | Hours an account token lasts from when it is issued. After that a new password login is needed. |
 
 ### Cache and login workers
 
@@ -206,8 +205,9 @@ Log lines are also appended to `src/logs/<date>.log`.
 
 | Problem | Result |
 |---------|--------|
-| `DATABASE_ENGINE`, `DATABASE_HOST`, `DATABASE_USER`, `DATABASE_PASSWORD`, `DATABASE_NAME` or `GAME_NAME` is empty | Error, then `process.exit(1)` |
-| `DATABASE_PORT` is empty | Warning, set to `3306` |
+| `DATABASE_ENGINE`, `DATABASE_NAME` or `GAME_NAME` is empty (`DATABASE_NAME` may be empty with SQLite when `DATABASE_PATH` is set) | Error, then `process.exit(1)` |
+| `DATABASE_HOST`, `DATABASE_USER` or `DATABASE_PASSWORD` is empty, and the engine is not SQLite | Error, then `process.exit(1)` |
+| `DATABASE_PORT` is empty, and the engine is not SQLite | Warning, set to `3306` |
 | `LOG_LEVEL` is empty or not a known level | Warning, set to `info` |
 | `WEBSRV_PORTSSL` and `GAME_PORT` are both empty | Warning, port `3000` |
 | `CACHE=redis` without `REDIS_URL` | Warning, `CACHE` set to `memory` |
@@ -215,7 +215,7 @@ Log lines are also appended to `src/logs/<date>.log`.
 | `settings.json` has no `webtransport` or `packetRatelimit` section | Warning |
 
 :::warning An empty password stops the server
-`DATABASE_PASSWORD=""` counts as "not set", and so does every other required database variable, even when `DATABASE_ENGINE=sqlite`. The generated `.env.development` has an empty password: fill it in.
+`DATABASE_PASSWORD=""` counts as "not set", and so does every other required database variable. The generated `.env.development` uses MySQL and has an empty password: fill it in.
 :::
 
 ## settings.json
@@ -258,22 +258,22 @@ Log lines are also appended to `src/logs/<date>.log`.
 | `packetRatelimit.maxRequests` | `2000` | Packets a connection may send in one counting window before it is rate limited |
 | `packetRatelimit.maxWindowTime` | `1000` | Length of the counting window. Every second, 1000 ms is added to a connection's window time, and its counter resets once that exceeds this value (every 2 seconds with the default). |
 | `packetRatelimit.time` | `2000` | Milliseconds a rate limited connection stays muted |
-| `webtransport.maxPayloadMB` | `50` | Largest frame, in megabytes. Falls back to `1` when missing. |
-| `webtransport.benchmarkenabled` | `false` | `true` accepts messages larger than `maxPayloadMB` instead of closing the connection |
+| `webtransport.maxPayloadMB` | `50` | Largest frame, in megabytes. Falls back to `1` when missing. Only admins and players with a permission get this much: a connection with no player logged in gets at most 16 KB, any other player 256 KB. |
+| `webtransport.benchmarkenabled` | `false` | `true` lets every connection send frames up to `maxPayloadMB` |
 | `webtransport.maxSessions` | `50000` | Largest number of WebTransport sessions. Also reported to the gateway as the realm's capacity. Falls back to `2000`. |
 | `webtransport.maxDatagramSize` | `1200` | Largest datagram in bytes. Larger movement batches are split, other packets go on the stream. |
 | `webtransport.authTimeoutMs` | `10000` | Time a new session has to send a valid `AUTH_CONNECT` frame |
-| `webtransport.idleTimeout` | `120` | Seconds. Read and handed to the transport options. |
-| `webtransport.rateLimits.*` | see above | Read, logged at startup and handed to the transport options |
+| `webtransport.idleTimeout` | `120` | Seconds a connection may stay open without logging a player in. Then it is closed. |
+| `webtransport.rateLimits.*` | see above | Limits on new sessions and on datagrams. See the note below. |
 | `gateway.heartbeatInterval` | `5000` | Milliseconds between heartbeats to the gateway |
 | `world` | `overworld` | Name of the default world (a row of the `worlds` table) |
 | `default_map` | `overworld.json` | Map new characters start on. Falls back to `main`. |
 | `spawn_x`, `spawn_y` | `null` | Start position in pixels. `null` uses the world's own spawn point, or the centre of the map. |
-| `webserverRatelimit.*` | see above | Generated, but nothing in the engine's `src/` reads it |
+| `webserverRatelimit.*` | see above | Requests one address may send to the HTTP API: at most `max` (500) in each `windowMs`. A `windowMs` under 1000 is read as seconds, so `5` is 5 seconds. More answers `429`. `enabled: false` turns it off. |
 | `webtransport.enabled` | `true` | Generated, but nothing in the engine's `src/` reads it |
 
 :::note Transport limits
-`server.ts` builds `idleTimeout` and `rateLimits` into the options for `startWebTransportServer`, but the current transport (`src/socket/transport.ts`) only forwards the port, certificate, key and `maxSessions` to the WebTransport library. The handshake, stream and datagram limits are therefore logged but not enforced by this layer. `WT_HANDSHAKE_RATE_LIMIT_DISABLED` only changes those logged values.
+The transport (`src/socket/transport.ts`) applies `handshakesPerSec` and `handshakesBurst` to new sessions, and `datagramsPerSec` and `datagramsBurst` to incoming datagrams, each for the whole server. A session over the handshake limit is refused, and a datagram over its limit is dropped. `handshakesBurstPerPrefix`, `streamsPerSec` and `streamsBurst` are read and logged, but not enforced. `WT_HANDSHAKE_RATE_LIMIT_DISABLED` removes the handshake limits.
 :::
 
 Optional keys that are not generated but are read when present:
@@ -283,6 +283,9 @@ Optional keys that are not generated but are read when present:
 | `animation_system.use_sprite_sheets` | `true` | Turns the sprite sheet system off when `false` |
 | `creatures.yardPx` | `8` | Pixels per yard for creature ranges |
 | `creatures.respawnMultiplier` | `1` | Multiplier applied to every rolled respawn time |
+| `webtransport.rateLimits.datagramsPerSecPerConnection` | `240` | Datagrams one connection may send per second. More are dropped. |
+| `webtransport.rateLimits.datagramsBurstPerConnection` | `480` | Datagrams one connection may send at once |
+| `webtransport.rateLimits.maxConcurrentStreams` | `16` | Streams one session may have open at once |
 
 ## aoi.json
 
@@ -302,7 +305,7 @@ Every key is explained on the [AOI and layers](#/engine/aoi-and-layers/aoijson-s
 
 ## security.cfg
 
-`src/config/security.cfg` is a plain list of path fragments, one per line (`.env`, `wp-admin`, `php`, `shell` and similar probes). `create_config.ts` writes it, but no file under the engine's `src/` reads it. The gateway keeps its own copy of the same list for its reverse proxy: see [Reverse proxy](#/gateway/reverse-proxy).
+`src/config/security.cfg` is a plain list of path fragments, one per line (`.env`, `wp-admin`, `php`, `shell` and similar probes). `create_config.ts` writes it, and the server reads it once at startup. A request to the HTTP API whose path has a segment on the list is answered `404` (`.env` also covers `.env.*`). Lines starting with `#` and blank lines are skipped. The gateway keeps its own copy of the same list for its reverse proxy: see [Reverse proxy](#/gateway/reverse-proxy).
 
 ## package.json scripts
 
@@ -313,7 +316,7 @@ Every key is explained on the [AOI and layers](#/engine/aoi-and-layers/aoijson-s
 | `bun create-config` | `src/utility/create_config.ts` |
 | `bun setup-development` | `create-config --environment development` only |
 | `bun setup-production` | `create-config --environment production`, then `bun setup` |
-| `bun setup` | `src/utility/database_setup.ts` (MySQL schema and seed data) with `.env.production` |
+| `bun setup` | `src/utility/database_setup_dispatch.ts` with `.env.production`: the SQLite script when `DATABASE_ENGINE=sqlite`, otherwise `src/utility/database_setup.ts` (MySQL schema and seed data) |
 | `bun setup-localdb` | `src/utility/database_setup_sqlite.ts` (SQLite schema and seed data) with `.env.development` |
 | `bun generate-local-cert` | `src/utility/generate_local_cert.ts`: creates a local WebTransport certificate when needed |
 | `bun renew-lan-cert` | `src/utility/renew_lan_cert.ts`: renews a certificate signed by a local CA |

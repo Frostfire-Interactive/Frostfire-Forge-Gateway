@@ -19,16 +19,18 @@ A weather is a row of the `weather` table. A world (a row of the `worlds` table)
 | `wind_direction` | `none`, `left`, `right`, `up`, `down` | Where the wind blows to on screen |
 | `precipitation` | 0 to 100 | How much rain or snow falls |
 | `ambience` | 0 to 1 | How dark the scene gets in `thunderstorm` and `darkness` weather |
+| `sounds` | Up to 12 sounds of each kind | Rain, wind and thunder sounds (JSON). Each is an audio file heard while the precipitation or the wind speed is within its range, at its own volume. |
 
 The limits are enforced by the weather editor (`src/systems/weathereditor.ts`).
 
-A world's weather is either the name of such a row or one of three special words:
+A world's weather is either the name of such a row or one of four special words:
 
 | Word | Meaning |
 |------|---------|
 | `clear` | No rain, snow or darkening. `clear` also exists as a row, so it can still have wind. |
-| `random` | A random weather from the table, picked again every 30 minutes |
+| `random` | A random weather from the table (never `tornado`), picked again every 30 minutes |
 | `weather_api` | The real weather of a configured place. See [Real weather](#/engine/weather/real-weather). |
+| `tornado` | A thunderstorm with tornadoes: the world always has one or two. Uses the `tornado` row, or the `thunderstorm` values when there is none. Tornadoes pull in players who come near and take 5% of their maximum health every second. Any thunderstorm world also has a rare chance of one. |
 
 `random`, `none` and `weather_api` are reserved and cannot be used as the name of a weather.
 
@@ -43,6 +45,11 @@ The setup scripts insert these rows if they are missing:
 | `darkness` | 0.9 | none, 0 | 40 | 50 | 0 |
 | `rainy` | 0 | left, 6 | 85 | 58 | 50 |
 | `snowy` | 0 | left, 4 | 80 | 25 | 80 |
+| `sandstorm` | 0 | right, 35 | 10 | 100 | 0 |
+| `tornado` | 0.85 | right, 30 | 85 | 68 | 75 |
+| `blizzard` | 0 | right, 35 | 85 | 10 | 80 |
+
+The seeded weathers other than `blizzard` are given default rain, wind and thunder sounds when they have none.
 
 The world `overworld` is seeded with the weather `rainy`.
 
@@ -68,7 +75,11 @@ The client picks what to draw by the weather's name. The row's values shape it.
 | `thunderstorm` | Rain, lightning bolts and a darkened scene |
 | `snowy` | Snow, which melts where it lands |
 | `darkness` | A near black scene with no sun and no shadows |
+| `sandstorm` | Blowing dust and an orange tint, only while the player stands in a desert zone of a world map. Its wind speed sets how harsh it is. |
+| `blizzard` | Blowing snow and a cold tint, only while the player stands in a snow zone of a world map. Its wind speed sets how harsh it is. |
 | `clear` or any other name | No rain, snow or darkening. Only its wind. |
+
+The server tells a `tornado` world as `thunderstorm`, with `sandstorm` and `blizzard` set to `true` in `weatherData`, so it also blows a sandstorm in desert zones and a blizzard in snow zones. The desert and snow zones come from a world's manifest (see [World maps](#/engine/world-maps)).
 
 How the values change the picture:
 
@@ -77,7 +88,7 @@ How the values change the picture:
 - **Wind speed and direction** draw wind streaks across the screen and push rain and snow. A direction of `none` or a speed of 0 draws no streaks.
 - **Ambience** is the opacity of the dark overlay in `thunderstorm` and `darkness`.
 
-The drawing code is part of the game client (`weather.ts`, `ambience.ts` and `windstreaks.ts` in the gateway's `public/js/core`).
+The drawing code is part of the game client (`weather.ts`, `ambience.ts`, `windstreaks.ts`, `sandstorm.ts`, `blizzard.ts` and `tornado.ts` in the gateway's `public/js/core`).
 
 ### Packets
 
@@ -86,8 +97,9 @@ The drawing code is part of the game client (`weather.ts`, `ambience.ts` and `wi
 | `WEATHER` | A player logs in or loads a map | `{ weather, weatherData }` |
 | `CHANGE_WEATHER` | The weather of the player's world changes | `{ weather, weatherData }` |
 | `LIGHTNING` | A bolt strikes on a thunderstorm world | `{ x, y, map }` |
+| `TORNADOES` | Tornadoes are on the player's map, and once more with an empty list when the last is gone | `{ map, tornadoes }`, each `{ id, x, y }` |
 
-`weather` is the name the client draws by, and `weatherData` is the row (or `null`). On `CHANGE_WEATHER` the client fades the old weather out and the new one in. If only the values changed, it applies them without a fade.
+`weather` is the name the client draws by, and `weatherData` is the row (or `null`). A weather with no sounds of its own carries the sounds of the weather it is drawn as. On `CHANGE_WEATHER` the client fades the old weather out and the new one in. If only the values changed, it applies them without a fade.
 
 :::note Maps without a world
 Weather belongs to worlds: a map takes part when the `worlds` table has a row with the map's name. The map data sent to the client carries a `hasWeather` flag that says whether such a row exists, and a map without one resolves to `clear`.
@@ -105,6 +117,7 @@ While any world shows `thunderstorm`, the server picks a random player on that w
 | `/weather clear` | same | Clear weather |
 | `/weather random` | same | A random weather now, and a new one every 30 minutes |
 | `/weather weather_api` | same | Follow the real weather |
+| `/weather tornado` | same | A thunderstorm with tornadoes |
 | `/we` or `/weathereditor` | `tools.weather_editor`, `tools.*`, `server.admin` or `server.*` (admins always) | Opens the weather editor |
 
 ```text title="In game chat"
@@ -162,14 +175,17 @@ How it behaves (`src/systems/weatherapi.ts`):
 
 ### From a reading to a weather
 
-The client only knows the names it can draw, so it is never told `weather_api`. The server translates the reading's condition code into one of four names:
+The client only knows the names it can draw, so it is never told `weather_api`. The server translates the reading's condition code and wind into one of five names:
 
 | OpenWeatherMap condition id | Shown as |
 |-----------------------------|----------|
 | 200 to 299 (thunderstorm) | `thunderstorm` |
 | 300 to 399 (drizzle), 500 to 599 (rain) | `rainy` |
 | 600 to 699 (snow) | `snowy` |
+| Everything else, with a wind of 1 mph or more, or sand and dust (731, 751, 761) | `sandstorm` |
 | Everything else | `clear` |
+
+A reading with a wind of 1 mph or more also has `blizzard` set to `true` in `weatherData`, so it blows a blizzard in snow zones.
 
 | Value | How it is derived |
 |-------|-------------------|

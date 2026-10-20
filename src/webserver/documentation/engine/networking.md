@@ -33,7 +33,7 @@ The files involved:
 Connection handles are called `wt` everywhere (`player.wt`, `sendPacket(wt, ...)`).
 
 :::warning HTTP/3 is off for the HTTP API
-The WebTransport listener owns the UDP side of the game port, so `server.ts` always starts the public HTTP proxy with `http3: false`. `WEBSRV_HTTP3` has no effect on the engine.
+The WebTransport listener owns the UDP side of the game port, so `server.ts` always starts the public HTTP proxy with `http3: false`. `WEBSRV_HTTP3` has no effect on the public proxy.
 :::
 
 ## TLS is mandatory
@@ -114,14 +114,16 @@ A connection goes through two stages: the transport handshake (is this a client 
 
 ### 1. Get a connection token from the gateway
 
-The client asks the gateway for a short lived token. The gateway signs it with `GATEWAY_GAME_SERVER_SECRET`, the secret both servers share.
+The client asks the gateway for a short lived token. Only a logged-in account gets one. The gateway signs it with `GATEWAY_GAME_SERVER_SECRET`, the secret both servers share. The signature also covers the page's origin and the account (the SHA-256 of the account's session token).
 
 ```json title="GET /api/gateway/connection-token (gateway)"
 {
   "token": "<64 hex characters>",
   "timestamp": 1760000000000,
   "expiresAt": 1760000060000,
-  "signature": "<hex HMAC-SHA256 of token:timestamp:expiresAt>"
+  "signature": "<hex HMAC-SHA256 of token:timestamp:expiresAt:origin:account>",
+  "origin": "https://play.example.com",
+  "account": "<64 hex characters>"
 }
 ```
 
@@ -138,26 +140,30 @@ The client opens a WebTransport session, opens one bidirectional stream, and sen
     "expiresAt": 1760000060000,
     "signature": "...",
     "useragent": "Mozilla/5.0 ...",
-    "origin": "https://play.example.com"
+    "origin": "https://play.example.com",
+    "account": "..."
   }
 }
 ```
 
-The engine checks it in `validateConnectionToken`:
+The engine checks it in `validateConnectionToken`, which calls `checkTicket` (`src/socket/ticket.ts`):
 
-```ts title="src/socket/server.ts"
-const expectedSignature = crypto
-  .createHmac("sha256", sharedSecret)
-  .update(`${token}:${timestamp}:${expiresAt}`)
-  .digest("hex");
+```ts title="src/socket/ticket.ts"
+const expected = Buffer.from(signTicket(secret, token, timestamp, expiresAt, origin, account), "hex");
+const given = /^[0-9a-f]+$/i.test(signature) ? Buffer.from(signature, "hex") : Buffer.alloc(0);
+if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return { ok: false, reason: "invalid signature" };
 
-if (signature !== expectedSignature) return false;
-if (Date.now() > parseInt(expiresAt)) return false;
+const expires = Number(expiresAt);
+if (!Number.isFinite(expires) || now > expires) return { ok: false, reason: "expired" };
 
-if (ALLOWED_ORIGINS.length > 0) {
-  if (!origin || !ALLOWED_ORIGINS.some(o => o.trim() === origin)) return false;
-}
+const allowed = allowedOrigins.map((o) => o.trim()).filter(Boolean);
+if (allowed.length > 0 && !allowed.includes(origin)) return { ok: false, reason: `disallowed origin ${origin}` };
+
+sweep(now);
+if (used.has(token)) return { ok: false, reason: "already used" };
 ```
+
+A token opens one connection only. The connection remembers the token's `account`.
 
 | Outcome | What the engine does |
 |---------|----------------------|
@@ -174,7 +180,7 @@ On open, the connection is subscribed to the `CONNECTION_COUNT`, `BROADCAST` and
 |------|--------------|----------------|
 | 1 | `PING` | `PONG` |
 | 2 | `LOGIN` | `LOGIN_SUCCESS` with the connection id and the public chat key |
-| 3 | `AUTH` with the account's session token and a language code | The login worker loads the account. On failure: `LOGIN_FAILED` and close `1008`. |
+| 3 | `AUTH` with the account's session token and a language code | The token must belong to the account the connection token was issued for. The login worker loads the account. On failure: `LOGIN_FAILED` and close `1008`. |
 
 ```ts title="src/socket/receiver.ts"
 case "AUTH": {
@@ -218,7 +224,14 @@ export function encodeFrame(payload: Uint8Array): Uint8Array {
 }
 ```
 
-`FrameDecoder.push(chunk)` collects stream chunks and returns every complete frame. A frame longer than the limit (`webtransport.maxPayloadMB`, in megabytes) marks the decoder as overflowed, and the connection is closed with code `1009`, reason `Frame too large`.
+`FrameDecoder.push(chunk)` collects stream chunks and returns every complete frame. A frame longer than the limit marks the decoder as overflowed, and the connection is closed with code `1009`, reason `Frame too large`. The limit grows as the connection proves who it is:
+
+| Stage | Largest frame |
+|-------|---------------|
+| Before `AUTH_CONNECT` | 4 KB |
+| After `AUTH_CONNECT`, before login | 16 KB |
+| A logged-in player | 256 KB |
+| An admin, a player holding any permission, or any player on a benchmark server | `webtransport.maxPayloadMB` (in megabytes) |
 
 Packets are built by `packetManager` and encoded with `packet.encode`:
 
@@ -323,7 +336,7 @@ The API is tiny. It is served by `Bun.serve` on `127.0.0.1:WEBSRV_INTERNAL_PORT`
 | `/ping` | GET | `{"pong": <server time in ms>}` |
 | `/wt-cert-hash` | GET | The certificate hash, or `404` |
 | `/start-area` | GET | The default map's name, size, tile size and tilesets, the spawn, and the asset server URL, or `404` while the map is not loaded. The character page draws its backdrop from it. |
-| `/creature-stats` | GET | Creature system counters and tick timings. `?reset=1` starts a new measuring window. |
+| `/creature-stats` | GET | Creature system counters and tick timings. `?reset=1` starts a new measuring window. Needs `GATEWAY_AUTH_KEY` as a bearer token (`Authorization: Bearer ...`), otherwise `401`. |
 | any | OPTIONS | `204` with CORS headers for an allowed origin, `403` otherwise |
 | Plugin routes | as registered | Whatever the plugin returns |
 | Anything else | any | `404 Not found` |
@@ -386,13 +399,13 @@ if (client.requests >= RateLimitOptions.maxRequests) {
 }
 ```
 
-The public HTTP proxy has no request rate limit of its own in the engine. The handshake, stream and datagram limits under `webtransport.rateLimits` are described in [Configuration](#/engine/configuration/settingsjson).
+The public HTTP proxy filters requests before they reach the API. It answers `429` to an address that sends more than `webserverRatelimit.max` requests (default 500) in one `webserverRatelimit.windowMs` window, and `404` to any path with a segment listed in `src/config/security.cfg`. The handshake, stream and datagram limits under `webtransport.rateLimits` are described in [Configuration](#/engine/configuration/settingsjson).
 
 ## Inbound dispatch
 
-Every inbound frame and datagram reaches `onTransportMessage` as text. It parses the JSON once, applies the packet rate limit, refreshes the player's `lastUpdated` time, and passes the packet to `packetReceiver`. `MOVEXY`, `STATS`, `SERVER_TIME` and `ANIMATION` are handled immediately. Everything else goes through a per connection queue.
+Every inbound frame and datagram reaches `onTransportMessage` as text. It checks the size, parses the JSON once, applies the packet rate limit, refreshes the player's `lastUpdated` time, and passes the packet to `packetReceiver`. `MOVEXY`, `STATS`, `SERVER_TIME` and `ANIMATION` are handled immediately. Everything else goes through a per connection queue.
 
-`packetReceiver` rejects empty messages (`1008`), messages that are not JSON or have no type (`1007`), and messages larger than `maxPayloadMB` (`1009`). Plugin packet interceptors run before the built in handlers. See [Plugins](#/engine/plugins).
+`packetReceiver` rejects empty messages (`1008`), messages that are not JSON, have no type or have an unknown type (`1007`), and messages larger than the connection's frame limit (`1009`). Plugin packet interceptors run before the built in handlers. See [Plugins](#/engine/plugins).
 
 ## topicBus
 

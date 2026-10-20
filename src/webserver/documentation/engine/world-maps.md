@@ -56,6 +56,7 @@ The fields the engine reads:
 | `warps`, `graveyards` | Optional, as on a Tiled map |
 | `spawn` | Optional `{ x, y }` in pixels: where new characters start |
 | `sections` | Optional list of rectangles in tiles. See [Underworld sections](#/engine/world-maps/underworld-sections). |
+| `zones` | Optional list of zones, each with a `kind`, a `bbox` and an `outline` in tiles. Zones of kind `desert` and `snow` are sent to the client as `deserts` and `snowfields`: a sandstorm or a blizzard is only drawn inside them. See [Weather](#/engine/weather). |
 | `bitsets.collision.hash`, `bitsets.nopvp.hash` | The hash each bitset file must have |
 
 ### The bitset files
@@ -142,7 +143,7 @@ Files are fetched in a fixed order, `collision.bits`, `nopvp.bits`, then `manife
 |-----------|--------|
 | No asset server URL configured | Sync is skipped silently |
 | The asset server has no world support or cannot be reached | Sync is skipped, local worlds are loaded as they are |
-| A world exists locally but not on the asset server | It is kept. Sync never deletes a world. |
+| A world exists locally but not on the asset server | Its directory is removed, with a warning in the log |
 | A world id with unusual characters | Skipped with a warning |
 
 The address used is `ASSET_SERVER_INTERNAL_URL` if set, otherwise `ASSET_SERVER_URL`. See [Integration](#/assets/integration).
@@ -315,9 +316,11 @@ Players already on the map are not told: they see the new tiles after they reloa
 |--------------------------------------|---------|
 | `getWorldMap(mapName)` | The loaded world, or `undefined`. Accepts the name with or without `.json`. |
 | `loadWorldMaps(mapDir, tiledMapNames)` | Reads every `.world` directory. Called by the asset loader. |
+| `addWorldMap(id)` | Fetches and opens a world the asset server has just made (the map editor's new map) |
 | `syncWorldMaps(mapDir)` | Downloads outdated world files from the asset server. Returns the ids of the worlds it fetched files for. |
 | `refreshWorldMap(mapName)` | Re-syncs one world after an editor save and swaps its bitsets |
 | `checkWorldChanges()` | Takes in worlds changed on the asset server by anything else. Returns the worlds that changed. |
 | `warpsAndGraveyardsOf(manifest)` | A world's warps and graveyards from its manifest objects, as the loader reads them |
+| `desertsOf(zones)`, `snowfieldsOf(zones)` | The manifest's zones of kind `desert` or `snow`, as `Desert` objects (`name`, `bbox`, `outline`) |
 | `WorldBits` | A bitset with `isSet(tileX, tileY)`, `width`, `height` and `adopt(newer)` |
 | `WorldMap` | `id`, `name`, `width`, `height`, `tileWidth`, `tileHeight`, `collision`, `nopvp`, `spawn`, `map`, `properties` |

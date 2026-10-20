@@ -318,7 +318,7 @@ The cast is abandoned, and the cooldown refunded, when:
 
 ### 6. The cast lands
 
-For a single target the server checks range, line of sight, PvP rules and facing again, then sends a `PROJECTILE` packet. The projectile takes 1 ms per pixel of distance, at most 500 ms.
+For a single target with a cast time the server checks range, line of sight, PvP rules and facing again. It then sends a `PROJECTILE` packet when the target is not the caster. The projectile takes 1 ms per pixel of distance, at most 500 ms.
 
 Damage and healing are then worked out:
 
