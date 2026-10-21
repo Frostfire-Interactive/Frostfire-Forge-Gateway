@@ -25,7 +25,7 @@ function circle(ctx: CanvasRenderingContext2D, x: number, y: number, radius: num
   ctx.restore();
 }
 
-function polyline(ctx: CanvasRenderingContext2D, points: Array<{ x: number; y: number }>, color: string, close: boolean): void {
+function polyline(ctx: CanvasRenderingContext2D, points: Array<{ x: number; y: number }>, color: string, close: boolean, highlight = -1): void {
   if (points.length === 0) return;
   ctx.save();
   ctx.strokeStyle = color;
@@ -39,7 +39,8 @@ function polyline(ctx: CanvasRenderingContext2D, points: Array<{ x: number; y: n
   ctx.textAlign = "center";
   points.forEach((p, i) => {
     ctx.beginPath();
-    ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+    // the point under the mouse, which can be dragged
+    ctx.arc(p.x, p.y, i === highlight ? 7 : 4, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillText(String(i + 1), p.x, p.y - 8);
   });
@@ -69,7 +70,8 @@ export function renderCreatureEditorOverlays(ctx: CanvasRenderingContext2D, curr
   }
   ctx.restore();
 
-  if (creatureEditor.mode === "drawPath") polyline(ctx, creatureEditor.pathPoints, COLORS.path, false);
+  // The path open in the editor: while drawing it, or whenever the player is on its map (its points can be dragged).
+  if (creatureEditor.pathShown(currentMap)) polyline(ctx, creatureEditor.pathPoints, COLORS.path, false, creatureEditor.hoverPoint);
 
   if (!creatureEditor.debugOn) return;
   for (const debug of creatureEditor.debugCreatures) {

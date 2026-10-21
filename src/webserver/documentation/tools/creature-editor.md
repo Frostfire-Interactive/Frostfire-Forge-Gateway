@@ -191,7 +191,12 @@ A spawn point belongs to a saved creature. On a new creature, the tab offers "Sa
 | --- | --- |
 | Map | The map the path is on |
 | Loop | On: walks from the last point back to the first. Off: walks back and forth. |
+| Between points | Continuous: walks through the points without stopping. Pause at each: stops for the pause length at every point. |
+| Pause length | ms. How long it stops at each point when it pauses between points. |
+| Pause at end points | ms. An extra stop at the first and last point, also when walking continuously. 0 for none. |
 | Points | Where it walks, in order, and how long it stops at each |
+
+At each point the creature stops for the longest of: the point's own wait, the pause length (when it pauses at each point), and the end pause (at the first and last point). When all of them are 0 it heads for the next point without stopping.
 
 The **Shape** card beside the form draws the points in the order they are walked.
 
@@ -202,6 +207,8 @@ The **Shape** card beside the form draws the points in the order they are walked
 | Click | Adds a point |
 | Shift + click | Adds a point with a 2 second wait |
 | Enter or Escape | Finishes drawing |
+
+While a patrol path is open in the editor, its points are drawn in the game window whenever you are on its map. Drag a point to move it. The move shows in the editor's point list as an unsaved change.
 
 The path takes the map you are standing on. Saving also finishes drawing.
 

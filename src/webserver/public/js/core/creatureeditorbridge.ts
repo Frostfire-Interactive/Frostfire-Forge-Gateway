@@ -84,6 +84,7 @@ const TARGET_WORDS: Record<string, string> = {
   self: "Itself",
 };
 const MOVEMENT_WORDS: Record<string, string> = { idle: "Idle", wander: "Wander", patrol: "Patrol" };
+const PAUSE_WORDS: Record<string, string> = { continuous: "Continuous", pause: "Pause at each" };
 const LAYER_WORDS: Record<string, string> = { per_layer: "Per layer", shared: "Shared" };
 
 /**
@@ -128,7 +129,7 @@ const SPAWN_PROBLEMS: Array<[RegExp, string]> = [
   [/^Spawn pool /, "pool_id"],
 ];
 const OTHER_PROBLEMS: Record<Exclude<KindId, "templates">, Array<[RegExp, string]>> = {
-  paths: [[/^Map /, "map"]],
+  paths: [[/^Map /, "map"], [/^Pause mode /, "pause_mode"], [/^Pause length /, "pause_ms"], [/^End pause /, "end_pause_ms"]],
   linkGroups: [[/^Link group name /, "name"]],
   pools: [[/^Max active /, "max_active"], [/^Rare chance /, "rare_chance_pct"], [/^Rare template /, "rare_template_id"]],
 };
@@ -650,7 +651,7 @@ class CreatureEditorBridge {
   private newDraft(): any {
     switch (this.kind) {
       case "paths":
-        return { id: 0, map: this.data.maps[0] ?? "", loop: true, points: [] };
+        return { id: 0, map: this.data.maps[0] ?? "", loop: true, pause_mode: "continuous", pause_ms: 2000, end_pause_ms: 0, points: [] };
       case "linkGroups":
         return { id: 0, name: "New group" };
       case "pools":
@@ -847,6 +848,9 @@ class CreatureEditorBridge {
   private renderForm(): void {
     this.chrome();
     this.live = [];
+    // The open path stays drawn in the game window, where its points can be dragged; anything else clears it.
+    const path = this.ready && this.kind === "paths" && this.draft ? this.draft : null;
+    this.shell.send({ type: "showPath", points: path ? path.points || [] : null, map: path?.map ?? null });
     if (!this.ready) return;
     if (!this.draft) {
       const { noun } = this;
@@ -1335,6 +1339,10 @@ class CreatureEditorBridge {
     path.classList.add("tl-fields-2");
     path.appendChild(this.field({ key: "map", label: "Map", type: "asset", noIcons: true, assets: this.mapAssets }));
     path.appendChild(this.field({ key: "loop", label: "Loop", type: "switch", wide: true, hint: "Walks from the last point back to the first. Otherwise it walks back and forth." }));
+    const stops = this.section(main, "Stops", "Whether it halts at the points it walks through");
+    stops.appendChild(this.field({ key: "pause_mode", label: "Between points", type: "segmented", options: choices(["continuous", "pause"], PAUSE_WORDS) }));
+    stops.appendChild(this.field({ key: "pause_ms", label: "Pause length", type: "number", step: 100, unit: "ms", hint: "How long it stops at each point when it pauses between points." }));
+    stops.appendChild(this.field({ key: "end_pause_ms", label: "Pause at end points", type: "number", step: 100, unit: "ms", hint: "An extra stop at the first and last point, even when walking continuously. 0 for none." }));
     this.renderPoints(main);
     if (this.draft.id) {
       this.usedBy(main, "Spawn points on this path", "Set on a creature's Spawns tab", this.data.spawns.filter((s: any) => s.patrol_path_id === this.draft.id), "No spawn point patrols along this path yet. Give it to one on a creature's Spawns tab.");
@@ -1356,7 +1364,7 @@ class CreatureEditorBridge {
     draw.dataset.act = "path-draw";
     part.body.appendChild(this.world([{
       title: "Draw it by clicking in the game",
-      note: "Press the button, then click in the game window to add points after the ones below; they appear here as you click. Shift+click adds a point with a 2 second wait. The path takes the map you are standing on. Enter or Escape in the game finishes, and so does saving.",
+      note: "Press the button, then click in the game window to add points after the ones below; they appear here as you click. Shift+click adds a point with a 2 second wait. The path takes the map you are standing on. Enter or Escape in the game finishes, and so does saving. While the path is open, drag any of its points in the game window to move it.",
       control: draw,
     }]));
 
@@ -1420,11 +1428,15 @@ class CreatureEditorBridge {
     if (points.some((p) => Number(p.wait_ms) > 0)) key("is-waiting", "Waits here");
     if (points.length) parts.push(legend);
 
-    const waits = points.reduce((sum, p) => sum + (Number(p.wait_ms) || 0), 0);
+    // The same stop the server makes at each point (patrolWaitMs in the engine's creatures/ai.ts)
+    const pauseEach = this.draft?.pause_mode === "pause" ? Number(this.draft?.pause_ms) || 0 : 0;
+    const endPause = Number(this.draft?.end_pause_ms) || 0;
+    const waits = points.reduce((sum, p, i) => sum + Math.max(Number(p.wait_ms) || 0, pauseEach, i === 0 || i === points.length - 1 ? endPause : 0), 0);
     const lines: string[] = [];
     if (points.length < 2) lines.push("A path needs at least two points before it can be saved.");
     else lines.push(loop ? `${count(points.length, "point")}, walked round and round.` : `${count(points.length, "point")}, walked to the end and back.`);
     if (waits > 0) lines.push(`It stands still for ${secs(waits)} s in all on the way.`);
+    else if (points.length >= 2) lines.push("It walks without stopping.");
     const summary = el("div", "tl-summary");
     for (const line of lines) summary.appendChild(el("p", "", line));
     parts.push(summary);

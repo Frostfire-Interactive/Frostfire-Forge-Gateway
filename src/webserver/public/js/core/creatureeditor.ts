@@ -54,6 +54,13 @@ class CreatureEditor {
   public debugCreatures: DebugCreature[] = [];
   public debugOn = false;
   public pathPoints: Array<{ x: number; y: number; wait_ms: number }> = [];
+  /** The map of the path open in the popup; its points are drawn and draggable while the player is on it. */
+  private pathMap: string | null = null;
+  /** Index of the path point under the mouse, or being dragged. */
+  public hoverPoint = -1;
+  private drag: { index: number; startX: number; startY: number; moved: boolean } | null = null;
+  /** A drag ends in a click; it must not add a point or reach the game. */
+  private swallowClick = false;
 
   private editorWindow: Window | null = null;
   private bridgeReady = false;
@@ -64,6 +71,9 @@ class CreatureEditor {
   constructor() {
     window.addEventListener("message", (e) => this.onBridgeMessage(e));
     document.addEventListener("click", (e) => this.onWorldClick(e), true);
+    document.addEventListener("mousedown", (e) => this.onMouseDown(e), true);
+    document.addEventListener("mousemove", (e) => this.onMouseMove(e), true);
+    document.addEventListener("mouseup", (e) => this.onMouseUp(e), true);
     document.addEventListener("keydown", (e) => this.onKeyDown(e));
     // The game page is going away (refresh, close, navigation): take the
     // popup with it, since the reloaded page has no link back to it. Only the
@@ -103,6 +113,9 @@ class CreatureEditor {
     this.isActive = false;
     this.mode = "none";
     this.pathPoints = [];
+    this.pathMap = null;
+    this.drag = null;
+    this.hoverPoint = -1;
     this.setDebug(false);
     if (this.closeWatcher) {
       clearInterval(this.closeWatcher);
@@ -191,9 +204,24 @@ class CreatureEditor {
       case "drawPath":
         this.mode = "drawPath";
         this.pathPoints = Array.isArray(msg.points) ? [...msg.points] : [];
+        this.pathMap = this.currentMap();
         document.body.style.cursor = "crosshair";
         break;
+      case "showPath":
+        // The path open in the popup (or none). Ignored mid-drag: the popup gets the dragged point on release.
+        if (this.drag) break;
+        if (this.mode === "drawPath" && !Array.isArray(msg.points)) this.stopTool();
+        this.pathPoints = Array.isArray(msg.points) ? [...msg.points] : [];
+        this.pathMap = Array.isArray(msg.points) ? String(msg.map ?? "").replace(".json", "") : null;
+        this.hoverPoint = -1;
+        break;
     }
+  }
+
+  /** Whether the open path is drawn in the game window: while drawing it, or while standing on its map. */
+  pathShown(currentMap: string): boolean {
+    if (this.pathPoints.length === 0) return false;
+    return this.mode === "drawPath" || this.pathMap === currentMap.replace(".json", "");
   }
 
   // ------------------------------------------------------------ world input
@@ -209,7 +237,80 @@ class CreatureEditor {
     return String(window.mapData?.name ?? "").replace(".json", "");
   }
 
+  /** The open path's point within a few screen pixels of the mouse, or -1. */
+  private pointAt(event: MouseEvent): number {
+    if (!this.isActive || !getIsLoaded() || !this.pathShown(this.currentMap())) return -1;
+    if ((event.target as HTMLElement)?.closest?.(".ui")) return -1;
+    const rect = canvas.getBoundingClientRect();
+    const sx = event.clientX - rect.left;
+    const sy = event.clientY - rect.top;
+    const at = screenToWorld(sx, sy);
+    // 8 screen pixels, whatever the world zoom
+    const edge = screenToWorld(sx + 8, sy);
+    const radius = Math.hypot(edge.x - at.x, edge.y - at.y);
+    let best = -1;
+    let bestDist = radius;
+    this.pathPoints.forEach((p, i) => {
+      const d = Math.hypot(p.x - at.x, p.y - at.y);
+      if (d <= bestDist) {
+        best = i;
+        bestDist = d;
+      }
+    });
+    return best;
+  }
+
+  private onMouseDown(event: MouseEvent): void {
+    // a drag released off the canvas gets no click, so its swallow must not carry over to this one
+    this.swallowClick = false;
+    if (event.button !== 0) return;
+    const index = this.pointAt(event);
+    if (index < 0) return;
+    event.stopPropagation();
+    event.preventDefault();
+    const point = this.worldFromEvent(event);
+    this.drag = { index, startX: point.x, startY: point.y, moved: false };
+    this.hoverPoint = index;
+    document.body.style.cursor = "grabbing";
+  }
+
+  private onMouseMove(event: MouseEvent): void {
+    if (!this.drag) {
+      if (!this.isActive) return;
+      const index = this.pointAt(event);
+      if (index !== this.hoverPoint) {
+        this.hoverPoint = index;
+        document.body.style.cursor = index >= 0 ? "grab" : this.mode === "none" ? "" : "crosshair";
+      }
+      return;
+    }
+    event.stopPropagation();
+    const point = this.worldFromEvent(event);
+    if (!this.drag.moved && Math.hypot(point.x - this.drag.startX, point.y - this.drag.startY) < 3) return;
+    this.drag.moved = true;
+    const dragged = this.pathPoints[this.drag.index];
+    if (dragged) this.pathPoints[this.drag.index] = { ...dragged, x: point.x, y: point.y };
+  }
+
+  private onMouseUp(event: MouseEvent): void {
+    if (!this.drag) return;
+    const { moved } = this.drag;
+    this.drag = null;
+    document.body.style.cursor = this.mode === "none" ? "grab" : "crosshair";
+    if (!moved) return;
+    event.stopPropagation();
+    this.swallowClick = true;
+    // Like a drawn point, the move streams to the popup, where it is an unsaved change to the path.
+    this.toEditor({ type: "pointPicked", what: "path", points: this.pathPoints, map: this.pathMap ?? this.currentMap() });
+  }
+
   private onWorldClick(event: MouseEvent): void {
+    if (this.swallowClick) {
+      this.swallowClick = false;
+      event.stopPropagation();
+      event.preventDefault();
+      return;
+    }
     if (!this.isActive || this.mode === "none" || !getIsLoaded()) return;
     if ((event.target as HTMLElement)?.closest?.(".ui")) return;
     event.stopPropagation();
