@@ -2,7 +2,7 @@
 // makes one here: it picks a class, and the gateway makes the character (src/systems/characters.ts). One character per
 // account, named as the account is. An account made before characters existed starts over (the page says so first).
 // The page is a full-screen creator over the world's start area (js/web/startarea.ts): the classes on the left, the
-// chosen one named large in the middle, its stats and spells on the right, and Create under it.
+// chosen one named large in the middle, its stats, spells and starter items on the right, and Create under it.
 
 interface CharacterClassView {
     id: number;
@@ -10,6 +10,7 @@ interface CharacterClassView {
     description: string;
     stats: Record<string, number>;
     spells: { spell: string; level: number }[];
+    items?: { item: string; quantity: number }[];
 }
 
 interface CharacterStatus {
@@ -18,6 +19,7 @@ interface CharacterStatus {
     username: string;
     classes: CharacterClassView[];
     spellInfo: Record<string, { description: string; icon: string | null }>;
+    itemInfo?: Record<string, { description: string; icon: string | null }>;
 }
 
 function readCookie(name: string): string | undefined {
@@ -200,6 +202,23 @@ function renderDetails(c: CharacterClassView): void {
                 <span class="cc-spell-level">${s.level <= 1 ? 'Start' : `Lv ${escapeHtml(s.level)}`}</span>
             </li>`;
         }).join('')}</ul>`;
+    // the starter items, laid out as the spells are, with the quantity where a spell has its level
+    const starter = c.items ?? [];
+    const items = starter.length === 0
+        ? '<p class="cc-none">This class starts with no items.</p>'
+        : `<ul class="cc-spells">${starter.map((i) => {
+            const info = characterStatus!.itemInfo?.[i.item];
+            const icon = info?.icon ? `${ASSET_SERVER}/icon?name=${encodeURIComponent(info.icon.replace(/\.(png|jpg|jpeg|gif)$/i, ''))}` : null;
+            return `
+            <li class="cc-spell">
+                <span class="cc-spell-icon">${icon ? `<img src="${escapeHtml(icon)}" alt="" loading="lazy">` : ''}</span>
+                <span class="cc-spell-words">
+                    <span class="cc-spell-name">${escapeHtml(i.item.replace(/_/g, ' '))}</span>
+                    ${info?.description ? `<span class="cc-spell-description">${escapeHtml(info.description)}</span>` : ''}
+                </span>
+                <span class="cc-spell-level">×${escapeHtml(i.quantity)}</span>
+            </li>`;
+        }).join('')}</ul>`;
     // (the heading only shows where the class is not named large over the world: a phone held sideways)
     box.innerHTML = `
         <div class="cc-details-head">${emblem(c, 'head')}<h2 class="cc-details-name">${escapeHtml(c.name)}</h2></div>
@@ -207,6 +226,8 @@ function renderDetails(c: CharacterClassView): void {
         <div class="cc-stats">${stats}</div>
         <h3 class="cc-section-title">Spells</h3>
         ${spells}
+        <h3 class="cc-section-title">Starter items</h3>
+        ${items}
     `;
 }
 

@@ -1,10 +1,10 @@
 ---
 title: Class Editor
-description: Create, edit and delete character classes: the stats a new character starts with and the spells it learns at each level.
+description: Create, edit and delete character classes: the stats and items a new character starts with and the spells it learns at each level.
 order: 45
 ---
 
-The class editor manages the rows of the `classes` table. A class is what a player picks on the character page when they make their character: its name and description, the stats a new character of it starts with, and the spells it learns, each at a level.
+The class editor manages the rows of the `classes` table. A class is what a player picks on the character page when they make their character: its name and description, the stats a new character of it starts with, the spells it learns, each at a level, and the items it starts with.
 
 ## Characters and classes
 
@@ -20,12 +20,12 @@ While at least one class exists, an account without a character makes one before
 
 1. After realm selection, the player goes to the character page at `/character` instead of the game. The page fills the screen, and behind it the view drifts slowly over the world's starting area: the realm's default map round its spawn, tiles only, with no players or creatures. The realm page draws that picture ahead while the player picks a realm, and the browser keeps it until the map changes.
 2. They pick a class and select **Create** followed by the class's name.
-3. The game opens. Its level 1 spells are learned at that first login.
+3. The game opens with the class's starter items in the inventory. Its level 1 spells are learned at that first login.
 
 A game server also refuses a login without a character (packet `CHARACTER_REQUIRED`), which sends the client to the character page. With no class defined, accounts go straight into the game.
 
 :::warning Making a character starts the account over
-Accounts made before classes existed have no character either. Making one brings the account back to level 1 with the class's stats. Its items, equipment, bags, spells, quests, gold and home are removed, and it starts at the world's starting point. Its friends, ignores, permissions, mounts and sound settings stay. The character page says so first, and asks the player to confirm it.
+Accounts made before classes existed have no character either. Making one brings the account back to level 1 with the class's stats and starter items. Its other items, equipment, bags, spells, quests, gold and home are removed, and it starts at the world's starting point. Its friends, ignores, permissions, mounts and sound settings stay. The character page says so first, and asks the player to confirm it.
 :::
 
 Nothing is written while the account is in the game: the page refuses until the player has left it.
@@ -49,7 +49,7 @@ The permission is read from the database on every packet, so granting or removin
 
 ## The window
 
-The editor uses the shared workbench described in [Tools Overview](#/tools/overview/the-editor-workbench). The side pane lists every class with its health, stamina and number of spells. The open class is split over three tabs, **General**, **Stats** and **Spells**, as the spell and item editors split theirs. **In plain words** beside every tab sums up what the class is in the game. A tab with a field that needs fixing shows how many.
+The editor uses the shared workbench described in [Tools Overview](#/tools/overview/the-editor-workbench). The side pane lists every class with its health, stamina and number of spells and starter items. The open class is split over four tabs, **General**, **Stats**, **Spells** and **Starter items**, as the spell and item editors split theirs. **In plain words** beside every tab sums up what the class is in the game. A tab with a field that needs fixing shows how many.
 
 ### General
 
@@ -84,11 +84,17 @@ The spells the class learns, each at a level from 1 to 1000, up to 50 spells. Ea
 
 A spell that has since been deleted in the [Spell Editor](#/tools/spell-editor) is passed over. Spells are made there first.
 
+### Starter items
+
+The items a new character of the class has in its inventory when it is made, up to 50 items. Each item is a card of its own with the item, picked from the item list with its icon, and a quantity from 1 to 9999. **Add item** adds a card with the next item not yet in the list. An item can be in the list once.
+
+Starter items are given only when a character is made on the character page. Characters already made keep the items they have when the list is changed. An item that has since been deleted in the [Item Editor](#/tools/item-editor) is passed over. Items are made there first.
+
 ## Saving and deleting
 
 | Action | Packet | Server behaviour |
 | --- | --- | --- |
-| Open | `CLASS_EDITOR_LIST` | Sends every class, the spells to pick from and the rules |
+| Open | `CLASS_EDITOR_LIST` | Sends every class, the spells and items to pick from and the rules |
 | Save | `CLASS_EDITOR_SAVE` | Checks the class, writes it, and answers with every class as it then stands |
 | Delete | `CLASS_EDITOR_DELETE` | Removes the class |
 

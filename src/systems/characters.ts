@@ -11,8 +11,8 @@ import log from "../modules/logger";
  * (CHARACTER_REQUIRED) until one is made. With no class defined, every account plays as before.
  *
  * Making the character starts the account over (USER DECISION 2026-10-14, for the accounts made before characters
- * existed): level 1 with the class's base stats, no items, equipment, bags, spells, quests, gold or home, at the
- * world's starting point. What is not the character stays: the account, its friends, ignores, permissions, mounts
+ * existed): level 1 with the class's base stats and starter items (USER REQUEST 2026-10-21), no other items, and no
+ * equipment, bags, spells, quests, gold or home, at the world's starting point. What is not the character stays: the account, its friends, ignores, permissions, mounts
  * and sound settings. The game server reads the rows again at the next login and teaches the class's level 1 spells
  * then. Nothing is written while the account is in the game: the server holds its own copy of a player in play.
  */
@@ -24,6 +24,7 @@ export interface CharacterClassView {
   description: string;
   stats: { max_health: number; max_stamina: number; stat_damage: number; stat_armor: number; stat_critical_chance: number; stat_critical_damage: number; stat_avoidance: number };
   spells: { spell: string; level: number }[];
+  items: { item: string; quantity: number }[];
 }
 
 function parseSpells(raw: unknown): { spell: string; level: number }[] {
@@ -38,6 +39,18 @@ function parseSpells(raw: unknown): { spell: string; level: number }[] {
     .sort((a, b) => a.level - b.level || a.spell.localeCompare(b.spell));
 }
 
+/** The items column, as the engine's systems/classes.ts reads it. Absent on a table made before starter items. */
+function parseItems(raw: unknown): { item: string; quantity: number }[] {
+  let value: unknown = raw;
+  if (typeof raw === "string") {
+    try { value = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((e) => e && typeof e.item === "string" && e.item && Number.isFinite(Number(e.quantity)))
+    .map((e) => ({ item: String(e.item), quantity: Math.max(1, Math.floor(Number(e.quantity))) }));
+}
+
 function toView(row: any): CharacterClassView {
   const n = (v: unknown) => Number(v) || 0;
   return {
@@ -49,7 +62,14 @@ function toView(row: any): CharacterClassView {
       stat_critical_chance: n(row.stat_critical_chance), stat_critical_damage: n(row.stat_critical_damage), stat_avoidance: n(row.stat_avoidance),
     },
     spells: parseSpells(row.spells),
+    items: parseItems(row.items),
   };
+}
+
+/** Every item the server has, by lower-case name: its name as the table has it, description and icon. */
+async function itemTable(): Promise<Map<string, { name: string; description: string; icon: string | null }>> {
+  const rows = (await query("SELECT name, description, icon FROM items").catch(() => [])) as any[];
+  return new Map((rows || []).map((row) => [String(row.name).toLowerCase(), { name: String(row.name), description: String(row.description ?? ""), icon: row.icon ? String(row.icon) : null }]));
 }
 
 /** Every class, by name. None when the table is not there (a game server that has not started since characters came). */
@@ -72,11 +92,13 @@ export interface CharacterStatus {
   classes: CharacterClassView[];
   /** What the classes' spells are, by name: their description and icon (a sprite name of the asset server). */
   spellInfo: Record<string, { description: string; icon: string | null }>;
+  /** What the classes' starter items are, by name: their description and icon (an icon name of the asset server). */
+  itemInfo: Record<string, { description: string; icon: string | null }>;
 }
 
 const characters = {
   async status(username: string): Promise<CharacterStatus> {
-    const none: CharacterStatus = { needed: false, startsOver: false, username, classes: [], spellInfo: {} };
+    const none: CharacterStatus = { needed: false, startsOver: false, username, classes: [], spellInfo: {}, itemInfo: {} };
     let account: any;
     try {
       account = ((await query("SELECT class_id FROM accounts WHERE username = ?", [username])) as any[])?.[0];
@@ -86,11 +108,12 @@ const characters = {
     if (!account || (account.class_id !== null && account.class_id !== undefined)) return none;
     const classes = await classList();
     if (classes.length === 0) return none;
-    const [stats, items, spells, spellRows] = await Promise.all([
+    const [stats, items, spells, spellRows, itemRows] = await Promise.all([
       query("SELECT level, xp FROM stats WHERE username = ?", [username]).catch(() => []) as Promise<any[]>,
       query("SELECT COUNT(*) AS count FROM inventory WHERE username = ?", [username]).catch(() => []) as Promise<any[]>,
       query("SELECT COUNT(*) AS count FROM learned_spells WHERE username = ?", [username]).catch(() => []) as Promise<any[]>,
       query("SELECT name, description, icon FROM spells").catch(() => []) as Promise<any[]>,
+      itemTable(),
     ]);
     const startsOver = Number(stats?.[0]?.level) > 1 || Number(stats?.[0]?.xp) > 0 || Number(items?.[0]?.count) > 0 || Number(spells?.[0]?.count) > 0;
     const named = new Set(classes.flatMap((c) => c.spells.map((s) => s.spell)));
@@ -98,7 +121,12 @@ const characters = {
     for (const row of spellRows || []) {
       if (named.has(row.name)) spellInfo[row.name] = { description: String(row.description ?? ""), icon: row.icon ? String(row.icon) : null };
     }
-    return { needed: true, startsOver, username, classes, spellInfo };
+    const itemInfo: CharacterStatus["itemInfo"] = {};
+    for (const entry of classes.flatMap((c) => c.items)) {
+      const found = itemRows.get(entry.item.toLowerCase());
+      if (found) itemInfo[entry.item] = { description: found.description, icon: found.icon };
+    }
+    return { needed: true, startsOver, username, classes, spellInfo, itemInfo };
   },
 
   /** Makes the account's character of a class. An error message when it cannot be made. */
@@ -119,6 +147,13 @@ const characters = {
     if (account.class_id !== null && account.class_id !== undefined) return { ok: false, error: "This account already has its character.", status: 409 };
     if (Number(account.online) === 1) return { ok: false, error: "Your account is in the game right now. Leave the game first, then make your character.", status: 409 };
 
+    // the starter items still in the items table, by the name it has them under (one deleted since is passed over)
+    const known = await itemTable();
+    const starterItems = chosen.items.flatMap((entry) => {
+      const found = known.get(entry.item.toLowerCase());
+      return found ? [{ item: found.name, quantity: entry.quantity }] : [];
+    });
+
     const s = chosen.stats;
     const statements: TransactionStatement[] = [
       // the account first, and only while it has no character: two requests at once make one character
@@ -133,6 +168,7 @@ const characters = {
         values: [username, s.max_health, s.max_health, s.max_stamina, s.max_stamina, 0, 100, 1, s.stat_critical_damage, s.stat_critical_chance, s.stat_armor, s.stat_damage, s.stat_avoidance],
       },
       { sql: "DELETE FROM inventory WHERE username = ?", values: [username] },
+      ...starterItems.map((entry) => ({ sql: "INSERT INTO inventory (username, item, quantity) VALUES (?, ?, ?)", values: [username, entry.item, entry.quantity] })),
       { sql: "DELETE FROM bags WHERE username = ?", values: [username] },
       { sql: "DELETE FROM equipment WHERE username = ?", values: [username] },
       { sql: "INSERT INTO equipment (username) VALUES (?)", values: [username] },

@@ -15,15 +15,16 @@ mock.module("../controllers/sqldatabase", () => ({
 
 const { default: characters } = await import("./characters");
 
-const MAGE = { name: "Mage", description: "Casts.", max_health: 80, max_stamina: 150, stat_damage: 3, stat_armor: 1, stat_critical_chance: 12, stat_critical_damage: 40, stat_avoidance: 5, spells: '[{"spell":"frost_bolt","level":1},{"spell":"blink","level":4}]' };
+const MAGE = { name: "Mage", description: "Casts.", max_health: 80, max_stamina: 150, stat_damage: 3, stat_armor: 1, stat_critical_chance: 12, stat_critical_damage: 40, stat_avoidance: 5, spells: '[{"spell":"frost_bolt","level":1},{"spell":"blink","level":4}]', items: '[{"item":"Wooden_Staff","quantity":1},{"item":"health_potion","quantity":5},{"item":"gone_item","quantity":2}]' };
 
 beforeEach(async () => {
   db = new SQL({ adapter: "sqlite", filename: ":memory:" });
   for (const sql of [
     "CREATE TABLE accounts (username TEXT PRIMARY KEY, class_id INTEGER DEFAULT NULL, online INTEGER DEFAULT 0, map TEXT, position TEXT, is_dead INTEGER DEFAULT 0, corpse_map TEXT, corpse_x INTEGER, corpse_y INTEGER)",
-    "CREATE TABLE classes (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, description TEXT, max_health INTEGER, max_stamina INTEGER, stat_damage INTEGER, stat_armor INTEGER, stat_critical_chance INTEGER, stat_critical_damage INTEGER, stat_avoidance INTEGER, spells TEXT)",
+    "CREATE TABLE classes (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, description TEXT, max_health INTEGER, max_stamina INTEGER, stat_damage INTEGER, stat_armor INTEGER, stat_critical_chance INTEGER, stat_critical_damage INTEGER, stat_avoidance INTEGER, spells TEXT, items TEXT)",
     "CREATE TABLE stats (username TEXT UNIQUE, health INTEGER, max_health INTEGER, stamina INTEGER, max_stamina INTEGER, xp INTEGER, max_xp INTEGER, level INTEGER, stat_critical_damage INTEGER DEFAULT 0, stat_critical_chance INTEGER DEFAULT 0, stat_armor INTEGER DEFAULT 0, stat_damage INTEGER DEFAULT 0, stat_health INTEGER DEFAULT 0, stat_stamina INTEGER DEFAULT 0, stat_avoidance INTEGER DEFAULT 0)",
-    "CREATE TABLE inventory (username TEXT, item TEXT)",
+    "CREATE TABLE inventory (username TEXT, item TEXT, quantity INTEGER DEFAULT 1)",
+    "CREATE TABLE items (name TEXT, description TEXT, icon TEXT)",
     "CREATE TABLE bags (username TEXT UNIQUE, slot_1 TEXT)",
     "CREATE TABLE equipment (username TEXT UNIQUE, head TEXT, weapon TEXT)",
     "CREATE TABLE learned_spells (username TEXT, spell TEXT)",
@@ -40,7 +41,8 @@ beforeEach(async () => {
   // a player of some standing from before characters
   await db.unsafe("INSERT INTO accounts (username, map, position, is_dead, corpse_map) VALUES ('veteran', 'forest', '120,80', 1, 'forest')");
   await db.unsafe("INSERT INTO stats (username, health, max_health, stamina, max_stamina, xp, max_xp, level, stat_damage) VALUES ('veteran', 300, 300, 200, 200, 50, 900, 12, 40)");
-  await db.unsafe("INSERT INTO inventory VALUES ('veteran', 'sword'), ('veteran', 'potion')");
+  await db.unsafe("INSERT INTO items VALUES ('wooden_staff', 'A plain staff.', 'staff.png'), ('health_potion', 'Heals.', NULL)");
+  await db.unsafe("INSERT INTO inventory (username, item) VALUES ('veteran', 'sword'), ('veteran', 'potion')");
   await db.unsafe("INSERT INTO bags VALUES ('veteran', 'big_bag')");
   await db.unsafe("INSERT INTO equipment VALUES ('veteran', 'cap', 'sword')");
   await db.unsafe("INSERT INTO learned_spells VALUES ('veteran', 'other')");
@@ -57,8 +59,8 @@ beforeEach(async () => {
 });
 
 const addMage = async () => {
-  await db.unsafe(sqlWrapper("INSERT INTO classes (name, description, max_health, max_stamina, stat_damage, stat_armor, stat_critical_chance, stat_critical_damage, stat_avoidance, spells) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    [MAGE.name, MAGE.description, MAGE.max_health, MAGE.max_stamina, MAGE.stat_damage, MAGE.stat_armor, MAGE.stat_critical_chance, MAGE.stat_critical_damage, MAGE.stat_avoidance, MAGE.spells], "sqlite"));
+  await db.unsafe(sqlWrapper("INSERT INTO classes (name, description, max_health, max_stamina, stat_damage, stat_armor, stat_critical_chance, stat_critical_damage, stat_avoidance, spells, items) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [MAGE.name, MAGE.description, MAGE.max_health, MAGE.max_stamina, MAGE.stat_damage, MAGE.stat_armor, MAGE.stat_critical_chance, MAGE.stat_critical_damage, MAGE.stat_avoidance, MAGE.spells, MAGE.items], "sqlite"));
   return Number((await db.unsafe("SELECT id FROM classes WHERE name = 'Mage'"))[0].id);
 };
 
@@ -72,6 +74,8 @@ test("with a class: an account without a character is asked for one, and told wh
   expect(fresh).toMatchObject({ needed: true, startsOver: false, username: "newbie" });
   expect(fresh.classes[0]).toMatchObject({ name: "Mage", stats: { max_health: 80, stat_avoidance: 5 }, spells: [{ spell: "frost_bolt", level: 1 }, { spell: "blink", level: 4 }] });
   expect(fresh.spellInfo).toEqual({ frost_bolt: { description: "A bolt of ice.", icon: "frost_bolt.png" }, blink: { description: "Jump ahead.", icon: null } });
+  expect(fresh.classes[0]!.items).toEqual([{ item: "Wooden_Staff", quantity: 1 }, { item: "health_potion", quantity: 5 }, { item: "gone_item", quantity: 2 }]);
+  expect(fresh.itemInfo).toEqual({ Wooden_Staff: { description: "A plain staff.", icon: "staff.png" }, health_potion: { description: "Heals.", icon: null } });
   expect((await characters.status("veteran")).startsOver).toBe(true);
 });
 
@@ -83,7 +87,9 @@ test("making the character starts the account over with the class's stats, and k
   expect(await one("SELECT class_id, map, position, is_dead, corpse_map FROM accounts WHERE username = 'veteran'")).toEqual({ class_id: id, map: "", position: "0,0", is_dead: 0, corpse_map: null });
   expect(await one("SELECT health, max_health, stamina, max_stamina, xp, max_xp, level, stat_damage, stat_armor, stat_critical_chance, stat_critical_damage, stat_avoidance FROM stats WHERE username = 'veteran'"))
     .toEqual({ health: 80, max_health: 80, stamina: 150, max_stamina: 150, xp: 0, max_xp: 100, level: 1, stat_damage: 3, stat_armor: 1, stat_critical_chance: 12, stat_critical_damage: 40, stat_avoidance: 5 });
-  for (const table of ["inventory", "bags", "learned_spells", "quest_log", "quest_objective_progress", "player_home"]) {
+  // the class's starter items, under the items table's names; one no longer there is passed over
+  expect(await db.unsafe("SELECT item, quantity FROM inventory WHERE username = 'veteran' ORDER BY item")).toEqual([{ item: "health_potion", quantity: 5 }, { item: "wooden_staff", quantity: 1 }]);
+  for (const table of ["bags", "learned_spells", "quest_log", "quest_objective_progress", "player_home"]) {
     expect(`${table}: ${(await db.unsafe(`SELECT COUNT(*) AS n FROM ${table} WHERE username = 'veteran'`))[0].n}`).toBe(`${table}: 0`);
   }
   expect(await one("SELECT head, weapon FROM equipment WHERE username = 'veteran'")).toEqual({ head: null, weapon: null });

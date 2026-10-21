@@ -1,8 +1,9 @@
 // Class editor popup (USER REQUEST 2026-10-14: "create a class editor that can define certain base stats and learn
-// certain spells at certain levels"). Talks to the game window over postMessage; the game window forwards everything
+// certain spells at certain levels"; USER REQUEST 2026-10-21: "allow adding starter items"). Talks to the game window over postMessage; the game window forwards everything
 // to the server (engine src/systems/classeditor.ts), which validates and persists. The window itself is the shared
 // workbench (tooleditor.ts); this file holds what is the class editor's own: its fields, the server's rules repeated
-// so a slip is caught before the round trip, the list of spells a class learns, and its conversation with the server.
+// so a slip is caught before the round trip, the lists of spells a class learns and items it starts with, and its
+// conversation with the server.
 // There are few classes, so the list is held whole here: every answer of the server carries it afresh.
 import { EditorShell, type ListRow, type RecordState } from "./tooleditor.js";
 import { FieldRenderer, setFieldError, type AssetOption, type Field } from "./toolfields.js";
@@ -11,6 +12,8 @@ import { button, card, count, el, empty, forbid, icon, iconButton, listed, notic
 interface NumberRule { label: string; min: number; max: number; hint: string }
 interface ClassSpell { spell: string; level: number }
 interface SpellOption { name: string; icon: string | null; description: string; type: string | null }
+interface ClassItem { item: string; quantity: number }
+interface ItemOption { name: string; icon: string | null; description: string; quality: string }
 
 interface CharacterClass {
   id: number | null;
@@ -24,6 +27,7 @@ interface CharacterClass {
   stat_critical_damage: number | null;
   stat_avoidance: number | null;
   spells: ClassSpell[];
+  items: ClassItem[];
 }
 
 /** The base stats, in the order the form shows them, and what each is counted in. */
@@ -35,17 +39,18 @@ const TABS = [
   { id: "general", label: "General" },
   { id: "stats", label: "Stats" },
   { id: "spells", label: "Spells" },
+  { id: "items", label: "Starter items" },
 ];
-const TAB_TITLES: Record<string, string> = { general: "General", stats: "Stats", spells: "Spells" };
+const TAB_TITLES: Record<string, string> = { general: "General", stats: "Stats", spells: "Spells", items: "Starter items" };
 
 const lower = (s: unknown): string => String(s ?? "").toLowerCase();
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
 class ClassEditorBridge {
   private data: {
-    classes: CharacterClass[]; spells: SpellOption[]; numbers: Record<string, NumberRule>;
-    nameMax: number; descriptionMax: number; spellsMax: number; levelMax: number; ready: boolean;
-  } = { classes: [], spells: [], numbers: {}, nameMax: 45, descriptionMax: 500, spellsMax: 50, levelMax: 1000, ready: true };
+    classes: CharacterClass[]; spells: SpellOption[]; items: ItemOption[]; numbers: Record<string, NumberRule>;
+    nameMax: number; descriptionMax: number; spellsMax: number; levelMax: number; itemsMax: number; quantityMax: number; ready: boolean;
+  } = { classes: [], spells: [], items: [], numbers: {}, nameMax: 45, descriptionMax: 500, spellsMax: 50, levelMax: 1000, itemsMax: 50, quantityMax: 9999, ready: true };
   private ready = false;
   /** Id of the class being edited, or null for a new one. */
   private originalId: number | null = null;
@@ -59,7 +64,7 @@ class ClassEditorBridge {
   private pendingTimer: ReturnType<typeof setTimeout> | null = null;
   private tab = "general";
   private summaryEl: HTMLElement | null = null;
-  /** What follows the fields as they are typed in: the line under each spell's title. */
+  /** What follows the fields as they are typed in: the line under each spell's and item's title. */
   private live: Array<() => void> = [];
 
   private shell = new EditorShell({
@@ -114,6 +119,9 @@ class ClassEditorBridge {
     this.data = { ...this.data, ...data };
     if (!Array.isArray(this.data.classes)) this.data.classes = [];
     if (!Array.isArray(this.data.spells)) this.data.spells = [];
+    if (!Array.isArray(this.data.items)) this.data.items = [];
+    // a class saved before starter items existed has none
+    for (const c of this.data.classes) if (!Array.isArray(c.items)) c.items = [];
     this.ready = true;
     this.shell.arrived();
     this.shell.setCount(this.data.classes.length);
@@ -185,6 +193,10 @@ class ClassEditorBridge {
     return this.data.spells.find((s) => s.name === name);
   }
 
+  private item(name: string): ItemOption | undefined {
+    return this.data.items.find((i) => i.name === name);
+  }
+
   /** The server's checks, run here first. The server runs them again and is the one that counts. */
   private validate(): Record<string, string> {
     const errors: Record<string, string> = {};
@@ -211,11 +223,22 @@ class ClassEditorBridge {
       if (!Number.isInteger(entry.level) || entry.level < 1 || entry.level > this.data.levelMax) errors[`${key}.level`] = `The level must be a whole number from 1 to ${this.data.levelMax}.`;
       seen.add(lower(entry.spell));
     });
+    if (d.items.length > this.data.itemsMax) errors.items = `A class starts with ${this.data.itemsMax} items at most.`;
+    const held = new Set<string>();
+    d.items.forEach((entry, i) => {
+      const key = `items.${i}`;
+      if (!entry.item) errors[`${key}.item`] = "Pick an item.";
+      else if (!this.item(entry.item)) errors[`${key}.item`] = `${entry.item} is not an item (any more).`;
+      else if (held.has(lower(entry.item))) errors[`${key}.item`] = `${entry.item} is in the list twice.`;
+      if (!Number.isInteger(entry.quantity) || entry.quantity < 1 || entry.quantity > this.data.quantityMax) errors[`${key}.quantity`] = `The quantity must be a whole number from 1 to ${this.data.quantityMax}.`;
+      held.add(lower(entry.item));
+    });
     return errors;
   }
 
   private tabOf(path: string): string {
     if (path.startsWith("spells")) return "spells";
+    if (path.startsWith("items")) return "items";
     return (STAT_KEYS as readonly string[]).includes(path) ? "stats" : "general";
   }
 
@@ -232,6 +255,7 @@ class ClassEditorBridge {
     const tabs = [...new Set(fields.map((f) => this.tabOf(f)))];
     const lines = [`${count(fields.length, "field needs", "fields need")} fixing, on ${listed(tabs.map((t) => TAB_TITLES[t]))}.`];
     if (this.fieldErrors.spells) lines.push(this.fieldErrors.spells);
+    if (this.fieldErrors.items) lines.push(this.fieldErrors.items);
     return lines;
   }
 
@@ -256,6 +280,7 @@ class ClassEditorBridge {
       id: null, name: "New class", description: "",
       max_health: 100, max_stamina: 100, stat_damage: 0, stat_armor: 0, stat_critical_chance: 10, stat_critical_damage: 10, stat_avoidance: 0,
       spells: first ? [{ spell: first, level: 1 }] : [],
+      items: [],
     };
   }
 
@@ -267,7 +292,8 @@ class ClassEditorBridge {
 
   private noteOf(c: CharacterClass): string {
     const spells = c.spells.length === 0 ? "no spells" : count(c.spells.length, "spell");
-    return `${c.max_health ?? 0} health · ${c.max_stamina ?? 0} stamina · ${spells}`;
+    const items = c.items.length === 0 ? "" : ` · ${count(c.items.length, "item")}`;
+    return `${c.max_health ?? 0} health · ${c.max_stamina ?? 0} stamina · ${spells}${items}`;
   }
 
   /** What the open class adds up to in the game, one sentence to a line. */
@@ -283,7 +309,9 @@ class ClassEditorBridge {
       for (const s of [...d.spells].sort((a, b) => a.level - b.level)) byLevel.set(s.level, [...(byLevel.get(s.level) ?? []), s.spell || "(no spell picked)"]);
       for (const [level, names] of byLevel) lines.push(`Level ${level}: learns ${listed(names)}.`);
     }
-    lines.push("These are starting values: levelling works as for every character. Characters already made keep their stats; they learn spells added here once they reach the level (at their next login for levels already passed).");
+    if (d.items.length === 0) lines.push("Starts with an empty inventory.");
+    else lines.push(`Starts with ${listed(d.items.map((i) => `${i.quantity > 1 ? `${i.quantity} × ` : ""}${i.item || "(no item picked)"}`))}.`);
+    lines.push("These are starting values: levelling works as for every character. Characters already made keep their stats and items; they learn spells added here once they reach the level (at their next login for levels already passed).");
     return lines;
   }
 
@@ -365,6 +393,7 @@ class ClassEditorBridge {
     const { main, aside } = this.shell.page(`${this.opened}:${this.tab}`, { aside: true });
 
     if (this.tab === "spells") this.renderSpells(main);
+    else if (this.tab === "items") this.renderItems(main);
     else if (this.tab === "stats") this.renderStats(main);
     else this.renderGeneral(main);
 
@@ -455,6 +484,73 @@ class ClassEditorBridge {
     }
   }
 
+  /** The items a new character starts with: a card each, as the spells. */
+  private renderItems(main: HTMLElement): void {
+    const d = this.draft!;
+    if (d.items.length === 0) {
+      const none = el("section", "tl-card");
+      empty(none, "bag", "No starter items", "New characters of this class start with an empty inventory. Add an item below.");
+      main.appendChild(none);
+    }
+
+    d.items.forEach((entry, index) => {
+      const at = `items.${index}`;
+      const part = card(main, `Item ${index + 1} · ${entry.item || "No item picked"}`, this.itemLine(entry));
+      const lead = part.root.querySelector<HTMLElement>(".tl-card-lead");
+      this.live.push(() => { if (lead) lead.textContent = this.itemLine(entry); });
+      part.tools.append(iconButton("trash", `Remove item ${index + 1}`, () => {
+        d.items.splice(index, 1);
+        this.dirty = true;
+        this.refused = false;
+        // positions changed, so the problems reported by position no longer line up
+        for (const path of Object.keys(this.fieldErrors)) if (path.startsWith("items")) delete this.fieldErrors[path];
+        this.renderForm();
+      }, { danger: true, size: 15 }));
+      // what the server said about the item as a whole
+      const wrong = this.fieldErrors[at];
+      if (wrong) part.body.appendChild(this.entryError(wrong));
+
+      const grid = el("div", "tl-fields tl-fields-2");
+      part.body.appendChild(grid);
+      grid.appendChild(this.field(
+        { key: "item", label: "Item", type: "asset", assets: () => this.itemOptions(), fallback: "bag", rerender: true, hint: this.item(entry.item)?.description || "Made in the item editor." },
+        `${at}.item`, entry,
+      ));
+      grid.appendChild(this.field(
+        { key: "quantity", label: "Quantity", type: "number", min: 1, max: this.data.quantityMax, step: 1 },
+        `${at}.quantity`, entry,
+      ));
+    });
+
+    const add = button("Add item", () => {
+      const used = new Set(d.items.map((i) => lower(i.item)));
+      d.items.push({ item: this.data.items.find((i) => !used.has(lower(i.name)))?.name ?? "", quantity: 1 });
+      this.dirty = true;
+      this.refused = false;
+      delete this.fieldErrors.items;
+      this.renderForm();
+    }, { icon: "plus", add: true });
+    main.appendChild(add);
+    const why = this.data.items.length === 0 ? "There are no items yet. Make them in the item editor (/ie)."
+      : d.items.length >= this.data.itemsMax ? `A class starts with ${this.data.itemsMax} items at most.` : "";
+    if (why) {
+      forbid(add, why);
+      const said = el("p", "tl-why");
+      said.append(icon("lock", 13), el("span", "", why));
+      main.appendChild(said);
+    }
+  }
+
+  private itemOptions(): AssetOption[] {
+    return this.data.items.map((i) => ({ value: i.name, label: i.name, image: i.icon }));
+  }
+
+  /** The line under an item's title. */
+  private itemLine(entry: ClassItem): string {
+    if (!Number.isInteger(entry.quantity) || entry.quantity < 1) return "Give it a quantity";
+    return entry.quantity === 1 ? "One, in the inventory from the start" : `${entry.quantity}, in the inventory from the start`;
+  }
+
   private spellOptions(): AssetOption[] {
     return this.data.spells.map((s) => ({ value: s.name, label: s.name, image: s.icon }));
   }
@@ -502,6 +598,9 @@ class ClassEditorBridge {
     const entry = /^spells\.\d+/.exec(path)?.[0];
     if (entry) delete this.fieldErrors[entry];
     if (path.startsWith("spells")) delete this.fieldErrors.spells;
+    const held = /^items\.\d+/.exec(path)?.[0];
+    if (held) delete this.fieldErrors[held];
+    if (path.startsWith("items")) delete this.fieldErrors.items;
     this.shell.setProblems(this.problemLines(), false);
     this.chrome();
     this.paintLive();
@@ -562,6 +661,7 @@ class ClassEditorBridge {
       id: this.originalId, name: String(d.name ?? "").trim(), description: String(d.description ?? ""),
       ...Object.fromEntries(STAT_KEYS.map((k) => [k, d[k]])),
       spells: d.spells.map((s) => ({ spell: s.spell, level: s.level })),
+      items: d.items.map((i) => ({ item: i.item, quantity: i.quantity })),
     }, String(d.name ?? ""));
   }
 
