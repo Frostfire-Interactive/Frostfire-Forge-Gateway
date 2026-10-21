@@ -32,12 +32,16 @@ interface Weather {
  * USER REQUEST 2026-10-17 ("browse sounds from the audio folder and add them to specific weather types in the weather
  * editor. Sounds for wind, thunder and rain and allow adding multiple (for variant support) and allow choosing the
  * intensity range they can happen at"): a weather's sounds, as the server keeps them (systems/weathersounds.ts).
+ * Thunder has no range (USER REQUEST 2026-10-21): its sounds are a list, one picked at random at each strike.
  */
 type SoundKind = "rain" | "wind" | "thunder";
 interface Sound { name: string; from: number | null; to: number | null; volume: number | null }
 type Sounds = Record<SoundKind, Sound[]>;
-/** What a kind of sound is heard by, as the server sends it: its range is held to min and max. */
-interface SoundRule { label: string; measure: string; unit: string; min: number; max: number }
+/**
+ * What a kind of sound is heard by, as the server sends it: a ranged kind's range is held to min and max. A kind that
+ * is not ranged (thunder) has no range, and its sounds no From and To.
+ */
+interface SoundRule { label: string; ranged?: boolean; measure?: string; unit?: string; min?: number; max?: number }
 interface SoundsRules { kinds: SoundKind[]; rules: Record<SoundKind, SoundRule>; max: number; nameMax: number }
 
 /** What each kind is, in words, for its card. */
@@ -54,7 +58,7 @@ const SOUND_WORDS: Record<SoundKind, { lead: string; icon: IconName; none: strin
   },
   thunder: {
     icon: "bolt",
-    lead: "Heard just after each lightning strike, by Precipitation. One of the sounds whose range holds it is picked at random at each strike. Lightning only strikes in a thunderstorm or a tornado.",
+    lead: "Heard just after each lightning strike. One of these sounds is picked at random at each strike. Lightning only strikes in a thunderstorm or a tornado.",
     none: "No thunder sounds: lightning strikes in silence.",
   },
 };
@@ -118,9 +122,9 @@ class WeatherEditorBridge {
     sounds: {
       kinds: ["rain", "wind", "thunder"], max: 12, nameMax: 100,
       rules: {
-        rain: { label: "Rain", measure: "Precipitation", unit: "%", min: 0, max: 100 },
-        wind: { label: "Wind", measure: "Wind speed", unit: "mph", min: 0, max: 150 },
-        thunder: { label: "Thunder", measure: "Precipitation", unit: "%", min: 0, max: 100 },
+        rain: { label: "Rain", ranged: true, measure: "Precipitation", unit: "%", min: 0, max: 100 },
+        wind: { label: "Wind", ranged: true, measure: "Wind speed", unit: "mph", min: 0, max: 150 },
+        thunder: { label: "Thunder", ranged: false },
       },
     },
   };
@@ -353,11 +357,13 @@ class WeatherEditorBridge {
         const name = String(s.name ?? "").trim();
         if (!name) errors[`${at}.name`] = "Pick an audio file.";
         else if (name.length > nameMax) errors[`${at}.name`] = `An audio name must be ${nameMax} characters or fewer.`;
-        const from = numberError(s.from, { label: "From", min: rule.min, max: rule.max });
-        const to = numberError(s.to, { label: "To", min: rule.min, max: rule.max });
-        if (from) errors[`${at}.from`] = from;
-        if (to) errors[`${at}.to`] = to;
-        else if (!from && (s.from as number) > (s.to as number)) errors[`${at}.to`] = "To must not be under From.";
+        if (rule.ranged !== false) {
+          const from = numberError(s.from, { label: "From", min: rule.min ?? 0, max: rule.max ?? 0 });
+          const to = numberError(s.to, { label: "To", min: rule.min ?? 0, max: rule.max ?? 0 });
+          if (from) errors[`${at}.from`] = from;
+          if (to) errors[`${at}.to`] = to;
+          else if (!from && (s.from as number) > (s.to as number)) errors[`${at}.to`] = "To must not be under From.";
+        }
         const volume = numberError(s.volume, { label: "Volume", min: 0, max: 1 });
         if (volume) errors[`${at}.volume`] = volume;
       });
@@ -654,14 +660,17 @@ class WeatherEditorBridge {
       const problem = this.fieldErrors[`sounds.${kind}`];
       if (problem) part.body.appendChild(note(problem, "danger"));
       if (this.audio.length === 0) part.body.appendChild(note("The asset server's audio list could not be read, so there is nothing to pick from. A sound already chosen is kept.", "warning"));
-      if (list.length === 0) empty(part.body, words.icon, words.none, `Add one below. It is heard from ${rule.min} to ${rule.max} ${rule.unit} unless you narrow it.`);
+      if (list.length === 0) {
+        empty(part.body, words.icon, words.none, rule.ranged === false ? "Add one below. Add more for variety: one is picked at random each time."
+          : `Add one below. It is heard from ${rule.min} to ${rule.max} ${rule.unit} unless you narrow it.`);
+      }
       const cards = el("div", "tl-subcards");
       list.forEach((sound, index) => cards.appendChild(this.soundCard(kind, sound, index)));
       part.body.appendChild(cards);
       const full = list.length >= this.data.sounds.max;
       const add = button(full ? `At most ${this.data.sounds.max}` : `Add ${rule.label.toLowerCase()} sound`, () => {
         if (list.length >= this.data.sounds.max) return;
-        list.push({ name: "", from: rule.min, to: rule.max, volume: 1 });
+        list.push(rule.ranged === false ? { name: "", from: null, to: null, volume: 1 } : { name: "", from: rule.min ?? 0, to: rule.max ?? 0, volume: 1 });
         this.soundsChanged(kind);
       }, { icon: "plus", add: true });
       add.disabled = full;
@@ -678,6 +687,11 @@ class WeatherEditorBridge {
     const { root, lead, tools, body } = subcard({ title: name || "No audio picked", thumb: thumb(null, { fallback: "megaphone" }), wrong: wrong > 0 });
     // (follows the fields as they are typed in, with the rest of paintLive)
     const paint = () => {
+      if (rule.ranged === false) {
+        const others = (this.draft?.sounds[kind] ?? []).length;
+        lead.textContent = (others > 1 ? `One of ${others}, picked at random` : "Heard at every strike") + ` · volume ${sound.volume ?? "?"}`;
+        return;
+      }
       const variants = (this.draft?.sounds[kind] ?? []).filter((s) => s.from === sound.from && s.to === sound.to).length;
       lead.textContent = `${sound.from ?? "?"} to ${sound.to ?? "?"} ${rule.unit}` + (variants > 1 ? ` · one of ${variants} variants` : "") + ` · volume ${sound.volume ?? "?"}`;
     };
@@ -697,8 +711,10 @@ class WeatherEditorBridge {
       hint: known ? "From the asset server's audio folder." : "The asset server has no audio of this name, so nothing is heard.",
       assets: () => this.audio,
     }, `${at}.name`, sound));
-    grid.appendChild(this.field({ key: "from", label: "From", type: "number", min: rule.min, max: rule.max, step: 1, unit: rule.unit, hint: `${rule.measure} where it starts to be heard.` }, `${at}.from`, sound));
-    grid.appendChild(this.field({ key: "to", label: "To", type: "number", min: rule.min, max: rule.max, step: 1, unit: rule.unit, hint: `${rule.measure} where it stops. ${rule.min} to ${rule.max}.` }, `${at}.to`, sound));
+    if (rule.ranged !== false) {
+      grid.appendChild(this.field({ key: "from", label: "From", type: "number", min: rule.min, max: rule.max, step: 1, unit: rule.unit, hint: `${rule.measure} where it starts to be heard.` }, `${at}.from`, sound));
+      grid.appendChild(this.field({ key: "to", label: "To", type: "number", min: rule.min, max: rule.max, step: 1, unit: rule.unit, hint: `${rule.measure} where it stops. ${rule.min} to ${rule.max}.` }, `${at}.to`, sound));
+    }
     grid.appendChild(this.field({ key: "volume", label: "Volume", type: "number", min: 0, max: 1, step: 0.05, hint: "Of what the game makes of it: 1 as loud as it gets, 0 silent." }, `${at}.volume`, sound));
     body.appendChild(grid);
     return root;
@@ -810,7 +826,11 @@ class WeatherEditorBridge {
     this.beginRequest("save", "WEATHER_EDITOR_SAVE", {
       name: String(d.name ?? "").trim(), temperature: d.temperature, humidity: d.humidity, wind_speed: d.wind_speed,
       wind_direction: d.wind_direction, precipitation: d.precipitation, ambience: d.ambience, originalName: this.originalName,
-      sounds: Object.fromEntries(this.data.sounds.kinds.map((kind) => [kind, (d.sounds?.[kind] ?? []).map((s) => ({ ...s, name: String(s.name ?? "").trim() }))])),
+      sounds: Object.fromEntries(this.data.sounds.kinds.map((kind) => [kind, (d.sounds?.[kind] ?? []).map((s) => {
+        const name = String(s.name ?? "").trim();
+        // a sound of a kind with no range is sent without one
+        return this.data.sounds.rules[kind]?.ranged === false ? { name, volume: s.volume } : { ...s, name };
+      })])),
     }, String(d.name ?? ""));
   }
 

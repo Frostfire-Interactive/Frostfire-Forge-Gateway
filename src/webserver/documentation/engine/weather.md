@@ -19,7 +19,7 @@ A weather is a row of the `weather` table. A world (a row of the `worlds` table)
 | `wind_direction` | `none`, `left`, `right`, `up`, `down` | Where the wind blows to on screen |
 | `precipitation` | 0 to 100 | How much rain or snow falls |
 | `ambience` | 0 to 1 | How dark the scene gets in `thunderstorm` and `darkness` weather |
-| `sounds` | Up to 12 sounds of each kind | Rain, wind and thunder sounds (JSON). Each is an audio file heard while the precipitation or the wind speed is within its range, at its own volume. |
+| `sounds` | Up to 12 sounds of each kind | Rain, wind and thunder sounds (JSON). Each is an audio file at its own volume. A rain or wind sound is heard while the precipitation or the wind speed is within its range. A thunder sound has no range: one is picked at random at each lightning strike. |
 
 The limits are enforced by the weather editor (`src/systems/weathereditor.ts`).
 

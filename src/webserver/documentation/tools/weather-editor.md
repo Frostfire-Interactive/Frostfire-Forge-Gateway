@@ -96,12 +96,12 @@ There is a card for each kind of sound: **Rain sounds**, **Wind sounds** and **T
 | Field | Range | Notes |
 | --- | --- | --- |
 | Audio | Up to 100 characters | A file from the asset server's audio folder. The play button listens to it. |
-| From, To | Rain and thunder: 0 to 100 % of Precipitation. Wind: 0 to 150 mph of wind speed with its gusts. | Where the sound is heard. To must not be under From. |
+| From, To | Rain: 0 to 100 % of Precipitation. Wind: 0 to 150 mph of wind speed with its gusts. Thunder has none. | Where the sound is heard. To must not be under From. |
 | Volume | 0 to 1 | 1 as loud as the game makes it, 0 silent |
 
 - Rain and wind sounds are loops. Where two ranges overlap, the lower fades into the higher.
-- Sounds with the same range are variants: one of them is picked each time the weather is shown.
-- A thunder sound is heard just after each lightning strike: one of the sounds whose range holds Precipitation, at random.
+- Rain or wind sounds with the same range are variants: one of them is picked each time the weather is shown.
+- Thunder sounds are a plain list, with no range. One of them, at random, is heard just after each lightning strike.
 
 The **In plain words** card beside the form describes what the open weather does in the game, including what its name draws.
 

@@ -441,7 +441,7 @@ function generateBoltSegments(x: number, y: number): Array<{ x: number; y: numbe
  * file has played to its end, every strike that comes is let go (no flash, no sound). A file not loaded yet is taken
  * as THUNDER_FALLBACK seconds long, so the strikes are spaced out the same when the sound cannot be heard (muted, not
  * loaded, no sound allowed yet). Which thunder is heard is the weather's own (its `sounds`, chosen in the weather
- * editor): one at random of those whose range holds the weather's precipitation. A weather with none strikes in silence.
+ * editor): one of them at random. A weather with none strikes in silence.
  */
 const THUNDER_DELAY_MIN = 0.2, THUNDER_DELAY_MAX = 0.6, THUNDER_FALLBACK = 4;
 /** performance.now() until which the last thunder plays: no strike before then. */
@@ -456,8 +456,8 @@ function addLightningStrike(worldX: number, worldY: number, map?: string) {
   if (currentType !== "thunderstorm" || (map && here && map.replace(".json", "") !== here)) return;
   const now = performance.now();
   if (now < thunderUntil) return;
-  const intensity = fallShare(currentData) * 100;
-  const heard = soundsOf(currentData, "thunder").filter((s) => intensity >= s.from && intensity <= s.to);
+  // any of the weather's thunders: they have no range (USER REQUEST 2026-10-21)
+  const heard = thundersOf(currentData);
   const thunder = heard.length ? heard[Math.floor(Math.random() * heard.length)] : null;
   const delay = (THUNDER_DELAY_MIN + Math.random() * (THUNDER_DELAY_MAX - THUNDER_DELAY_MIN)) * 1000;
   thunderUntil = now + delay + ((thunder && soundLength(thunder.name)) ?? THUNDER_FALLBACK) * 1000;
@@ -665,10 +665,11 @@ function windSpeed(type: string | null, weatherData?: any): number {
  * them to specific weather types in the weather editor ... allow adding multiple (for variant support) and allow
  * choosing the intensity range they can happen at"): which files the rain, the wind and the thunder are is the
  * weather's own, chosen in the weather editor and sent with it (`sounds`, the engine's systems/weathersounds.ts).
- * Each is heard while the weather's intensity is within its range: the rain's and the thunder's is its precipitation
- * (percent), the wind's its speed with its gust (mph). How loud the whole rain or wind is stays as above.
+ * A rain or wind sound is heard while the weather's intensity is within its range: the rain's is its precipitation
+ * (percent), the wind's its speed with its gust (mph). How loud the whole rain or wind is stays as above. Thunder has
+ * no range (thundersOf).
  */
-type SoundKind = "rain" | "wind" | "thunder";
+type SoundKind = "rain" | "wind";
 interface WeatherSoundEntry { name: string; from: number; to: number; volume: number }
 
 /** The weather's sounds of one kind, as sent; what is not a sound is left out. */
@@ -679,6 +680,20 @@ function soundsOf(weatherData: any, kind: SoundKind): WeatherSoundEntry[] {
     .map((s: any) => ({ name: String(s?.name ?? "").trim(), from: Number(s?.from), to: Number(s?.to), volume: Number(s?.volume ?? 1) }))
     .filter((s: WeatherSoundEntry) => s.name && Number.isFinite(s.from) && Number.isFinite(s.to) && s.to >= s.from)
     .map((s: WeatherSoundEntry) => ({ ...s, volume: Number.isFinite(s.volume) ? Math.min(1, Math.max(0, s.volume)) : 1 }));
+}
+
+/**
+ * The weather's thunder sounds, as sent; what is not a sound is left out. A thunder has no range (USER REQUEST
+ * 2026-10-21: "thunder should be a list of thunder sounds, not a list of thunder sounds per precipitation %"), so one
+ * sent with a range by a server from before is heard all the same.
+ */
+function thundersOf(weatherData: any): Array<{ name: string; volume: number }> {
+  const list = weatherData?.sounds?.thunder;
+  if (!Array.isArray(list)) return [];
+  return list
+    .map((s: any) => ({ name: String(s?.name ?? "").trim(), volume: Number(s?.volume ?? 1) }))
+    .filter((s: { name: string }) => s.name)
+    .map((s: { name: string; volume: number }) => ({ ...s, volume: Number.isFinite(s.volume) ? Math.min(1, Math.max(0, s.volume)) : 1 }));
 }
 
 /**
@@ -757,7 +772,7 @@ function updateWeatherSound(type: string | null, weatherData?: any): void {
   }
   // (the thunder files are fetched while a storm is shown, so the first strike is heard; a file had already is not
   // fetched again)
-  if (type === "thunderstorm") for (const s of soundsOf(weatherData, "thunder")) void loadEffect(s.name);
+  if (type === "thunderstorm") for (const s of thundersOf(weatherData)) void loadEffect(s.name);
 
   const amount = rainAmount(type, weatherData);
   playLoops("rain", weatherData, amount * 100, amount > 0 ? RAIN_QUIET + (1 - RAIN_QUIET) * amount : 0);
