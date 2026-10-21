@@ -588,7 +588,9 @@ async function createPlayer(data: any) {
         if (!frame || !frame.imageElement?.complete) continue;
 
         const isMounted: boolean = this.layeredAnimation.layers.mount !== null;
-        const layerKey = `${layer.type}_${this.layeredAnimation.currentAnimationName}_${layer.currentFrame}_${isMounted}_${ghostTint ? "ghost" : "live"}`;
+        // Keyed by the layer's sheet too (its image): swapping an item in the same slot keeps the layer type, pose
+        // and frame, and a key without the sheet drew the old item's cached canvas.
+        const layerKey = `${layer.type}_${(layer as any)._cacheKey ?? ""}_${this.layeredAnimation.currentAnimationName}_${layer.currentFrame}_${isMounted}_${ghostTint ? "ghost" : "live"}`;
         if (!this._layerCanvases[layerKey]) {
           const layerCanvas = document.createElement('canvas');
           layerCanvas.width = frame.width;

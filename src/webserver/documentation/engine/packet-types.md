@@ -424,6 +424,13 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `ITEM_EDITOR_DELETE` | To server | Item editor | Delete an item |
 | `ITEM_EDITOR_RESULT` | To client | Item editor | Whether a save or delete worked |
 | `ITEM_EDITOR_UPDATED` | To client | Item editor | The item list changed |
+| `TOGGLE_MOUNT_EDITOR` | To client | Mount editor | Open or close the mount editor |
+| `MOUNT_EDITOR_LIST` | To server | Mount editor | Ask for every mount |
+| `MOUNT_EDITOR_DATA` | To client | Mount editor | Every mount, and the icons |
+| `MOUNT_EDITOR_SAVE` | To server | Mount editor | Add or change a mount |
+| `MOUNT_EDITOR_DELETE` | To server | Mount editor | Delete a mount |
+| `MOUNT_EDITOR_RESULT` | To client | Mount editor | Whether a save or delete worked, with every mount |
+| `MOUNT_EDITOR_UPDATED` | To client | Mount editor | Another admin changed the mounts |
 | `TOGGLE_SPELL_EDITOR` | To client | Spell editor | Open or close the spell editor |
 | `SPELL_EDITOR_LIST` | To server | Spell editor | Ask for the editor's data |
 | `SPELL_EDITOR_DATA` | To client | Spell editor | The editor's data, effect type rules included |
@@ -486,8 +493,8 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `FISHING` | To client | Fishing | A player's line, for everyone on the map: `{ id, state, x?, y?, item?, icon? }`. `state` is `cast` (the bobber lands at `x`, `y`), `bite`, `reel` (the reel began), `escape` (the fish got away: the bobber comes up, the line stays out), `catch` (the fish is pulled out: `item`, `icon`, `quality`) or `end` |
 | `FISHING_TILES` | To client | Fishing | Which tiles are fishable: `{ tilesets: { "<tileset>": [<tile id>] } }`. Sent at login and to everyone online after a save |
 | `FISHING_EDITOR_LIST` | To server | Map editor | Ask for the Fishing tab's data. Needs `server.admin` or `server.*` |
-| `FISHING_EDITOR_SAVE` | To server | Map editor | Save catches of tiles: `{ changes: [{ tileset, ids, catches }] }`, `catches` being `[{ item, chance }]` or `null` for not fishable. Needs `server.admin` or `server.*` |
-| `FISHING_EDITOR_DATA` | To client | Map editor | Every fishable tile with its catches, and the material items: `{ tiles, items }` |
+| `FISHING_EDITOR_SAVE` | To server | Map editor | Save catches of tiles: `{ changes: [{ tileset, ids, catches, tools }] }`, `catches` being `[{ item, chance }]` or `null` for not fishable, and `tools` the weapon names that fish them (at least one when `catches` is set). Needs `server.admin` or `server.*` |
+| `FISHING_EDITOR_DATA` | To client | Map editor | Every fishable tile with its catches and the weapons that fish it, the material items, and the weapons: `{ tiles, tools, items, weapons }` |
 | `ACHIEVEMENT_EARNED` | To client | Achievements | The earner's popup: `{ id, name, description, icon, rewardItem, rewardQuantity, rewardMount, mailed }` |
 | `ACHIEVEMENTS_LIST` | To server | Achievements | Ask for your achievements (no data). Sent when the window opens, and after one is earned while it is open |
 | `ACHIEVEMENTS` | To client | Achievements | Every achievement that is on, with your progress: `{ achievements: [{ id, name, description, icon, type, count, progress, completedAt, rewardItem, rewardQuantity, rewardMount }] }` |

@@ -45,15 +45,24 @@ const VIEW_KEY = "ff-map-editor-view";
  * editable) rewarded on what tile (similar to tileset sound editor) (item listed as material)"): tiles of the palette
  * picked and given what can be caught from them, material items with a chance each, for every map at once (engine
  * src/systems/fishing). A tile with catches is water a player can cast a line into.
+ *
+ * A fishable tile also names the items that fish it (USER REQUEST 2026-10-21: "require a list of set items that can be
+ * used for fishing selected in the fishing section inside the tile editor"): weapons, one of which a player must have
+ * equipped to cast there. They are chosen in the Catches dialog and applied with the catches.
  */
 interface Catch { item: string; chance: number }
 interface FishItem { name: string; image: string | null; quality: string | null }
-/** At most this many catches on a tile, and a chance from and to (%): the server's limits. */
-const MAX_CATCHES = 12, MIN_CHANCE = 0.01, MAX_CHANCE = 100;
+/** At most this many catches on a tile, and a chance from and to (%), and at most this many items fishing it: the server's limits. */
+const MAX_CATCHES = 12, MIN_CHANCE = 0.01, MAX_CHANCE = 100, MAX_TOOLS = 12;
 /** How long a fishing save may go without the server's answer before it is called not saved. */
 const FISH_SAVE_WAIT_MS = 6000;
 /** A list of catches as text, the same for the same list: to tell lists apart and to colour them. */
 const catchesKey = (list: Catch[] | null | undefined): string => (list ?? []).map((c) => `${c.item.toLowerCase()}=${c.chance}`).join("|");
+/** A tile's catches and the items that fish it, as text: tiles alike in both are alike (one colour, picked together). */
+const fishKey = (list: Catch[] | null | undefined, tools: string[] | null | undefined): string =>
+  `${catchesKey(list)}#${(tools ?? []).map((t) => t.toLowerCase()).sort().join("|")}`;
+/** The items that fish a tile, in words: "A", "A or B", "A, B or C". */
+const toolsWords = (tools: string[]): string => (tools.length <= 1 ? tools[0] ?? "" : `${tools.slice(0, -1).join(", ")} or ${tools[tools.length - 1]}`);
 /** Each catch's chance as a share of all of them: what the server rolls with. */
 function shares(list: Catch[]): number[] {
   const total = list.reduce((sum, c) => sum + (c.chance > 0 ? c.chance : 0), 0);
@@ -204,22 +213,28 @@ class TileEditorBridge {
   private preview: HTMLAudioElement | null = null;
   private fields = new FieldRenderer({ rerender: () => {} });
 
-  /** The Fishing tab: its bar, the fishable tiles of every map (tileset key -> tile id -> catches), and the material items. */
+  /**
+   * The Fishing tab: its bar, the fishable tiles of every map (tileset key -> tile id -> catches), the items that fish
+   * them (the same, -> weapon names), the material items, and the weapons.
+   */
   private fishBar = el("div", "me-toolbar-set");
   private fishTiles: Record<string, Record<string, Catch[]>> = {};
+  private fishTools: Record<string, Record<string, string[]>> = {};
   private fishItems: FishItem[] = [];
+  private fishWeapons: FishItem[] = [];
   private fishState: "none" | "loading" | "loaded" = "none";
   /** The tiles picked in the Fishing tab, apart from those of the other tabs. */
   private fishPicked = new Map<number, Set<number>>();
-  /** The catches to give the picked tiles, as made in the Catches dialog. */
+  /** The catches to give the picked tiles, and the items to fish them with, as made in the Catches dialog. */
   private fishDraft: Catch[] = [];
+  private fishDraftTools: string[] = [];
   private fishEditBtn!: HTMLButtonElement;
   private fishTakeBtn!: HTMLButtonElement;
   private fishApplyBtn!: HTMLButtonElement;
   private fishClearBtn!: HTMLButtonElement;
   private fishSaveTimer: ReturnType<typeof setTimeout> | null = null;
-  /** A save on its way: the tiles and the catches they are to have, null for not fishable. */
-  private fishSaving: { key: string; ids: number[]; catches: Catch[] | null } | null = null;
+  /** A save on its way: the tiles and the catches and items they are to have, null for not fishable. */
+  private fishSaving: { key: string; ids: number[]; catches: Catch[] | null; tools: string[] } | null = null;
 
   /** The Footprints tab: its bar, the footprints set on tiles of every map (tileset key -> tile id -> prints), and its picks. */
   private printBar = el("div", "me-toolbar-set");
@@ -1523,7 +1538,7 @@ class TileEditorBridge {
     const cols = Math.floor(tileset.imagewidth / tileset.tilewidth);
     const rows = Math.floor(tileset.imageheight / tileset.tileheight);
     const at = this.hoveredTilesetPos;
-    if (at && at.x >= 0 && at.y >= 0 && at.x < cols && at.y < rows) this.underEl.textContent = `Column ${num(at.x + 1)}, row ${num(at.y + 1)}${this.view === "sounds" ? ` · ${this.soundWords(tileset, at.y * cols + at.x)}` : this.view === "fishing" ? ` · ${this.catchWords(this.fishTiles[this.keyOf(tileset)]?.[String(at.y * cols + at.x)])}` : this.view === "footprints" ? ` · ${this.printWords(this.tileFootprints[this.keyOf(tileset)]?.[String(at.y * cols + at.x)])}` : ""}`;
+    if (at && at.x >= 0 && at.y >= 0 && at.x < cols && at.y < rows) this.underEl.textContent = `Column ${num(at.x + 1)}, row ${num(at.y + 1)}${this.view === "sounds" ? ` · ${this.soundWords(tileset, at.y * cols + at.x)}` : this.view === "fishing" ? ` · ${this.tileFishWords(tileset, at.y * cols + at.x)}` : this.view === "footprints" ? ` · ${this.printWords(this.tileFootprints[this.keyOf(tileset)]?.[String(at.y * cols + at.x)])}` : ""}`;
     else this.underEl.textContent = `${num(cols)} × ${num(rows)} tiles of ${num(tileset.tilewidth)} px`;
   }
 
@@ -2235,10 +2250,10 @@ class TileEditorBridge {
   }
 
   private buildFishBar() {
-    this.fishEditBtn = button("Choose catches", () => this.editCatches(), { icon: "fish", tip: "The material items the picked tiles give, each with its chance" });
+    this.fishEditBtn = button("Choose catches", () => this.editCatches(), { icon: "fish", tip: "The material items the picked tiles give, each with its chance, and the items that fish them" });
     this.fishEditBtn.classList.add("me-sound-pick");
-    this.fishTakeBtn = button("Take from picked", () => this.takeCatches(), { icon: "copy", kind: "quiet", fold: true, tip: "Start from the catches the picked tiles have now" });
-    this.fishApplyBtn = button("Apply", () => this.applyFishing(this.fishDraft), { icon: "check", kind: "primary", tip: "Give the picked tiles these catches, on every map that uses the tileset" });
+    this.fishTakeBtn = button("Take from picked", () => this.takeCatches(), { icon: "copy", kind: "quiet", fold: true, tip: "Start from the catches and fishing items the picked tiles have now" });
+    this.fishApplyBtn = button("Apply", () => this.applyFishing(this.fishDraft), { icon: "check", kind: "primary", tip: "Give the picked tiles these catches and fishing items, on every map that uses the tileset" });
     this.fishClearBtn = button("Not fishable", () => this.applyFishing(null), { icon: "close", kind: "quiet", fold: true, tip: "Take the catches off the picked tiles: they are no longer water to fish in" });
     const same = button("Pick all with them", () => this.pickSameCatches(), { icon: "target", kind: "quiet", fold: true, tip: "Pick every tile of this tileset that gives these catches now" });
     same.classList.add("me-fish-same");
@@ -2254,35 +2269,50 @@ class TileEditorBridge {
     return list.map((c, i) => `${c.item} ${percent(share[i]!)}`).join(", ");
   }
 
-  /** A tile's catches, in words. */
-  private catchWords(list: Catch[] | undefined): string {
-    return list && list.length ? `gives ${this.catchesWords(list)}` : "not fishable";
+  /** Catches and the items that fish them, in words: "gives Trout 60 %, Old Boot 40 % · fished with Wooden Fishing Rod". */
+  private fishWords(list: Catch[], tools: string[]): string {
+    return `gives ${this.catchesWords(list)} · ${tools.length ? `fished with ${toolsWords(tools)}` : "no item fishes it yet"}`;
   }
 
-  /** The catches the picked tiles share, null when they differ ([] when none is fishable). */
-  private pickedCatches(): Catch[] | null {
+  /** A tile's catches and the items that fish it, in words. */
+  private tileFishWords(tileset: any, id: number): string {
+    const key = this.keyOf(tileset);
+    const list = this.fishTiles[key]?.[String(id)];
+    return list && list.length ? this.fishWords(list, this.fishTools[key]?.[String(id)] ?? []) : "not fishable";
+  }
+
+  /**
+   * The catches and the items that fish them the picked tiles share, null when they differ (no catches when none is
+   * fishable).
+   */
+  private pickedCatches(): { catches: Catch[]; tools: string[] } | null {
     const tileset = this.tilesets[this.currentTilesetIndex];
     const picked = this.fishPicked.get(this.currentTilesetIndex);
     if (!tileset || !picked?.size) return null;
     const row = this.fishTiles[this.keyOf(tileset)] ?? {};
-    let first: string | null = null, list: Catch[] = [];
+    const toolRow = this.fishTools[this.keyOf(tileset)] ?? {};
+    let first: string | null = null, shared = { catches: [] as Catch[], tools: [] as string[] };
     for (const id of picked) {
-      const here = row[String(id)] ?? [];
-      const key = catchesKey(here);
+      const here = { catches: row[String(id)] ?? [], tools: toolRow[String(id)] ?? [] };
+      const key = fishKey(here.catches, here.tools);
       if (first === null) {
         first = key;
-        list = here;
+        shared = here;
       } else if (key !== first) return null;
     }
-    return list;
+    return shared;
   }
 
-  /** On the palette: each fishable tile in the colour of its list of catches, with a wave in its corner, then what is picked. */
+  /**
+   * On the palette: each fishable tile in the colour of its catches and the items that fish it, with a wave in its
+   * corner, then what is picked.
+   */
   private drawFishing(tileset: any, tw: number, th: number, cols: number) {
     const ctx = this.tilesetCtx;
+    const toolRow = this.fishTools[this.keyOf(tileset)] ?? {};
     for (const [id, list] of Object.entries(this.fishTiles[this.keyOf(tileset)] ?? {})) {
       const n = Number(id), x = (n % cols) * tw, y = Math.floor(n / cols) * th;
-      const hue = soundHue(catchesKey(list));
+      const hue = soundHue(fishKey(list, toolRow[id]));
       ctx.fillStyle = `hsla(${hue}, 85%, 55%, 0.4)`;
       ctx.fillRect(x, y, tw, th);
       ctx.strokeStyle = `hsla(${hue}, 90%, 65%, 1)`;
@@ -2339,7 +2369,7 @@ class TileEditorBridge {
       said = `${d.mode === "remove" ? "Taking away" : d.mode === "add" ? "Adding" : "Picking"} ${w * h === 1 ? "1 tile" : `${num(w)} × ${num(h)} tiles`}`;
     } else if (picked.size > 0) {
       const shared = this.pickedCatches();
-      said = `${count(picked.size, "tile")} picked · ${shared === null ? "they give different catches" : shared.length ? `all give ${this.catchesWords(shared)}` : "none is fishable"}`;
+      said = `${count(picked.size, "tile")} picked · ${shared === null ? "they differ in what they give or what fishes them" : shared.catches.length ? `all ${this.fishWords(shared.catches, shared.tools)}` : "none is fishable"}`;
     } else {
       said = "Nothing picked. Click a water tile or drag across several; Shift adds, Alt takes away.";
       none = true;
@@ -2352,22 +2382,29 @@ class TileEditorBridge {
     this.paintFishLegend();
   }
 
-  /** The fishing bar: the catches made on the Choose button, and what can be done now. */
+  /** The fishing bar: the catches and fishing items made on the Choose button, and what can be done now. */
   private paintFishBar() {
     if (!this.fishEditBtn) return;
     const picked = this.fishPicked.get(this.currentTilesetIndex)?.size ?? 0;
-    const label = this.fishDraft.length ? this.catchesWords(this.fishDraft) : "Choose catches";
+    const made = this.fishDraft.length > 0;
+    const label = made ? this.catchesWords(this.fishDraft) : "Choose catches";
     this.fishEditBtn.querySelector("span")!.textContent = label;
-    this.fishEditBtn.title = this.fishDraft.length ? `${label}. Click to change them.` : "The material items the picked tiles give, each with its chance";
+    this.fishEditBtn.title = made
+      ? `${this.fishWords(this.fishDraft, this.fishDraftTools)}. Click to change them.`
+      : "The material items the picked tiles give, each with its chance, and the items that fish them";
     const busy = this.fishSaving !== null || this.fishState !== "loaded";
+    const ready = made && this.fishDraftTools.length > 0;
     this.fishApplyBtn.querySelector("span")!.textContent = picked > 0 ? `Apply to ${count(picked, "tile")}` : "Apply";
-    this.fishApplyBtn.disabled = busy || picked === 0 || this.fishDraft.length === 0 || !this.inited;
-    this.fishApplyBtn.title = picked === 0 ? "Pick tiles first" : this.fishDraft.length === 0 ? "Choose catches first" : "Give the picked tiles these catches, on every map that uses the tileset (Enter)";
+    this.fishApplyBtn.disabled = busy || picked === 0 || !ready || !this.inited;
+    this.fishApplyBtn.title = picked === 0 ? "Pick tiles first"
+      : !made ? "Choose catches first"
+        : !ready ? "Choose the items that fish them first"
+          : "Give the picked tiles these catches and fishing items, on every map that uses the tileset (Enter)";
     this.fishClearBtn.disabled = busy || picked === 0 || !this.inited;
     const shared = this.pickedCatches();
-    this.fishTakeBtn.disabled = !shared || shared.length === 0;
+    this.fishTakeBtn.disabled = !shared || shared.catches.length === 0;
     const same = this.fishBar.querySelector<HTMLButtonElement>(".me-fish-same");
-    if (same) same.disabled = this.fishDraft.length === 0;
+    if (same) same.disabled = !made;
   }
 
   /** At the foot of the palette: the lists of catches of the tileset in view, in their colours, most used first. */
@@ -2380,46 +2417,50 @@ class TileEditorBridge {
       this.soundLegendEl.appendChild(el("span", "", "Asking the server what can be caught…"));
       return;
     }
-    const lists = new Map<string, { list: Catch[]; n: number }>();
-    for (const list of Object.values(this.fishTiles[this.keyOf(tileset)] ?? {})) {
-      const key = catchesKey(list);
+    const lists = new Map<string, { list: Catch[]; tools: string[]; n: number }>();
+    const toolRow = this.fishTools[this.keyOf(tileset)] ?? {};
+    for (const [id, list] of Object.entries(this.fishTiles[this.keyOf(tileset)] ?? {})) {
+      const tools = toolRow[id] ?? [];
+      const key = fishKey(list, tools);
       const held = lists.get(key);
       if (held) held.n++;
-      else lists.set(key, { list, n: 1 });
+      else lists.set(key, { list, tools, n: 1 });
     }
     const all = [...lists].sort((a, b) => b[1].n - a[1].n);
     if (all.length === 0) {
       this.soundLegendEl.appendChild(el("span", "", "No tile of this tileset is fishable yet"));
       return;
     }
-    for (const [key, { list, n }] of all.slice(0, 5)) {
+    for (const [key, { list, tools, n }] of all.slice(0, 5)) {
       const entry = el("span", "me-sound-key");
       const swatch = el("span", "me-sound-swatch");
       swatch.style.background = `hsl(${soundHue(key)}, 85%, 55%)`;
-      entry.append(swatch, el("span", "", `${this.catchesWords(list)} · ${num(n)}`));
+      entry.append(swatch, el("span", "", `${this.catchesWords(list)} · ${tools.length ? toolsWords(tools) : "no item fishes them"} · ${num(n)}`));
       this.soundLegendEl.appendChild(entry);
     }
     if (all.length > 5) this.soundLegendEl.appendChild(el("span", "", `and ${num(all.length - 5)} more`));
-    tooltip(this.soundLegendEl, "Fishable tiles are tinted in the colour of what they give, with a wave in the corner. The number is how many tiles give it.");
+    tooltip(this.soundLegendEl, "Fishable tiles are tinted in the colour of what they give and what fishes them, with a wave in the corner. The number is how many tiles are alike. Tiles no item fishes cannot be fished: give them a fishing item.");
   }
 
-  /** Start the catches from those the picked tiles give now. */
+  /** Start the catches and fishing items from those the picked tiles have now. */
   private takeCatches() {
     const shared = this.pickedCatches();
-    if (!shared || shared.length === 0) return;
-    this.fishDraft = shared.map((c) => ({ ...c }));
+    if (!shared || shared.catches.length === 0) return;
+    this.fishDraft = shared.catches.map((c) => ({ ...c }));
+    this.fishDraftTools = [...shared.tools];
     this.paintFishBar();
   }
 
-  /** Pick every tile of the tileset in view that gives the catches made now. */
+  /** Pick every tile of the tileset in view that gives the catches made now and is fished with the items chosen. */
   private pickSameCatches() {
     const tileset = this.tilesets[this.currentTilesetIndex];
     if (!tileset || this.fishDraft.length === 0) return;
-    const want = catchesKey(this.fishDraft);
+    const want = fishKey(this.fishDraft, this.fishDraftTools);
+    const toolRow = this.fishTools[this.keyOf(tileset)] ?? {};
     const set = this.pickedHere();
     set.clear();
-    for (const [id, list] of Object.entries(this.fishTiles[this.keyOf(tileset)] ?? {})) if (catchesKey(list) === want) set.add(Number(id));
-    if (set.size === 0) toast(`No tile of ${tileset.name || "this tileset"} gives ${this.catchesWords(this.fishDraft)}.`);
+    for (const [id, list] of Object.entries(this.fishTiles[this.keyOf(tileset)] ?? {})) if (fishKey(list, toolRow[id]) === want) set.add(Number(id));
+    if (set.size === 0) toast(`No tile of ${tileset.name || "this tileset"} ${this.fishWords(this.fishDraft, this.fishDraftTools)}.`);
     this.drawTileset();
     this.paintPicked();
   }
@@ -2507,37 +2548,82 @@ class TileEditorBridge {
         paint();
       }, { fallback: "fish" });
     }, { icon: "plus", add: true });
-    const done = button("Use these catches", () => {
+    // The items that fish the tiles: weapons, one of which a player must have equipped to cast there.
+    const tools = [...this.fishDraftTools];
+    const toolList = el("div", "me-catch-list");
+    const weaponOf = (name: string) => this.fishWeapons.find((item) => item.name.toLowerCase() === name.toLowerCase());
+    const paintTools = () => {
+      toolList.replaceChildren();
+      tools.forEach((name, i) => {
+        const row = el("div", "me-catch-row");
+        const known = weaponOf(name);
+        const shown = el("span", "tl-btn me-catch-item");
+        shown.append(thumb(known?.image ?? null, { fallback: "sword", quality: known?.quality ?? undefined }), el("span", "", name));
+        const remove = iconButton("trash", `Take ${name} off the list`, () => {
+          tools.splice(i, 1);
+          paintTools();
+        }, { danger: true });
+        row.append(shown, remove);
+        toolList.appendChild(row);
+      });
+      if (!tools.length) {
+        toolList.appendChild(el("p", "me-catch-empty", this.fishWeapons.length
+          ? "No fishing items yet. Add the weapons that fish these tiles: nobody can fish them without one."
+          : "There are no weapons to fish with. Make an equipable item in the weapon slot in the item editor first."));
+      }
+      addTool.disabled = tools.length >= MAX_TOOLS || this.fishWeapons.every((item) => tools.some((t) => t.toLowerCase() === item.name.toLowerCase()));
+    };
+    const addTool = button("Add a fishing item", () => {
+      const free = this.fishWeapons.filter((item) => !tools.some((t) => t.toLowerCase() === item.name.toLowerCase()));
+      this.fields.openAssetPicker("Fishing item", free.map((item) => ({ value: item.name, label: item.name, image: item.image, quality: item.quality })), (option) => {
+        tools.push(String(option.value));
+        paintTools();
+      }, { fallback: "sword" });
+    }, { icon: "plus", add: true });
+
+    const done = button("Use these", () => {
       const bad = draft.find((c) => !(c.chance >= MIN_CHANCE && c.chance <= MAX_CHANCE));
       if (bad) {
         toast(`The chance of ${bad.item} must be ${MIN_CHANCE} to ${MAX_CHANCE} %.`, "error");
         return;
       }
+      if (draft.length && !tools.length) {
+        toast("Add at least one fishing item: nobody can fish these tiles without one.", "error");
+        return;
+      }
       this.fishDraft = draft.map((c) => ({ item: c.item, chance: Math.round(c.chance * 100) / 100 }));
+      this.fishDraftTools = [...tools];
       dialog.close();
     }, { icon: "check", kind: "primary" });
     const cancel = button("Cancel", () => dialog.close(), { kind: "quiet" });
-    dialog.body.append(el("p", "me-catch-hint", "What a fish caught on the picked tiles turns out to be: one of these material items, by its chance."), list, add, total);
+    dialog.body.append(
+      el("p", "me-catch-hint", "What a fish caught on the picked tiles turns out to be: one of these material items, by its chance."), list, add, total,
+      el("h3", "me-catch-heading", "Fishing items"),
+      el("p", "me-catch-hint", "The weapons that fish the picked tiles. A player must have one of them equipped to cast a line there, and holds it while fishing."),
+      toolList, addTool,
+    );
     dialog.foot.append(cancel, done);
     paint();
+    paintTools();
   }
 
   /**
-   * Give the picked tiles catches, or with null make them not fishable. The game window passes it to the server, which
-   * saves it and answers with every fishable tile as it is now (handleFishingUpdate).
+   * Give the picked tiles catches and the items that fish them, or with null make them not fishable. The game window
+   * passes it to the server, which saves it and answers with every fishable tile as it is now (handleFishingUpdate).
    */
   private applyFishing(catches: Catch[] | null) {
     const tileset = this.tilesets[this.currentTilesetIndex];
     const ids = [...(this.fishPicked.get(this.currentTilesetIndex) ?? [])].sort((a, b) => a - b);
     if (!tileset || ids.length === 0 || this.fishSaving) return;
-    if (catches !== null && catches.length === 0) return;
+    if (catches !== null && (catches.length === 0 || this.fishDraftTools.length === 0)) return;
     if (catches === null && !ids.some((id) => this.fishTiles[this.keyOf(tileset)]?.[String(id)])) {
       toast("None of the picked tiles is fishable.");
       return;
     }
     const list = catches === null ? null : catches.map((c) => ({ ...c }));
-    this.fishSaving = { key: this.keyOf(tileset), ids, catches: list };
-    this.send({ type: 'fishingSave', changes: [{ tileset: this.keyOf(tileset), ids, catches: list }] });
+    const tools = catches === null ? [] : [...this.fishDraftTools];
+    this.fishSaving = { key: this.keyOf(tileset), ids, catches: list, tools };
+    this.send({ type: 'fishingSave', changes: [{ tileset: this.keyOf(tileset), ids, catches: list, tools }] });
     setBusy(catches === null ? this.fishClearBtn : this.fishApplyBtn, true);
     this.paintFishBar();
     if (this.fishSaveTimer) clearTimeout(this.fishSaveTimer);
@@ -2556,17 +2642,23 @@ class TileEditorBridge {
     this.paintFishBar();
   }
 
-  /** Every fishable tile as it is now, and the material items: the answer to the first ask and to every save of this window. */
+  /**
+   * Every fishable tile as it is now, with the items that fish it, the material items and the weapons: the answer to
+   * the first ask and to every save of this window.
+   */
   private handleFishingUpdate(msg: any) {
     this.fishTiles = msg.tiles && typeof msg.tiles === "object" ? msg.tiles : {};
+    this.fishTools = msg.tools && typeof msg.tools === "object" ? msg.tools : {};
     this.fishItems = Array.isArray(msg.items) ? msg.items : [];
+    this.fishWeapons = Array.isArray(msg.weapons) ? msg.weapons : [];
     this.fishState = "loaded";
     const saved = this.fishSaving;
     const row = saved ? this.fishTiles[saved.key] ?? {} : {};
-    const want = saved ? catchesKey(saved.catches) : "";
-    if (saved && saved.ids.every((id) => (saved.catches === null ? row[String(id)] === undefined : catchesKey(row[String(id)]) === want))) {
+    const toolRow = saved ? this.fishTools[saved.key] ?? {} : {};
+    const want = saved ? fishKey(saved.catches, saved.tools) : "";
+    if (saved && saved.ids.every((id) => (saved.catches === null ? row[String(id)] === undefined : fishKey(row[String(id)], toolRow[String(id)]) === want))) {
       this.fishSaveDone();
-      toast(`Saved for ${count(saved.ids.length, "tile")}, on every map: ${saved.catches === null ? "not fishable" : this.catchesWords(saved.catches)}.`);
+      toast(`Saved for ${count(saved.ids.length, "tile")}, on every map: ${saved.catches === null ? "not fishable" : this.fishWords(saved.catches, saved.tools)}.`);
     }
     if (this.view === "fishing") {
       this.drawTileset();

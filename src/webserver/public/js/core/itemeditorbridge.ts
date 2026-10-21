@@ -5,7 +5,7 @@
 // with the server.
 import { qualityOf } from "./itemframe.js";
 import { EditorShell, type ListRow, type RecordState } from "./tooleditor.js";
-import { FieldRenderer, coinWords, setFieldError, type AssetOption, type Field } from "./toolfields.js";
+import { FieldRenderer, coinWords, setFieldError, sheetOptions, type AssetOption, type Field } from "./toolfields.js";
 import { button, card, count, el, note, noticeDialog, shown, tag, thumb, toast, words } from "./toolkit.js";
 
 // Fallbacks so the dropdowns are never empty, even if the server's option lists
@@ -16,6 +16,11 @@ const DEFAULT_SLOTS = [
   "helmet", "necklace", "shoulderguards", "cape", "chestplate", "wristguards", "gloves",
   "belt", "pants", "boots", "ring_1", "ring_2", "trinket_1", "trinket_2", "weapon", "bag",
 ];
+/** The slots whose item is drawn on its wearer, and the sprite sheet slot its sheet is picked from. */
+const DEFAULT_DRAWN_SLOTS: Record<string, string> = {
+  helmet: "helmet", shoulderguards: "shoulderguards", necklace: "neck", gloves: "hands",
+  chestplate: "chest", boots: "feet", pants: "legs", weapon: "weapon",
+};
 
 const TABS = [
   { id: "general", label: "General" },
@@ -45,6 +50,7 @@ const PROBLEM_FIELDS: Array<[RegExp, string]> = [
   [/^Type /, "type"],
   [/^Quality /, "quality"],
   [/^Description /, "description"],
+  [/^Sprite sheet /, "sprite_sheet"],
   [/^Equipable items need/, "equipment_slot"],
   [/^Only equipment can be equipable/, "equipable"],
   [/^Level requirement /, "level_requirement"],
@@ -62,7 +68,7 @@ const PROBLEM_FIELDS: Array<[RegExp, string]> = [
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
 class ItemEditorBridge {
-  private data: any = { types: [], qualities: [], slots: [], icons: [], itemCount: 0 };
+  private data: any = { types: [], qualities: [], slots: [], icons: [], spriteSheets: {}, itemCount: 0 };
   /** The server's first answer has arrived. */
   private ready = false;
   private tab = "general";
@@ -106,7 +112,11 @@ class ItemEditorBridge {
     onTab: (id) => this.switchTab(id),
   });
 
-  private fields = new FieldRenderer({ rerender: () => this.renderForm() });
+  private fields = new FieldRenderer({
+    rerender: () => this.renderForm(),
+    // Only the sprite sheet field comes here: the icon picker says what it offers itself.
+    assetOptions: (field, value) => sheetOptions(this.data.spriteSheets, field.slot || "other", String(value ?? "")),
+  });
 
   constructor() {
     this.shell.waiting(() => this.shell.send({ type: "request", packet: "ITEM_EDITOR_LIST", data: null }));
@@ -212,7 +222,7 @@ class ItemEditorBridge {
   private tabOf(key: string): string {
     if (key.startsWith("stat_")) return "stats";
     if (key === "level_requirement") return this.draft?.type === "equipment" ? "equipment" : "general";
-    return ["equipable", "equipment_slot", "damage_min", "damage_max", "attack_speed_ms", "bag_slots"].includes(key) ? "equipment" : "general";
+    return ["equipable", "equipment_slot", "sprite_sheet", "damage_min", "damage_max", "attack_speed_ms", "bag_slots"].includes(key) ? "equipment" : "general";
   }
 
   private problemsByTab(): Record<string, number> {
@@ -245,19 +255,33 @@ class ItemEditorBridge {
     return () => list.map((v) => ({ value: v, label: words(v) }));
   }
 
+  /** The sprite sheet slot the open item's sheet is picked from, or null when its slot is not drawn on its wearer. */
+  private sheetSlot(): string | null {
+    const drawn: Record<string, string> = this.data.drawnSlots ?? DEFAULT_DRAWN_SLOTS;
+    return (this.draft?.equipable && drawn[this.draft.equipment_slot]) || null;
+  }
+
   private tabFields(): Field[] {
     const isEquipment = this.draft?.type === "equipment";
     switch (this.tab) {
-      case "equipment":
+      case "equipment": {
+        const sheetSlot = this.sheetSlot();
         return [
           { key: "equipable", label: "Equipable", type: "switch", rerender: true, hint: "Can be worn from the inventory." },
           ...(this.draft?.equipable
             ? ([
                 { key: "equipment_slot", label: "Slot", type: "select", options: this.choices(this.data.slots ?? [], DEFAULT_SLOTS), rerender: true },
+                ...(sheetSlot
+                  ? [{
+                      key: "sprite_sheet", label: "Sprite sheet", type: "sheet", slot: sheetSlot, fallback: "image",
+                      hint: "What it looks like when worn. None draws it with the sheet named after the item, when there is one.",
+                    }]
+                  : []),
                 { key: "level_requirement", label: "Level requirement", type: "number", hint: "Players below this level can't equip it." },
               ] as Field[])
             : []),
         ];
+      }
       case "stats":
         return STATS.map(([key, label, unit]) => ({ key, label, type: "number", unit }) as Field);
       default:
@@ -328,6 +352,8 @@ class ItemEditorBridge {
       // What using it does, when it is a consumable.
       restore_health: null, restore_stamina: null, no_combat: false, teleports_home: false,
       soulbound: false,
+      // The sheet it is drawn with when worn; nothing is the sheet named after it.
+      sprite_sheet: null,
     };
   }
 

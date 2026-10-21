@@ -2620,6 +2620,22 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       import("./itemeditor.js").then((m) => m.default.onUpdated(data));
       break;
     }
+    case "TOGGLE_MOUNT_EDITOR": {
+      import("./mounteditor.js").then((m) => m.default.toggle());
+      break;
+    }
+    case "MOUNT_EDITOR_DATA": {
+      import("./mounteditor.js").then((m) => m.default.onData(data));
+      break;
+    }
+    case "MOUNT_EDITOR_RESULT": {
+      import("./mounteditor.js").then((m) => m.default.onResult(data));
+      break;
+    }
+    case "MOUNT_EDITOR_UPDATED": {
+      import("./mounteditor.js").then((m) => m.default.onUpdated(data));
+      break;
+    }
     case "TOGGLE_SPELL_EDITOR": {
       import("./spelleditor.js").then((m) => m.default.toggle());
       break;

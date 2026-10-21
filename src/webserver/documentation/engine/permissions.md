@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS permission_types (
 
 `permissions.permissions` holds the whole list for one player as text, for example `admin.*,server.*,permission.*`. A player with no permission has no row.
 
-`permission_types` is the list of names that may be granted. The setup script fills it. When the server starts, the class, mailbox, gathering and achievement editors add their own node if it is missing. Nothing else writes to it.
+`permission_types` is the list of names that may be granted. The setup script fills it. When the server starts, the class, mailbox, gathering, achievement and mount editors add their own node if it is missing. Nothing else writes to it.
 
 :::warning The list is limited to 255 characters
 The column is 255 characters wide. The player editor and the control panel refuse a list that is longer. Use the wildcard nodes to keep lists short.
@@ -74,14 +74,14 @@ What follows from that:
 - `admin.*` is a literal node. It works because every `admin.` check lists it, not because `*` is expanded.
 - A wildcard only covers its own group. `admin.*` does not satisfy a `server.` or `tools.` check.
 - A name that no check lists does nothing, even if it looks like it should. `admin.ba*` or `*` grant nothing.
-- A few checks accept more than one group. The item, quest and creature editors also accept `server.*`, and the spell, weather, class, mailbox, gathering and achievement editors also accept `server.admin` and `server.*`.
+- A few checks accept more than one group. The item, quest and creature editors also accept `server.*`, and the spell, weather, class, mailbox, gathering, achievement and mount editors also accept `server.admin` and `server.*`.
 
 ## Wildcards
 
 | Wildcard | Covers |
 |----------|--------|
 | `admin.*` | Every `admin.` node in the table below |
-| `server.*` | Every `server.` node. Also opens the item, quest, creature, spell, weather, class, mailbox, gathering and achievement editors, and lets its holder grant any permission |
+| `server.*` | Every `server.` node. Also opens the item, mount, quest, creature, spell, weather, class, mailbox, gathering and achievement editors, and lets its holder grant any permission |
 | `permission.*` | `permission.add`, `permission.remove` and `permission.list`. Also lets its holder grant any permission outside the `server.` group |
 | `tools.*` | Every `tools.` node |
 
@@ -120,7 +120,7 @@ Every node name found in the engine source, and where it is checked.
 | `permission.remove` | `/permission remove` and `clear`, removing permissions in the player editor | Yes |
 | `permission.list` | `/permission list` | Yes |
 | `server.*` | Wildcard for every `server.` node | Yes |
-| `server.admin` | `/admin`, `/player edit` and the player editor, saving and creating maps, saving tile sounds, saving, renaming, deleting and testing particles, listing, adding, saving, moving and deleting NPCs, the spell, weather, class, mailbox, gathering and achievement editors | Yes |
+| `server.admin` | `/admin`, `/player edit` and the player editor, saving and creating maps, saving tile sounds, saving, renaming, deleting and testing particles, listing, adding, saving, moving and deleting NPCs, the spell, weather, class, mailbox, gathering, achievement and mount editors | Yes |
 | `server.gateway` | Opening the gateway monitoring dashboard (with the admin role). See [Monitoring Dashboard](#/gateway/dashboard/logging-in) | Yes |
 | `server.notify` | `/notify`, `/broadcast` | Yes |
 | `server.restart` | `/restart` | Yes |
@@ -131,6 +131,7 @@ Every node name found in the engine source, and where it is checked.
 | `tools.particle_editor` | `/particleeditor`, listing particles | Yes |
 | `tools.creature_editor` | `/creatureeditor` and every creature editor packet | Yes |
 | `tools.item_editor` | `/itemeditor` and every item editor packet | Yes |
+| `tools.mount_editor` | `/mounteditor` and every mount editor packet | Yes |
 | `tools.spell_editor` | `/spelleditor` and every spell editor packet | Yes |
 | `tools.quest_editor` | `/questeditor` and every quest editor packet | Yes |
 | `tools.weather_editor` | `/weathereditor` and every weather editor packet | Yes |
@@ -173,7 +174,7 @@ These do not look at the permission list at all. They only ask whether the playe
 | `/controlpanel` and every control panel packet | Admin role, has a username, not a guest |
 | `NOCLIP` and `STEALTH` packets | Admin role |
 | Map editor live sync (`EDITOR_OPEN`, `EDITOR_TILE_EDIT`, `EDITOR_LAYER_LOCK`) | Admin role |
-| Item, quest, creature, spell, weather, class, mailbox, gathering and achievement editors | Admin role is enough by itself, a matching `tools.` node also works |
+| Item, mount, quest, creature, spell, weather, class, mailbox, gathering and achievement editors | Admin role is enough by itself, a matching `tools.` node also works |
 
 The map, particle, NPC, loot and player editors are the exceptions among the tools: being an admin is not enough for them. The map, particle and NPC editors need their `tools.` node or `tools.*`, the loot editor needs `admin.loot` or `admin.*`, and the player editor needs `server.admin` or `server.*`.
 

@@ -77,6 +77,9 @@
 .me-catch-share { min-width: 72px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
 .me-catch-empty { margin: 0; color: var(--text-faint); }
 .me-catch-total { margin: var(--s-3) 0 0; color: var(--text-muted); }
+/* Its second part: the weapons that fish the tiles, one row each. */
+.me-catch-heading { margin: var(--s-5) 0 var(--s-2); padding-top: var(--s-4); border-top: 1px solid var(--border); font-size: 14px; font-weight: 600; color: var(--text); }
+span.me-catch-item { cursor: default; }
 /* The Footprints tab: the colour of the prints, their darkness and how long they stay, on the bar. */
 .me-print-color { width: 32px; height: 30px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-raised); cursor: pointer; }
 .me-print-field { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); white-space: nowrap; }

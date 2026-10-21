@@ -23,6 +23,7 @@ Frostfire Forge ships its content tools inside the game client. An admin logs in
 | [NPC Editor](#/tools/npc-editor) | `/ne` or `/npceditor` | `/npc-editor` | `tools.npc_editor` or `tools.*` |
 | [Creature Editor](#/tools/creature-editor) | `/ce` or `/creatureeditor` | `/creature-editor` | Admin role, `tools.creature_editor`, `tools.*` or `server.*` |
 | [Item Editor](#/tools/item-editor) | `/ie` or `/itemeditor` | `/item-editor` | Admin role, `tools.item_editor`, `tools.*` or `server.*` |
+| [Mount Editor](#/tools/mount-editor) | `/me` or `/mounteditor` | `/mount-editor` | Admin role, `tools.mount_editor`, `tools.*`, `server.admin` or `server.*` |
 | [Loot Editor](#/tools/loot-editor) | `/le` or `/looteditor` | `/loot-editor` | `admin.loot` or `admin.*` |
 | [Particle Editor](#/tools/particle-editor) | `/pe` or `/particleeditor` | `/particle-editor` | `tools.particle_editor` or `tools.*` |
 | [Animator](#/tools/animator) | None | `/animator` | None |
@@ -76,6 +77,7 @@ Tool access is decided by the game server from two things on your account:
 | `tools.particle_editor` | Particle Editor |
 | `tools.creature_editor` | Creature Editor |
 | `tools.item_editor` | Item Editor |
+| `tools.mount_editor` | Mount Editor |
 | `tools.spell_editor` | Spell Editor |
 | `tools.weather_editor` | Weather Editor |
 | `tools.class_editor` | Class Editor |

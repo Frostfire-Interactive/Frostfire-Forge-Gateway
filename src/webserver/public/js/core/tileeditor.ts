@@ -365,9 +365,14 @@ class TileEditor {
     if (this.bridgeReady && this.editorWindow) this.editorWindow.postMessage({ type: 'createMapFailed', message }, '*');
   }
 
-  /** The Fishing tab's data from the server (FISHING_EDITOR_DATA): the fishable tiles with their catches, and the material items. */
+  /**
+   * The Fishing tab's data from the server (FISHING_EDITOR_DATA): the fishable tiles with their catches and the items
+   * that fish them, the material items, and the weapons.
+   */
   public fishingData(data: any) {
-    if (this.bridgeReady && this.editorWindow) this.editorWindow.postMessage({ type: 'fishingUpdate', tiles: data?.tiles ?? {}, items: data?.items ?? [] }, '*');
+    if (this.bridgeReady && this.editorWindow) {
+      this.editorWindow.postMessage({ type: 'fishingUpdate', tiles: data?.tiles ?? {}, tools: data?.tools ?? {}, items: data?.items ?? [], weapons: data?.weapons ?? [] }, '*');
+    }
   }
 
   private sendToEditor(msg: any) {

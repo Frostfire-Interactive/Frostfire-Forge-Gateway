@@ -16,6 +16,7 @@
 // it slack while the bobber floats and none while it is reeled.
 import { sendRequest, cachedPlayerId } from "./socket.js";
 import { tilesetKey } from "./tilesounds.js";
+import { config } from "../web/global.js";
 import { clearWater, pokeWater, stepAndDrawWater, waterActive } from "./fishwater.js";
 
 /** px: the engine's FISH_RANGE. */
@@ -749,18 +750,52 @@ function bobberOrigin(x: number, y: number, sink: number, afloat: boolean): Poin
   return { x: left, y: Math.round(y) - FLOAT_ROWS + Math.round(sink * BITE_DEPTH) };
 }
 
-/** The top of the bobber's stem, where the line is tied. */
+/**
+ * The bobber's two pictures, from the asset server's icons (USER REQUEST 2026-10-21: "replace the existing bobber with
+ * those two states"): afloat, and pulled under by a fish. Each is ICON px square with the bobber in its middle: its top
+ * at ICON_TOP (where the line is tied) and its bottom at ICON_BOTTOM. Until they have loaded, the bobber is drawn by
+ * hand (drawBobberPixels).
+ */
+const ICON = 32, ICON_TOP = 11, ICON_BOTTOM = 21;
+function bobberIcon(under: boolean): HTMLImageElement | null {
+  const base = (window as any).__assetServerUrl || config.ASSET_SERVER_URL;
+  if (!base) return null;
+  const img = imageOf(`${base}/icon?name=${under ? "fishing_bobber_under" : "fishing_bobber"}`);
+  return img && img.complete && img.naturalWidth > 0 ? img : null;
+}
+
+/** The top left of a bobber icon whose water point is (x, y): on the water its bottom sits on that point, in the air its middle. */
+function iconOrigin(x: number, y: number, afloat: boolean): Point {
+  return { x: Math.round(x) - ICON / 2, y: afloat ? Math.round(y) + 1 - (ICON_BOTTOM + 1) : Math.round(y) - ICON / 2 };
+}
+
+/** The top of the bobber, where the line is tied. */
 function stemTop(x: number, y: number, sink: number, afloat: boolean): Point {
+  if (bobberIcon(afloat && sink > 0.5)) {
+    const o = iconOrigin(x, y, afloat);
+    return { x: o.x + ICON / 2, y: o.y + ICON_TOP };
+  }
   const o = bobberOrigin(x, y, sink, afloat);
   return { x: o.x + 3.5, y: o.y };
 }
 
-/**
- * The bobber at (x, y), its water point. On the water only what is above the waterline is drawn, with a light line
- * where it breaks the surface; a bite pulls it down until only the stem and the top of its cap show. In the air
- * (`afloat` false: cast out, or taken in) all of it shows.
- */
+/** The bobber at (x, y), its water point: afloat, or under once a fish has taken the bait (`sink` past half). */
 function drawBobber(ctx: CanvasRenderingContext2D, x: number, y: number, sink: number, afloat: boolean): void {
+  const icon = bobberIcon(afloat && sink > 0.5);
+  if (!icon) return drawBobberPixels(ctx, x, y, sink, afloat);
+  const o = iconOrigin(x, y, afloat);
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(icon, o.x, o.y, ICON, ICON);
+  ctx.restore();
+}
+
+/**
+ * The bobber drawn by hand, while its pictures load: on the water only what is above the waterline is drawn, with a
+ * light line where it breaks the surface; a bite pulls it down until only the stem and the top of its cap show. In the
+ * air (`afloat` false: cast out, or taken in) all of it shows.
+ */
+function drawBobberPixels(ctx: CanvasRenderingContext2D, x: number, y: number, sink: number, afloat: boolean): void {
   const o = bobberOrigin(x, y, sink, afloat), waterline = Math.round(y);
   BOBBER_PIXELS.forEach((row, i) => {
     if (afloat && o.y + i >= waterline) return;
@@ -885,7 +920,7 @@ export function renderFishing(ctx: CanvasRenderingContext2D, dt: number, players
     const slack = taut ? SLACK_REEL : hooked ? SLACK_BITE : SLACK_FLOAT;
     stepRope(line, tip, tied, slack, dt);
 
-    drawRope(ctx, line.rope);
+    // the bobber (or the fish) first, then the line over it: the line is tied on top of it
     if (fish) {
       const icon = line.yank?.icon;
       // it swings as it comes out, and hangs still once in hand
@@ -902,6 +937,7 @@ export function renderFishing(ctx: CanvasRenderingContext2D, dt: number, players
     } else {
       drawBobber(ctx, end.x, end.y, sink, afloat);
     }
+    drawRope(ctx, line.rope);
   }
   // the drops of splashes, over the bobbers
   drawDrops(ctx, dt);

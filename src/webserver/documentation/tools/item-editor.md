@@ -91,9 +91,27 @@ Every player is given the home item when they log in without one. Database setup
 | --- | --- |
 | Equipable | Can be worn from the inventory. Only items of type Equipment can be equipable. |
 | Slot | Where it is worn. Required for an equipable item. |
+| Sprite sheet | What it looks like on the character when worn. Shown only for the slots that are drawn (see below). None draws it with the sprite sheet named after the item, when there is one. |
 | Level requirement | Players below this level cannot equip it |
 
 The slots are: helmet, necklace, shoulderguards, cape, chestplate, wristguards, gloves, belt, pants, boots, ring 1, ring 2, trinket 1, trinket 2, weapon and bag.
+
+### Sprite sheet
+
+Eight slots are drawn on the character, each from its own folder of sprite sheets on the asset server (see [Asset Paths](#/assets/asset-paths)):
+
+| Item slot | Sprite sheets listed from |
+| --- | --- |
+| Helmet | `armor/helmet` |
+| Shoulderguards | `armor/shoulderguards` |
+| Necklace | `armor/necklace` |
+| Gloves | `armor/gloves` |
+| Chestplate | `armor/chestplate` |
+| Pants | `armor/pants` |
+| Boots | `armor/boots` |
+| Weapon | `armor/weapon` |
+
+The other slots are not drawn, so they have no sprite sheet. With none picked, the item is drawn with the sheet whose name is the item's name in lower case, as before the field existed. Players already wearing the item see a new sheet the next time they equip it or log in.
 
 Two slots add a card of their own.
 

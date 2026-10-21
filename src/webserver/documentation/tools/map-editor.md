@@ -117,24 +117,30 @@ A player leaves a print on each footstep, in time with the footstep sound (every
 The **Fishing** tab chooses what can be caught from tiles. A tile that gives catches is water: players can cast a line into it. The setting belongs to the tile of the tileset, so it holds on every map that draws that tile.
 
 - Click a tile to pick it. Drag across several to pick a block. Shift or Ctrl adds tiles, Alt takes them away, Ctrl + A picks the whole tileset and Esc picks none.
-- **Choose catches** opens the Catches list. Add the material items a fish can turn out to be, each with a chance in percent. Only items of type `material` can be picked: make them in the [Item Editor](#/tools/item-editor) first.
-- **Apply to N tiles** (or Enter) gives the picked tiles those catches. **Not fishable** takes the catches away.
-- **Take from picked** starts the list from the catches the picked tiles have now. **Pick all with them** picks every tile of the tileset with the catches in the list.
-- Fishable tiles are tinted in the colour of their list, with a wave in the corner. The footer names the lists of the tileset and how many tiles give each.
+- **Choose catches** opens the Catches list, in two parts:
+  - **Catches**: the material items a fish can turn out to be, each with a chance in percent. Only items of type `material` can be picked: make them in the [Item Editor](#/tools/item-editor) first.
+  - **Fishing items**: the weapons that fish the picked tiles. A player must have one of them equipped to cast a line there. Only equipable items in the weapon slot can be picked. At least one is needed.
+- **Apply to N tiles** (or Enter) gives the picked tiles those catches and fishing items. **Not fishable** takes them away.
+- **Take from picked** starts the list from what the picked tiles have now. **Pick all with them** picks every tile of the tileset with the same catches and fishing items.
+- Fishable tiles are tinted in the colour of their catches and fishing items together, with a wave in the corner. The footer names the tileset's combinations and how many tiles have each.
 
-A tile gives at most 12 catches, each with a chance from 0.01 to 100 %. The chances do not need to add up to 100 %: each counts as its share of their sum, which the Catches list shows after the `=`.
+A tile gives at most 12 catches, each with a chance from 0.01 to 100 %, and names at most 12 fishing items. The chances do not need to add up to 100 %: each counts as its share of their sum, which the Catches list shows after the `=`.
 
-Saving needs `server.admin` or `server.*`. A save is sent to every player online at once. The catches are rows of `fishing_tiles`.
+:::note Tiles made before fishing items
+Tiles given catches before fishing items existed name none, so nobody can fish them. The footer shows them as "no item fishes them". Pick them, choose their fishing items and apply again.
+:::
+
+Saving needs `server.admin` or `server.*`. A save is sent to every player online at once. The catches and fishing items are rows of `fishing_tiles` (columns `catches` and `tools`).
 
 ## Fishing
 
-Players click or tap a fishable tile within 256 px to cast. They face it and hold a wooden staff as a rod while the bobber floats. A fish bites after 3 to 10 seconds and the bobber goes under. Holding the mouse button or a finger down reels the fish in; it pulls back now and then, but never off the water. When the bobber reaches the shore near the player, the fish is pulled out and goes into the bags, and a notice names it in its quality's colour, as loot does. A fish not reeled within 5 seconds of its bite gets away: the bobber comes up again, the line stays out, and another fish may bite. One not landed within a minute of the reel starting gets away too.
+Players click or tap a fishable tile within 256 px to cast, with one of the tile's fishing items equipped. Without one they are told which to equip. They face the water and hold that item, drawn with its own sprite sheet, while the bobber floats. A fish bites after 3 to 10 seconds and the bobber goes under. Holding the mouse button or a finger down reels the fish in; it pulls back now and then, but never off the water. When the bobber reaches the shore near the player, the fish is pulled out and goes into the bags, and a notice names it in its quality's colour, as loot does. A fish not reeled within 5 seconds of its bite gets away: the bobber comes up again, the line stays out, and another fish may bite. One not landed within a minute of the reel starting gets away too.
 
 Holding the button down with no fish on the line reels the bobber in across the water; when it reaches the shore it comes up out of the water to the staff and the line is in. While a line is out, a click only reels: to cast somewhere else, reel the line in first.
 
 Players may walk up to 64 px from where they cast while fishing, still turned to the water. The line leaves the tip of the staff.
 
-The catch is picked when the line is cast, from the tile the bobber lands on. A cast is refused in combat, while stunned or casting, and when the bags have no room for the catch. Walking further than 64 px from where the line was cast, any damage, a stun, dying or leaving the map takes the line in.
+The catch is picked when the line is cast, from the tile the bobber lands on. A cast is refused in combat, while stunned or casting, without one of the tile's fishing items equipped, on a tile that names no fishing item, and when the bags have no room for the catch. Walking further than 64 px from where the line was cast, unequipping the item it was cast with, any damage, a stun, dying or leaving the map takes the line in.
 
 ## Painting in the game window
 

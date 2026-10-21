@@ -72,6 +72,7 @@ Most commands take `<username | id>`. A value that is not a number is matched ag
 | `/particleeditor` | `/pe` | `tools.particle_editor` or `tools.*` | Opens the particle editor |
 | `/npceditor` | `/ne` | `tools.npc_editor` or `tools.*` | Opens the NPC editor |
 | `/itemeditor` | `/ie` | admin role, `tools.item_editor`, `tools.*` or `server.*` | Opens the item editor |
+| `/mounteditor` | `/me` | admin role, `tools.mount_editor`, `tools.*`, `server.admin` or `server.*` | Opens the mount editor |
 | `/spelleditor` | `/se` | admin role, `tools.spell_editor`, `tools.*`, `server.admin` or `server.*` | Opens the spell editor |
 | `/weathereditor` | `/we` | admin role, `tools.weather_editor`, `tools.*`, `server.admin` or `server.*` | Opens the weather editor |
 | `/classeditor` | `/cle` | admin role, `tools.class_editor`, `tools.*`, `server.admin` or `server.*` | Opens the class editor |
@@ -460,6 +461,7 @@ These commands only tell the client to open a window. Each editor checks permiss
 | `/particleeditor` | `/pe` | `tools.particle_editor` or `tools.*` | [Particle editor](#/tools/particle-editor) |
 | `/npceditor` | `/ne` | `tools.npc_editor` or `tools.*` | [NPC editor](#/tools/npc-editor) |
 | `/itemeditor` | `/ie` | Admin role, `tools.item_editor`, `tools.*` or `server.*` | [Item editor](#/tools/item-editor) |
+| `/mounteditor` | `/me` | Admin role, `tools.mount_editor`, `tools.*`, `server.admin` or `server.*` | [Mount editor](#/tools/mount-editor) |
 | `/spelleditor` | `/se` | Admin role, `tools.spell_editor`, `tools.*`, `server.admin` or `server.*` | [Spell editor](#/tools/spell-editor) |
 | `/weathereditor` | `/we` | Admin role, `tools.weather_editor`, `tools.*`, `server.admin` or `server.*` | [Weather editor](#/tools/weather-editor) |
 | `/classeditor` | `/cle` | Admin role, `tools.class_editor`, `tools.*`, `server.admin` or `server.*` | [Class editor](#/tools/class-editor) |

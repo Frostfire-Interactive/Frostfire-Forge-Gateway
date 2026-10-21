@@ -31,6 +31,7 @@ export const BRANDED_PAGES: ReadonlySet<string> = new Set([
   "/npc-editor",
   "/creature-editor",
   "/item-editor",
+  "/mount-editor",
   "/spell-editor",
   "/weather-editor",
   "/class-editor",

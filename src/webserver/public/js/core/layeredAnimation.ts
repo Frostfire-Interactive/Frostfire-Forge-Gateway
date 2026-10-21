@@ -129,6 +129,36 @@ async function resolveSpriteUrl(spriteUrl: any): Promise<any> {
   throw new Error(`Invalid sprite data: ${JSON.stringify(spriteUrl)}`);
 }
 
+/**
+ * A worn item's sheet: equipment is drawn over the body, so one that cannot be fetched (not on the asset server) is
+ * left off with a warning rather than failing the whole character. Failing it kept every layer as it was, so the item
+ * worn before stayed drawn after a swap.
+ */
+async function resolveWornSprite(spriteUrl: any): Promise<any> {
+  try {
+    return await resolveSpriteUrl(spriteUrl);
+  } catch (error) {
+    console.warn(`Worn sprite sheet "${spriteUrl?.name}" could not be loaded, so it is not drawn:`, error);
+    return null;
+  }
+}
+
+/** The same for a worn item's layer, whose image may fail to load. */
+async function wornLayer(
+  type: 'armor_helmet' | 'armor_shoulderguards' | 'armor_neck' | 'armor_hands' | 'armor_chest' | 'armor_feet' | 'armor_legs' | 'armor_weapon',
+  spriteSheet: SpriteSheetTemplate,
+  animationName: string,
+  zIndex: number,
+  isMounted: boolean
+): Promise<AnimationLayer | null> {
+  try {
+    return await createAnimationLayer(type, spriteSheet, animationName, zIndex, isMounted);
+  } catch (error) {
+    console.warn(`Worn sprite sheet "${spriteSheet?.name}" could not be drawn:`, error);
+    return null;
+  }
+}
+
 export async function initializeLayeredAnimation(
   mountSprite: Nullable<SpriteSheetTemplate>,
   bodySprite: Nullable<SpriteSheetTemplate>,
@@ -168,28 +198,28 @@ export async function initializeLayeredAnimation(
     resolvedHead = await resolveSpriteUrl(headSprite);
   }
   if (armorHelmetSprite && ((armorHelmetSprite as any).templateUrl || (armorHelmetSprite as any).imageUrl)) {
-    resolvedArmorHelmet = await resolveSpriteUrl(armorHelmetSprite);
+    resolvedArmorHelmet = await resolveWornSprite(armorHelmetSprite);
   }
   if (armorShoulderguardsSprite && ((armorShoulderguardsSprite as any).templateUrl || (armorShoulderguardsSprite as any).imageUrl)) {
-    resolvedArmorShoulderguards = await resolveSpriteUrl(armorShoulderguardsSprite);
+    resolvedArmorShoulderguards = await resolveWornSprite(armorShoulderguardsSprite);
   }
   if (armorNeckSprite && ((armorNeckSprite as any).templateUrl || (armorNeckSprite as any).imageUrl)) {
-    resolvedArmorNeck = await resolveSpriteUrl(armorNeckSprite);
+    resolvedArmorNeck = await resolveWornSprite(armorNeckSprite);
   }
   if (armorHandsSprite && ((armorHandsSprite as any).templateUrl || (armorHandsSprite as any).imageUrl)) {
-    resolvedArmorHands = await resolveSpriteUrl(armorHandsSprite);
+    resolvedArmorHands = await resolveWornSprite(armorHandsSprite);
   }
   if (armorChestSprite && ((armorChestSprite as any).templateUrl || (armorChestSprite as any).imageUrl)) {
-    resolvedArmorChest = await resolveSpriteUrl(armorChestSprite);
+    resolvedArmorChest = await resolveWornSprite(armorChestSprite);
   }
   if (armorFeetSprite && ((armorFeetSprite as any).templateUrl || (armorFeetSprite as any).imageUrl)) {
-    resolvedArmorFeet = await resolveSpriteUrl(armorFeetSprite);
+    resolvedArmorFeet = await resolveWornSprite(armorFeetSprite);
   }
   if (armorLegsSprite && ((armorLegsSprite as any).templateUrl || (armorLegsSprite as any).imageUrl)) {
-    resolvedArmorLegs = await resolveSpriteUrl(armorLegsSprite);
+    resolvedArmorLegs = await resolveWornSprite(armorLegsSprite);
   }
   if (armorWeaponSprite && ((armorWeaponSprite as any).templateUrl || (armorWeaponSprite as any).imageUrl)) {
-    resolvedArmorWeapon = await resolveSpriteUrl(armorWeaponSprite);
+    resolvedArmorWeapon = await resolveWornSprite(armorWeaponSprite);
   }
 
   if (resolvedMount && !validateSpriteSheetTemplate(resolvedMount)) {
@@ -237,23 +267,23 @@ export async function initializeLayeredAnimation(
     : null;
 
   const armorNeckLayer = resolvedArmorNeck
-    ? await createAnimationLayer('armor_neck', resolvedArmorNeck, initialAnimation, 1, isMounted)
+    ? await wornLayer('armor_neck', resolvedArmorNeck, initialAnimation, 1, isMounted)
     : null;
 
   const armorHandsLayer = resolvedArmorHands
-    ? await createAnimationLayer('armor_hands', resolvedArmorHands, initialAnimation, 2, isMounted)
+    ? await wornLayer('armor_hands', resolvedArmorHands, initialAnimation, 2, isMounted)
     : null;
 
   const armorChestLayer = resolvedArmorChest
-    ? await createAnimationLayer('armor_chest', resolvedArmorChest, initialAnimation, 3, isMounted)
+    ? await wornLayer('armor_chest', resolvedArmorChest, initialAnimation, 3, isMounted)
     : null;
 
   const armorFeetLayer = resolvedArmorFeet
-    ? await createAnimationLayer('armor_feet', resolvedArmorFeet, initialAnimation, 4, isMounted)
+    ? await wornLayer('armor_feet', resolvedArmorFeet, initialAnimation, 4, isMounted)
     : null;
 
   const armorLegsLayer = resolvedArmorLegs
-    ? await createAnimationLayer('armor_legs', resolvedArmorLegs, initialAnimation, 5, isMounted)
+    ? await wornLayer('armor_legs', resolvedArmorLegs, initialAnimation, 5, isMounted)
     : null;
 
   const headLayer = resolvedHead
@@ -261,15 +291,15 @@ export async function initializeLayeredAnimation(
     : null;
 
   const armorHelmetLayer = resolvedArmorHelmet
-    ? await createAnimationLayer('armor_helmet', resolvedArmorHelmet, initialAnimation, 7, isMounted)
+    ? await wornLayer('armor_helmet', resolvedArmorHelmet, initialAnimation, 7, isMounted)
     : null;
 
   const armorShoulderguardsLayer = resolvedArmorShoulderguards
-    ? await createAnimationLayer('armor_shoulderguards', resolvedArmorShoulderguards, initialAnimation, 8, isMounted)
+    ? await wornLayer('armor_shoulderguards', resolvedArmorShoulderguards, initialAnimation, 8, isMounted)
     : null;
 
   const armorWeaponLayer = resolvedArmorWeapon
-    ? await createAnimationLayer('armor_weapon', resolvedArmorWeapon, initialAnimation, 9, isMounted)
+    ? await wornLayer('armor_weapon', resolvedArmorWeapon, initialAnimation, 9, isMounted)
     : null;
 
   return {
