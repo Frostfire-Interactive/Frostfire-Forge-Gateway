@@ -933,10 +933,18 @@ async function setupTransport(preStream?: WebTransportBidirectionalStream | null
 
   setupSocketHandlers();
 
+  // Cleared before anything is sent: the login's answers can follow AUTH_CONNECT_SUCCESS in the same read.
+  prepareLogin();
+
   receiveLoop();
   receiveDatagrams();
 
-  await authenticateConnection();
+  // LOGIN and AUTH go right behind AUTH_CONNECT. The node handles the frames of the stream in order, so the login
+  // takes one round trip instead of three in a row (AUTH_CONNECT, then PING, then LOGIN): about 60 ms of every node
+  // switch, with the player standing still.
+  const authenticated = authenticateConnection();
+  sendLogin();
+  await authenticated;
 
   transportReady = true;
   initializeConnection();
@@ -994,10 +1002,7 @@ function resetWorldForLogin() {
   import("./skeletons.js").then((m) => m.clearSkeletons());
 }
 
-function initializeConnection() {
-
-  reconnectAttempts = 0;
-  closeHandled = false;
+function prepareLogin() {
   sessionActive = false;
 
   // A handoff that resumes keeps the player's id and the world: the new node gives the connection the same id.
@@ -1006,11 +1011,23 @@ function initializeConnection() {
     (window as any).cachedPlayerId = null;
     resetWorldForLogin();
   }
+}
 
-  sendRequest({
-    type: "PING",
-    data: null,
-  });
+/** LOGIN and AUTH (the session token). Without a token there is no login: back to the start page. */
+function sendLogin() {
+  const sessionToken = getCookie("token");
+  if (!sessionToken) {
+    window.location.href = "/";
+    return;
+  }
+  const language = navigator.language.split("-")[0] || navigator.language || "en";
+  sendRequest({ type: "LOGIN", data: null });
+  sendRequest({ type: "AUTH", data: sessionToken, language });
+}
+
+function initializeConnection() {
+  reconnectAttempts = 0;
+  closeHandled = false;
 }
 
 // NOTE: there is deliberately no inbound-inactivity watchdog here.
@@ -2914,11 +2931,8 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       }
       break;
     }
+    // The login no longer starts with a PING (sendLogin): a PONG starts nothing.
     case "PONG":
-      sendRequest({
-        type: "LOGIN",
-        data: null,
-      });
       break;
     case "CONNECTION_COUNT": {
       onlinecount.innerText = `${data} online`;
@@ -3987,21 +4001,8 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           handoffResume = false;
         }
 
-        const sessionToken = getCookie("token");
-        if (!sessionToken) {
-          window.location.href = "/";
-          return;
-        }
-
+        // AUTH was sent with the LOGIN (sendLogin).
         sessionStorage.setItem("chatDecryptionKey", chatDecryptionKey);
-
-        const language =
-          navigator.language.split("-")[0] || navigator.language || "en";
-        sendRequest({
-          type: "AUTH",
-          data: sessionToken,
-          language,
-        });
       }
       break;
     case "LOGIN_FAILED":
