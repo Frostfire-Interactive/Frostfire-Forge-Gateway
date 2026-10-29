@@ -347,6 +347,7 @@ Optional keys that are not generated but are read when present:
 | `bun docker:dev`, `docker:dev:down`, `docker:dev:logs`, `docker:dev:build`, `docker:dev:rebuild` | Docker Compose with `src/docker/docker-compose.dev.yml` |
 | `bun docker:prod`, `docker:prod:down`, `docker:prod:logs`, `docker:prod:build`, `docker:prod:rebuild` | Docker Compose with `src/docker/docker-compose.prod.yml` |
 | `bun cluster <nodes>` | `create-config --environment production`, then starts Redis (when `REDIS_URL` is this machine's port 6379) and runs `<nodes>` cluster nodes and a coordinator with `.env.production`. See [Running a cluster](#/engine/cluster/running-a-cluster) |
+| `bun docker:prod:cluster:rebuild`, `docker:prod:cluster:down`, `docker:prod:cluster:logs` | A cluster in Docker on this machine (`src/utility/cluster-prod.ts`): `CLUSTER_NODES` nodes and `CLUSTER_COORDINATORS` coordinators (default 1) from `.env.production`, each container set up like `docker-compose.prod.yml`. `rebuild` builds the image, starts Redis when `REDIS_URL` is this machine's port 6379, stops the single engine and the old cluster, clears the cluster state in Redis and starts the new containers |
 | `bun cluster-local <nodes>` | `src/utility/cluster-local.ts` with `.env.production`: the same cluster, without starting Redis |
 | `bun coordinator:production` | `src/cluster/coordinator-main.ts` with `.env.production`: one cluster coordinator |
 | `bun benchmark`, `benchmark:development` | `src/utility/benchmark-cli.ts` with `.env.development` |
