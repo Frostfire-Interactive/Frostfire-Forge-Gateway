@@ -14,7 +14,7 @@ The game server never needs a world's tiles. Drawing is the client's job, and th
 2. Can a character stand on this tile? That is the **collision bitset**.
 3. Is PvP allowed on this tile? That is the **no-PvP bitset**.
 
-A bitset stores one bit per tile. For 10240 by 10240 tiles that is 12.5 MB per bitset, about 25 MB for both, held in memory.
+A bitset stores one bit per tile. Both bitsets are held in memory.
 
 | | Tiled map | World |
 |---|-----------|-------|

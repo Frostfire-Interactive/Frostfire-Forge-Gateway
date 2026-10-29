@@ -163,7 +163,7 @@ Players pick a realm on the gateway's realm list, so the gateway needs to know w
 | When | Request | Field |
 |------|---------|-------|
 | Registration | `POST /register` | `whitelisted: isWhitelistEnabled()` |
-| Every heartbeat (every 5 seconds by default) | `POST /heartbeat` | `whitelisted: isWhitelistEnabled()` |
+| Every heartbeat | `POST /heartbeat` | `whitelisted: isWhitelistEnabled()` |
 | Right after a switch | An extra heartbeat, sent at once | the same |
 
 ```ts title="src/modules/gateway-client.ts"

@@ -66,7 +66,7 @@ Every successful step sets the `token` cookie. While a challenge is open, the ac
 `POST /login` and `POST /guest-login` answer a full success with status `301` and no `Location` header. The page scripts treat that status as the signal to move on to realm selection. A custom client should do the same.
 :::
 
-After login the player picks a realm and the client asks for a connection token. That part is described in [Game Servers](#/gateway/game-servers).
+After login the player picks a realm and the client asks for a connection token. That part is described in [Game Servers](#/gateway/game-servers). For a realm that runs as a cluster, the token names one node. It is the node that owns the account's saved position when the gateway knows it, and the least-loaded online node otherwise.
 
 ## Session token
 
@@ -93,9 +93,9 @@ With `GUEST_MODE_ENABLED=true` the "Continue as guest" link on the login page ca
 
 With guest mode off the route answers `403` with `Guest mode is disabled`.
 
-One address can create 5 guest accounts an hour, and the webserver creates at most 200 an hour in total. Once an hour it also deletes guest accounts that are offline, have no session, logged in more than 24 hours ago and are in no party or guild; the engine still deletes every guest account when it starts.
+On a timer the webserver deletes guest accounts that are offline, have no session, have not logged in recently and are in no party or guild; the engine still deletes every guest account when it starts.
 
-`POST /guest-bulk` creates many guest accounts in one request for load tests. It needs guest mode on and the value of `GATEWAY_GAME_SERVER_SECRET` in an `X-Benchmark-Secret` header or as a bearer token. The body `{"count": 500}` asks for that many accounts (1 to 2000, default 100) and the response lists their tokens. See [Benchmarking](#/engine/benchmarking).
+`POST /guest-bulk` creates many guest accounts in one request for load tests. It needs guest mode on and the value of `GATEWAY_GAME_SERVER_SECRET` in an `X-Benchmark-Secret` header or as a bearer token. The body `{"count": 500}` asks for that many accounts (a default is used when `count` is left out) and the response lists their tokens. See [Benchmarking](#/engine/benchmarking).
 
 ## Password reset
 
@@ -121,7 +121,7 @@ The email code is sent and checked on the login page itself. TOTP and security k
 
 - `POST /api/profile/setup-totp` with the account password, once confirmed, returns a QR code image and the `otpauth://` URI. The issuer shown in the app is `GAME_NAME`.
 - `POST /api/profile/verify-totp` with a six digit code enables the app.
-- Codes are standard TOTP: SHA-1, six digits, 30 second steps. One step before and after the current one is accepted.
+- Codes are standard TOTP: SHA-1, six digits, 30 second steps. The steps next to the current one are accepted too.
 - `POST /api/profile/disable-totp` with the account password, once confirmed, removes the app and turns off `require_totp`.
 
 ### Security keys
@@ -157,7 +157,7 @@ The client sends the request without the answer first. The server then answers `
 | `{"requiresTotp": true}` | Ask for the authenticator code |
 | `{"requiresEmail": true}` | A code was emailed. Ask for it. |
 
-A wrong answer gets `400`. Checked answers are limited to 10 per address per 15 minutes. The account's state decides the factor, not the request, so a client cannot pick a weaker one.
+A wrong answer gets `400`. Checked answers are limited per address. The account's state decides the factor, not the request, so a client cannot pick a weaker one.
 
 | Change | Proof asked for |
 | --- | --- |
@@ -189,7 +189,7 @@ All routes are served by the webserver behind the reverse proxy. "Token" in the 
 | GET | `/docs` | None | This documentation. `404` when `DOCS_ENABLED=false`. |
 | GET | `/gateway` | None | Redirects (`302`) to `/dashboard` on the gateway server port. See [Dashboard](#/gateway/dashboard). |
 | GET | `/service-worker.js` | None | Service worker that caches sprites and assets |
-| GET | `/img/...`, `/fonts/...` | None | Images and fonts, cached for one hour |
+| GET | `/img/...`, `/fonts/...` | None | Images and fonts, cached by the browser |
 
 Any other path redirects to `/` with a `301`.
 
@@ -211,8 +211,8 @@ Any other path redirects to `/` with a `301`.
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | `/api/gateway/servers` | None | The realm list, read from the gateway server |
-| GET | `/api/gateway/connection-token` | Token | A signed connection token for the caller's account, valid for 60 seconds. Refused with `403` while the account has an open 2FA challenge, has not verified its email, or needs a subscription. |
-| POST | `/api/client-log` | Token | Forward browser console errors to the server log. Limited to 120 lines per minute per player. |
+| GET | `/api/gateway/connection-token` | Token | A signed connection token for the caller's account, valid for a short while. Refused with `403` while the account has an open 2FA challenge, has not verified its email, or needs a subscription. For a cluster realm it names the node of the saved position, or the least-loaded one. |
+| POST | `/api/client-log` | Token | Forward browser console errors to the server log. Limited per player. |
 
 ### Profile
 
@@ -269,16 +269,16 @@ curl https://play.example.com/api/profile \
 
 The webserver counts requests per client address, the `X-Real-Client-IP` header set by the [Reverse Proxy](#/gateway/reverse-proxy). Over a limit a route answers `429` with a `message` saying how long to wait and a `Retry-After` header in seconds. The counts are kept in memory and start again when the webserver restarts.
 
-| Route | Limit |
+| Route | What is counted |
 | --- | --- |
-| `POST /login` | 10 attempts per address per 10 minutes, and 5 wrong passwords per address and username per 15 minutes. Wrong passwords from other addresses never block a login. |
-| `POST /register` | 5 per address per hour, counted once the form is valid |
-| `POST /guest-login` | 5 per address per hour, and 200 per hour in total |
-| `POST /reset-password` | 5 per address per hour |
-| `POST /update-password` | 10 per address per 15 minutes |
-| `POST /verify` | 10 per address per 15 minutes |
-| `POST /api/2fa/send-email` | 5 per address per 15 minutes |
-| `POST /api/2fa/verify-totp`, `/api/2fa/verify-email`, `/api/2fa/verify-webauthn` | 10 per address per 15 minutes, counted together |
-| Answers that confirm an account change (`webauthnResponse`, `totp`, `emailCode` on the profile routes and `/update-password`) | 10 per address per 15 minutes, counted together |
+| `POST /login` | Attempts per address, and wrong passwords per address and username. Wrong passwords from other addresses never block a login. |
+| `POST /register` | Requests per address, counted once the form is valid |
+| `POST /guest-login` | Requests per address, and requests in total |
+| `POST /reset-password` | Requests per address |
+| `POST /update-password` | Requests per address |
+| `POST /verify` | Requests per address |
+| `POST /api/2fa/send-email` | Requests per address |
+| `POST /api/2fa/verify-totp`, `/api/2fa/verify-email`, `/api/2fa/verify-webauthn` | Requests per address, counted together |
+| Answers that confirm an account change (`webauthnResponse`, `totp`, `emailCode` on the profile routes and `/update-password`) | Requests per address, counted together |
 
 `POST /guest-bulk` has no limit; it needs the game server secret.

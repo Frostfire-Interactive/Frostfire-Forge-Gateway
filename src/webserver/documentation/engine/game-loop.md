@@ -67,7 +67,7 @@ if (!wasAlreadyMoving) {
 On each tick the loop calls the callback of every mover. One call:
 
 1. Moves the player one step, checking collision and warps.
-2. Every tenth tick, recalculates the player's area of interest if they moved far enough. See [AOI and layers](#/engine/aoi-and-layers).
+2. At a steady pace while the player moves, recalculates the player's area of interest if they moved far enough. See [AOI and layers](#/engine/aoi-and-layers).
 3. Sends the player their own new position as a datagram.
 4. Queues the position for the next movement batch, which tells everyone else.
 
@@ -80,7 +80,7 @@ Three rules keep the loop healthy:
 `MOVEXY` with the data `abort` stops the player and unregisters them. A disconnect does the same.
 
 :::note
-The loop moves players, it does not send movement to other players. That is done by a separate flush timer in `receiver.ts` that runs every 33 to 150 ms depending on load. See [Networking](#/engine/networking/the-flush).
+The loop moves players, it does not send movement to other players. That is done by a separate flush timer in `receiver.ts` whose interval adapts to load. See [Networking](#/engine/networking/the-flush).
 :::
 
 ## Tick events
@@ -131,7 +131,7 @@ The gameplay events (`onPlayerDeath`, `onSpellCast` and the rest) are listed on 
 | Event | Built in work |
 |-------|---------------|
 | `onFixedUpdate` (100 ms) | Creature AI, movement and combat. Gathering node spawns. Tornadoes forming, dying and hurting players. Release of connections whose packet rate limit has expired. |
-| `onServerTick` (1 s) | Removes players whose connection is gone. Regenerates stamina (5% of the maximum) and, outside PvP, health (1% of the maximum), and sends the new values to the player and everyone who sees them. Drops the PvP flag 5 seconds after a player's last attack. Reports the connection count to the gateway client. Refreshes creature spells and navigation grids. Checks "reach this point" quest objectives. Ends trades whose players may no longer trade. Every 5 minutes, reads the list of account names again. |
+| `onServerTick` (1 s) | Removes players whose connection is gone. Regenerates stamina and, outside PvP, health, each by a share of the maximum, and sends the new values to the player and everyone who sees them. Drops the PvP flag a short while after a player's last attack. Reports the connection count to the gateway client. Refreshes creature spells and navigation grids. Checks "reach this point" quest objectives. Ends trades whose players may no longer trade. On a longer timer, reads the list of account names again. |
 | `onServerTick`, every 60 s | Compares each player's connection id with `accounts.session_id` in the database. A player whose account was logged in elsewhere is told so and disconnected. Reads the subscription tables again. |
 | `onSave` (60 s) | Writes stats and location of every online, non guest player to the database, and achievement progress |
 
@@ -141,21 +141,21 @@ Dead players and ghosts do not regenerate.
 
 These are plain timers, not events:
 
-| Timer | Interval | Where |
-|-------|----------|-------|
-| Movement loop | 33.3 ms (30 Hz) | `gameloop.ts` |
-| Movement batch flush | 33 to 150 ms, adaptive | `receiver.ts` |
-| Spawn and despawn flush | 50 ms | `receiver.ts` |
-| Connection count broadcast | At most every 500 ms | `server.ts` |
-| Packet rate limit window | 1 s | `server.ts` |
-| Stream queue health check | 10 s | `server.ts` |
-| Party layer sync | 15 s | `aoi.ts` |
-| Layer condensing | 5 minutes | `aoi.ts` |
-| Gateway heartbeat | `gateway.heartbeatInterval` (5 s) | `gateway-client.ts` |
-| Lightning on thunderstorm worlds | Every 2 to 5 s | `receiver.ts` |
-| Random weather change | 30 minutes | `receiver.ts` |
-| Real weather reading | `WEATHER_API_MINUTES` (10 minutes) | `weatherapi.ts` |
-| Idle movement worker cleanup | 10 s | `movement_worker_pool.ts` |
+| Timer | What it does | Where |
+|-------|--------------|-------|
+| Movement loop | Steps the moving players, 30 Hz (33.3 ms) | `gameloop.ts` |
+| Movement batch flush | Sends the queued movement; its interval adapts to load | `receiver.ts` |
+| Spawn and despawn flush | Sends the queued spawns and despawns, despawns first | `receiver.ts` |
+| Connection count broadcast | Publishes the connection count to its topic, no more often than a short interval | `server.ts` |
+| Packet rate limit window | Counts a connection's packets per window | `server.ts` |
+| Stream queue health check | Looks for connections with a long stream queue | `server.ts` |
+| Party layer sync | Brings party members onto the leader's layer | `aoi.ts` |
+| Layer condensing | Moves players from overflow layers to lower ones | `aoi.ts` |
+| Gateway heartbeat | Reports to the gateway every `gateway.heartbeatInterval` | `gateway-client.ts` |
+| Lightning on thunderstorm worlds | Places a bolt near a random player, at random intervals | `receiver.ts` |
+| Random weather change | Picks a new weather for worlds set to `random` | `receiver.ts` |
+| Real weather reading | Reads the weather API every `WEATHER_API_MINUTES` | `weatherapi.ts` |
+| Idle movement worker cleanup | Ends movement workers that have gone idle | `movement_worker_pool.ts` |
 
 ## Worker pools
 
@@ -163,8 +163,8 @@ Three kinds of work leave the main thread.
 
 | Pool | File | Size | Setting |
 |------|------|------|---------|
-| Database | `src/controllers/sqldatabase.ts` | 8 by default, at most 64 | `DB_WORKER_POOL_SIZE` |
-| Login | `src/socket/authentication_pool.ts` | 8 by default, at most 64 | `AUTH_POOL_SIZE` |
+| Database | `src/controllers/sqldatabase.ts` | 8 by default | `DB_WORKER_POOL_SIZE` |
+| Login | `src/socket/authentication_pool.ts` | 8 by default | `AUTH_POOL_SIZE` |
 | Movement | `src/socket/movement_worker_pool.ts` | `max(2, min(8, CPU cores - 1))` | none |
 
 A size that is not a positive whole number falls back to 8.
@@ -179,7 +179,7 @@ const WORKER_POOL_SIZE = Number.isInteger(parsedDbWorkerPoolSize) && parsedDbWor
 
 ### Database workers
 
-Every call to `query` is posted to one worker, chosen round robin. Each worker owns its own connection to the database. The pool is created when `sqldatabase.ts` is first imported, and the import waits until every worker reports ready (or fails after 60 seconds). Details are on the [Database](#/engine/database/the-query-function) page.
+Every call to `query` is posted to one worker, chosen round robin. Each worker owns its own connection to the database. The pool is created when `sqldatabase.ts` is first imported, and the import waits until every worker reports ready (or fails). Details are on the [Database](#/engine/database/the-query-function) page.
 
 ### Login workers
 
@@ -200,12 +200,12 @@ authWorker.on("message", async (result: any) => {
 
 ### Movement workers
 
-Building movement batches means working out, for every receiver, which movers they can see. For a layer with more than 20 receivers that work is sent to a movement worker (`src/socket/movement_worker.ts`). The worker keeps a mirror of each receiver's visible set, updated by diffs, and returns ready made binary batches that the main thread only has to send.
+Building movement batches means working out, for every receiver, which movers they can see. For a layer with many receivers that work is sent to a movement worker (`src/socket/movement_worker.ts`). The worker keeps a mirror of each receiver's visible set, updated by diffs, and returns ready made binary batches that the main thread only has to send.
 
 - Workers are created on demand, up to the pool size, and shared between layers. A layer always uses the same worker.
-- A flush that takes more than 5 seconds is abandoned with a warning.
-- A worker that has been idle for 30 seconds is terminated.
-- With more than 800 receivers in one flush, movers further than 400 pixels from a receiver are only sent on every fourth flush.
+- A flush that does not finish in time is abandoned with a warning.
+- A worker that has been idle for a while is terminated.
+- With very many receivers in one flush, movers far from a receiver are only sent on some of the flushes.
 
 ## Startup sequence
 
@@ -263,7 +263,7 @@ try {
 ```
 
 :::warning The gateway must be reachable
-Step 10 never gives up. If the gateway is down, the engine keeps retrying (after 1, 2, 4, 8, 16 and then 30 seconds) and the game loop, plugins and ticks do not start until it succeeds. Start the gateway and the asset server first. See [Quick start](#/getting-started/quick-start).
+Step 10 never gives up. If the gateway is down, the engine keeps retrying with a growing delay and the game loop, plugins and ticks do not start until it succeeds. Start the gateway and the asset server first. See [Quick start](#/getting-started/quick-start).
 :::
 
 :::note Plugins load after onAwake and onStart
@@ -272,7 +272,7 @@ Step 10 never gives up. If the gateway is down, the engine keeps retrying (after
 
 ## Shutdown
 
-`SIGINT` and `SIGTERM` call `gracefulShutdown`: the movement loop stops, the server unregisters from the gateway, the WebTransport server and the HTTP servers are stopped, achievement progress is written (waiting at most 5 seconds), and the process exits with code 0.
+`SIGINT` and `SIGTERM` call `gracefulShutdown`: the movement loop stops, the server unregisters from the gateway, the WebTransport server and the HTTP servers are stopped, achievement progress is written (waiting a limited time), and the process exits with code 0.
 
 ```ts title="src/socket/server.ts"
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
@@ -281,7 +281,7 @@ process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 
 ## Profiling the loop
 
-Set `BENCHMARK_PROFILE=1` to print timing lines every 5 seconds:
+Set `BENCHMARK_PROFILE=1` to print timing lines at regular intervals:
 
 ```text title="Example profile output"
 [profile:gameloop] 150 ticks/5s, 0 overlaps, 42ms total, 3ms max, 12 movers, rss=310MB
@@ -289,9 +289,9 @@ Set `BENCHMARK_PROFILE=1` to print timing lines every 5 seconds:
 
 | Field | Meaning |
 |-------|---------|
-| `ticks/5s` | Ticks that had at least one mover. 150 is the full 30 Hz. |
+| `ticks/5s` | Ticks that had at least one mover. The most is a tick for every interval of the loop. |
 | `overlaps` | Ticks that fired while the previous one was still running. Above zero means the loop is falling behind. |
-| `total` | Milliseconds spent inside ticks in the 5 second window |
+| `total` | Milliseconds spent inside ticks in the reporting window |
 | `max` | The slowest single tick |
 | `movers` | Players currently in the loop |
 | `rss` | Process memory |

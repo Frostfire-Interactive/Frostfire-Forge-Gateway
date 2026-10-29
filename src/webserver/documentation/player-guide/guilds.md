@@ -158,7 +158,7 @@ The Guild Master can change the ranks of the guild. Select **Ranks** in the guil
 | Add | Adds a new rank at the bottom of the list |
 | Delete | Removes the lowest rank. It only works once nobody holds that rank. |
 
-A guild has at least 2 and at most 8 ranks. The Guild Master rank can be renamed, but its permissions cannot be changed: it always has every permission.
+A guild has several ranks. The Guild Master rank can be renamed, but its permissions cannot be changed: it always has every permission.
 
 ## Guild Master actions
 

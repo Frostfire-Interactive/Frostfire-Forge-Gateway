@@ -99,7 +99,7 @@ AUTH_POOL_SIZE=8
 | `DATABASE_NAME` | Required, except with SQLite when `DATABASE_PATH` is set | Database name. With SQLite it is the file name: `<tmp>/frostfire_forge/<DATABASE_NAME>.sqlite`. |
 | `DATABASE_PATH` | none | SQLite only: the full path of the database file, used instead of the name above. Its folder is created when missing. |
 | `SQL_SSL_MODE` | No TLS | Unset or `DISABLED` connects without TLS. Any other value loads `src/certs/db.crt` and connects with TLS. |
-| `DB_WORKER_POOL_SIZE` | `8` | Number of database worker threads, capped at 64 |
+| `DB_WORKER_POOL_SIZE` | `8` | Number of database worker threads |
 
 :::warning Set SQL_SSL_MODE explicitly
 Startup validation replaces an empty `SQL_SSL_MODE` with the string `false`, and only `DISABLED` (or unset) means "no TLS" to the connection code. Write `SQL_SSL_MODE=DISABLED` when you do not use a database certificate.
@@ -167,7 +167,25 @@ Details are on the [Networking](#/engine/networking) page.
 |------|---------|---------|
 | `CACHE` | `memory` | `redis` keeps asset data and cached rows in Redis. See [Caching](#/engine/caching). |
 | `REDIS_URL` | none | Redis address. When `CACHE=redis` and this is empty, the server warns and falls back to `memory`. |
-| `AUTH_POOL_SIZE` | `8` | Number of login worker threads, capped at 64 |
+| `AUTH_POOL_SIZE` | `8` | Number of login worker threads |
+
+### Cluster
+
+These variables only matter with `CLUSTER=true`. Each one is explained on [Cluster Mode](#/engine/cluster/environment-variables).
+
+| Name | Default | Purpose |
+|------|---------|---------|
+| `CLUSTER` | off | `true` makes this process a [cluster node](#/engine/cluster). Unset or `false` runs the engine as a single process. |
+| `NODE_ID` | Required in a cluster | The node's name in the cluster: 1 to 64 letters, digits, `_` or `-` |
+| `REGION_ID` | Required in a cluster | The region the node serves, with the same characters. Shared by every node and coordinator of one world. |
+| `CLUSTER_LINK_SECRET` | Required in a cluster | At least 32 random characters. Signs the node links, the cluster bus and sealed Redis records. |
+| `NODE_LINK_PORT` | Game port plus 1 | UDP port of the node link listener. `0` turns links off. |
+| `NODE_LINK_HOST` | `SERVER_HOST`, else `127.0.0.1` | The address other nodes dial to reach this node's links |
+| `NODE_LINK_BIND_HOST` | Required in a cluster unless `NODE_LINK_PORT=0` | The interface the link listener binds. Use the node's private address. |
+| `CLUSTER_EXPECTED_NODES` | none | Coordinator only: split a new map once this many nodes are alive |
+| `CLUSTER_SETTLE_MS` | `60000` with `CLUSTER_EXPECTED_NODES` | Coordinator only: the longest the first split waits |
+
+A cluster node also needs `CACHE=redis`, a `REDIS_URL` with a password (or a `rediss://` URL) and `GATEWAY_GAME_SERVER_SECRET`.
 
 ### Weather
 
@@ -211,6 +229,7 @@ Log lines are also appended to `src/logs/<date>.log`.
 | `LOG_LEVEL` is empty or not a known level | Warning, set to `info` |
 | `WEBSRV_PORTSSL` and `GAME_PORT` are both empty | Warning, port `3000` |
 | `CACHE=redis` without `REDIS_URL` | Warning, `CACHE` set to `memory` |
+| `CLUSTER=true` without `CACHE=redis`, `REDIS_URL` or `GATEWAY_GAME_SERVER_SECRET`; with a `CLUSTER_LINK_SECRET` shorter than 32 characters; with a `REDIS_URL` that is not a valid `redis://` or `rediss://` URL, has no password (unless it uses `rediss://`) or has a placeholder password; with an invalid `NODE_ID`, `REGION_ID` or `NODE_LINK_PORT`; or with `NODE_LINK_BIND_HOST` unset, unless `NODE_LINK_PORT=0` | Error, then `process.exit(1)` |
 | `SESSION_KEY` or `RSA_PASSPHRASE` is set | Warning, the value is replaced |
 | `settings.json` has no `webtransport` or `packetRatelimit` section | Warning |
 
@@ -258,7 +277,7 @@ Log lines are also appended to `src/logs/<date>.log`.
 | `packetRatelimit.maxRequests` | `2000` | Packets a connection may send in one counting window before it is rate limited |
 | `packetRatelimit.maxWindowTime` | `1000` | Length of the counting window. Every second, 1000 ms is added to a connection's window time, and its counter resets once that exceeds this value (every 2 seconds with the default). |
 | `packetRatelimit.time` | `2000` | Milliseconds a rate limited connection stays muted |
-| `webtransport.maxPayloadMB` | `50` | Largest frame, in megabytes. Falls back to `1` when missing. Only admins and players with a permission get this much: a connection with no player logged in gets at most 16 KB, any other player 256 KB. |
+| `webtransport.maxPayloadMB` | `50` | Largest frame, in megabytes. Falls back to `1` when missing. Only admins and players with a permission get this much: a connection with no player logged in, and any other player, get a smaller limit. |
 | `webtransport.benchmarkenabled` | `false` | `true` lets every connection send frames up to `maxPayloadMB` |
 | `webtransport.maxSessions` | `50000` | Largest number of WebTransport sessions. Also reported to the gateway as the realm's capacity. Falls back to `2000`. |
 | `webtransport.maxDatagramSize` | `1200` | Largest datagram in bytes. Larger movement batches are split, other packets go on the stream. |
@@ -296,12 +315,17 @@ Optional keys that are not generated but are read when present:
   "GRID_CELL_SIZE": 512,
   "USE_SPATIAL_GRID": true,
   "SPATIAL_GRID_THRESHOLD": 50,
-  "MAX_PLAYERS_PER_LAYER": 50,
+  "MAX_PLAYERS_PER_LAYER": 150,
+  "BLOCK_SIZE_PX": 4096,
+  "MAX_VISIBLE_PLAYERS": 150,
+  "NEAR_TIER_DISTANCE": 500,
+  "FAR_UPDATE_EVERY": 3,
+  "EXIT_HYSTERESIS": 1.25,
   "DEBUG": false
 }
 ```
 
-Every key is explained on the [AOI and layers](#/engine/aoi-and-layers/aoijson-settings) page.
+`MAX_PLAYERS_PER_LAYER` is counted per block of `BLOCK_SIZE_PX` pixels, not per map. Every key is explained on the [AOI and layers](#/engine/aoi-and-layers/aoijson-settings) page.
 
 ## security.cfg
 
@@ -322,6 +346,9 @@ Every key is explained on the [AOI and layers](#/engine/aoi-and-layers/aoijson-s
 | `bun renew-lan-cert` | `src/utility/renew_lan_cert.ts`: renews a certificate signed by a local CA |
 | `bun docker:dev`, `docker:dev:down`, `docker:dev:logs`, `docker:dev:build`, `docker:dev:rebuild` | Docker Compose with `src/docker/docker-compose.dev.yml` |
 | `bun docker:prod`, `docker:prod:down`, `docker:prod:logs`, `docker:prod:build`, `docker:prod:rebuild` | Docker Compose with `src/docker/docker-compose.prod.yml` |
+| `bun cluster <nodes>` | `create-config --environment production`, then starts Redis (when `REDIS_URL` is this machine's port 6379) and runs `<nodes>` cluster nodes and a coordinator with `.env.production`. See [Running a cluster](#/engine/cluster/running-a-cluster) |
+| `bun cluster-local <nodes>` | `src/utility/cluster-local.ts` with `.env.production`: the same cluster, without starting Redis |
+| `bun coordinator:production` | `src/cluster/coordinator-main.ts` with `.env.production`: one cluster coordinator |
 | `bun benchmark`, `benchmark:development` | `src/utility/benchmark-cli.ts` with `.env.development` |
 | `bun benchmark:production` | `src/utility/benchmark-cli.ts` with `.env.production` |
 | `bun benchmark:connections` | `src/utility/benchmark-connections.ts` with no environment file |

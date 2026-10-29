@@ -1,6 +1,6 @@
 ---
 title: World Maps
-description: The .world directory format, and how the asset server stores, serves and saves worlds of up to 10240 x 10240 tiles.
+description: The .world directory format, and how the asset server stores, serves and saves worlds of continent size.
 order: 40
 ---
 
@@ -13,7 +13,7 @@ An ordinary map is parsed into memory whole, sent to the engine whole, and rewri
 A world solves this in three ways:
 
 - **Tiles stay on disk.** The asset server keeps only the manifest and the index of each pack file it has opened. A chunk is read from its pack when a client asks for it.
-- **The engine never receives tiles.** It copies the manifest and two bitsets (collision and no-PvP, one bit per tile). For a 10240 x 10240 world that is about 25 MB.
+- **The engine never receives tiles.** It copies the manifest and two bitsets (collision and no-PvP, one bit per tile).
 - **Saves touch only what changed.** An edit rewrites the pack files that contain the edited chunks.
 
 To the rest of the system a world looks like any other map. `continent.world` is known everywhere as `continent.json`, and `/map-chunk` returns the same JSON for it as for a Tiled map.
@@ -241,9 +241,9 @@ The game's full map view uses images baked by the asset server:
 | `GET /worldmap?name=continent` | The whole world as a PNG. The scale doubles until the longest edge is 4096 pixels or less, so a 10240 x 10240 world becomes a 2560 x 2560 image at 4 tiles per pixel. |
 | `GET /worldmap?name=continent&rx=3&ry=5` | One region of 1024 x 1024 tiles at one pixel per tile, for the zoomed in view. `rx` and `ry` count regions from the top left. |
 
-The whole world image is baked at startup and kept in the system temp folder between starts, keyed by the world's manifest and its tileset images. Region images are baked on first request and up to 64 of them are kept in memory.
+The whole world image is baked at startup and kept in the system temp folder between starts, keyed by the world's manifest and its tileset images. Region images are baked on first request and the recent ones are kept in memory.
 
-When a world's tiles change (an editor save, or a save on disk by another program), the whole world image is baked again half a second later. Only the changed chunks are drawn, over the image as it was, so a save takes moments instead of the seconds a full bake takes: one pack of the 10240 x 10240 continent takes about a quarter of a second. Region images follow by themselves, since their cache key holds the world's checksum.
+When a world's tiles change (an editor save, or a save on disk by another program), the whole world image is baked again a moment later. Only the changed chunks are drawn, over the image as it was, so a save takes moments instead of the time a full bake takes. Region images follow by themselves, since their cache key holds the world's checksum.
 
 ```text title="Asset server log"
 Baked the world map of overworld again (256 chunk(s)) in 241ms

@@ -77,7 +77,7 @@ The game accepts whatever the row holds. The editor is stricter, and these range
 | `aoe_radius` | 0 to 2000 |
 | `ground_duration` | 0 to 600 |
 | `charge_distance` | 0 to 2000 |
-| `effects` | At most 10 effects |
+| `effects` | The spell's effects |
 
 The editor also refuses a spell with `damage` 0 and no effects (the server would refuse to cast it), and a ground-targeted spell with no `aoe_radius` (it would hit nothing).
 
@@ -318,7 +318,7 @@ The cast is abandoned, and the cooldown refunded, when:
 
 ### 6. The cast lands
 
-For a single target with a cast time the server checks range, line of sight, PvP rules and facing again. It then sends a `PROJECTILE` packet when the target is not the caster. The projectile takes 1 ms per pixel of distance, at most 500 ms.
+For a single target with a cast time the server checks range, line of sight, PvP rules and facing again. It then sends a `PROJECTILE` packet when the target is not the caster. The projectile's travel time grows with the distance.
 
 Damage and healing are then worked out:
 
@@ -335,8 +335,8 @@ finalDamage = isCrit ? Math.floor(baseDamage * (1 + critDamage / 100)) : baseDam
 | Base damage | `damage` plus 2 to 5 per caster level past 1, plus the caster's `stat_damage` |
 | Critical hit | Chance is `stat_critical_chance` percent. A crit multiplies by `1 + stat_critical_damage / 100` |
 | Avoidance | The target's `stat_avoidance` is the percent chance to take no damage at all |
-| Armor | Damage is cut by the target's `stat_armor` percent, capped at 75 |
-| Healing | Same level roll, plus `stat_damage` times `cast_time / 3.5` (an instant cast counts as 1.5 seconds, the share is capped at 1). A crit heals for 150 percent. Avoidance and armor never apply |
+| Armor | Damage is cut by the target's `stat_armor` percent |
+| Healing | Same level roll, plus `stat_damage` times `cast_time / 3.5` (an instant cast counts as 1.5 seconds). A crit heals for 150 percent. Avoidance and armor never apply |
 | Shields | Positive damage is taken from `absorbtion` shields first, the rest from health |
 
 After that the mana cost is deducted, the effects are applied, and `onSpellCast` is emitted. A target that reaches 0 health goes through the normal death flow.

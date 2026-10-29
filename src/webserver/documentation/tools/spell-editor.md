@@ -38,7 +38,7 @@ The editor uses the shared workbench described in [Tools Overview](#/tools/overv
 | Tabs | General, Targeting, Effects |
 | Page | The form on the left and the "In plain words" card on the right |
 
-An empty search lists every spell (up to 200). Type part of a name to narrow the list.
+An empty search lists spells. Type part of a name to narrow the list.
 
 The **In plain words** card stays beside the form on every tab. It shows the icon and name and describes in sentences what the current numbers do in the game, so you can check a spell without casting it.
 
@@ -103,7 +103,7 @@ Players' spell books, hotbars and creatures refer to a spell by its name. Once a
 
 ## Effects tab
 
-A spell can carry up to 10 effects, one of each type at most. Each effect is a card titled "Effect N" with its type. "Add effect" adds one, and each card shows only the fields its type uses.
+A spell can carry several effects, and each effect type can be added once. Each effect is a card titled "Effect N" with its type. "Add effect" adds one, and each card shows only the fields its type uses.
 
 | Type | What it does |
 | --- | --- |

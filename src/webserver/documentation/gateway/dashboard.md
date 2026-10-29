@@ -45,9 +45,9 @@ Opening `/dashboard` without a valid session redirects back to the login page.
 | --- | --- |
 | Who is asking | `GET /api/session` answers `signed-out`, `forbidden` or `allowed`, read from the website's `token` cookie |
 | Login route | `POST /api/login` with no body. It opens a session for the qualifying account behind the `token` cookie |
-| Session cookie | `dashboard_session`, `HttpOnly`, `SameSite=Strict`, one hour |
-| Session lifetime | On the server, one hour of inactivity, and every data refresh extends it. The cookie itself is set once at login and ends after one hour; the page then goes back to the login page, which opens a new session when the account still qualifies. |
-| Re-check | About once a minute the session confirms the account is still logged in on the website, still an admin and still holds the permission. If not, the session ends. |
+| Session cookie | `dashboard_session`, `HttpOnly`, `SameSite=Strict`, lasts as long as the server session |
+| Session lifetime | On the server it ends after a period of inactivity, and every data refresh extends it. The cookie itself is set once at login and ends with the session; the page then goes back to the login page, which opens a new session when the account still qualifies. |
+| Re-check | Now and then the session confirms the account is still logged in on the website, still an admin and still holds the permission. If not, the session ends. |
 | Logout | The "Logout" button calls `POST /api/logout` and clears the cookie. It ends the dashboard session only; the website login stays. |
 
 :::note The gateway key does not open the dashboard
@@ -60,7 +60,7 @@ Dashboard sessions are kept in the gateway server process. Restarting the gatewa
 
 ## What it shows
 
-The page asks `GET /api/stats` once per second and redraws everything from the answer.
+The page asks `GET /api/stats` on a short timer and redraws everything from the answer.
 
 ### Overview bar
 
@@ -76,7 +76,7 @@ Connection load is the player count as a percentage of the server's `maxConnecti
 
 ### Graphs
 
-Three line graphs, one line per server, each showing the last 60 samples (about one minute).
+Three line graphs, one line per server, each showing the most recent samples.
 
 | Graph | Unit | Source |
 | --- | --- | --- |
@@ -87,7 +87,7 @@ Three line graphs, one line per server, each showing the last 60 samples (about 
 The number beside each title is the latest value. The server filter in the header ("All Servers" or one server id) limits the graphs to a single server.
 
 :::note Graphs move at heartbeat speed
-The page polls every second, but the numbers only change when a game server sends a heartbeat. With the engine's default interval of 5 seconds the lines advance in steps.
+The page polls on a short timer, but the numbers only change when a game server sends a heartbeat. With the engine's heartbeat interval the lines advance in steps.
 :::
 
 ### Connected servers
@@ -100,7 +100,7 @@ One card per game server:
 | Host | The server's `publicHost` |
 | Badge | `HEALTHY`, `DEGRADED` or `ALERT`, by the thresholds above |
 | CPU Usage | Percent, with a bar that turns to warning above 60% and danger above 80% |
-| Memory | Megabytes, with a bar scaled to 8192 MB |
+| Memory | Megabytes, with a bar |
 | Connections | `active/max`, with the same warning and danger colours |
 | Latency | Milliseconds |
 

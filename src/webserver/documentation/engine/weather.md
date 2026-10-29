@@ -19,7 +19,7 @@ A weather is a row of the `weather` table. A world (a row of the `worlds` table)
 | `wind_direction` | `none`, `left`, `right`, `up`, `down` | Where the wind blows to on screen |
 | `precipitation` | 0 to 100 | How much rain or snow falls |
 | `ambience` | 0 to 1 | How dark the scene gets in `thunderstorm` and `darkness` weather |
-| `sounds` | Up to 12 sounds of each kind | Rain, wind and thunder sounds (JSON). Each is an audio file at its own volume. A rain or wind sound is heard while the precipitation or the wind speed is within its range. A thunder sound has no range: one is picked at random at each lightning strike. |
+| `sounds` | Sounds of each kind | Rain, wind and thunder sounds (JSON). Each is an audio file at its own volume. A rain or wind sound is heard while the precipitation or the wind speed is within its range. A thunder sound has no range: one is picked at random at each lightning strike. |
 
 The limits are enforced by the weather editor (`src/systems/weathereditor.ts`).
 
@@ -28,7 +28,7 @@ A world's weather is either the name of such a row or one of four special words:
 | Word | Meaning |
 |------|---------|
 | `clear` | No rain, snow or darkening. `clear` also exists as a row, so it can still have wind. |
-| `random` | A random weather from the table (never `tornado`), picked again every 30 minutes |
+| `random` | A random weather from the table (never `tornado`), picked again on a regular timer |
 | `weather_api` | The real weather of a configured place. See [Real weather](#/engine/weather/real-weather). |
 | `tornado` | A thunderstorm with tornadoes: the world always has one or two. Uses the `tornado` row, or the `thunderstorm` values when there is none. Tornadoes pull in players who come near and take 5% of their maximum health every second. Any thunderstorm world also has a rare chance of one. |
 
@@ -107,7 +107,7 @@ Weather belongs to worlds: a map takes part when the `worlds` table has a row wi
 
 ### Lightning
 
-While any world shows `thunderstorm`, the server picks a random player on that world every 2 to 5 seconds and places a bolt within 300 pixels left or right and 200 pixels above or below them. The `LIGHTNING` packet goes, as a datagram, to that player and everyone who can see them.
+While any world shows `thunderstorm`, the server picks a random player on that world every few seconds and places a bolt near them, to the sides and above or below. The `LIGHTNING` packet goes, as a datagram, to that player and everyone who can see them.
 
 ## Weather commands
 
@@ -115,7 +115,7 @@ While any world shows `thunderstorm`, the server picks a random player on that w
 |---------|------------|--------|
 | `/weather <name>` | `admin.weather` or `admin.*` | Sets the weather of the world you are standing on to a weather from the table |
 | `/weather clear` | same | Clear weather |
-| `/weather random` | same | A random weather now, and a new one every 30 minutes |
+| `/weather random` | same | A random weather now, and a new one on a regular timer |
 | `/weather weather_api` | same | Follow the real weather |
 | `/weather tornado` | same | A thunderstorm with tornadoes |
 | `/we` or `/weathereditor` | `tools.weather_editor`, `tools.*`, `server.admin` or `server.*` (admins always) | Opens the weather editor |
@@ -166,7 +166,7 @@ Then give it to a world:
 
 How it behaves (`src/systems/weatherapi.ts`):
 
-- A reading is taken at startup and then every `WEATHER_API_MINUTES`. A request times out after 10 seconds.
+- A reading is taken at startup and then every `WEATHER_API_MINUTES`. A request that takes too long times out.
 - The reading is held in memory. It is not a row of the `weather` table and is never written to the database.
 - There is one reading for the whole server. Every world on `weather_api` shows the same weather.
 - When a reading differs from the last one, every player on such a world gets `CHANGE_WEATHER` straight away.
@@ -206,7 +206,7 @@ function lookOfCondition(id: number): Look {
 ```
 
 :::tip A new key needs time
-OpenWeatherMap answers `401` for a key that is not active yet. The log then says the key was refused and that a new key takes up to two hours to work. A `404` means the place in `WEATHER_API_LOCATION` was not found.
+OpenWeatherMap answers `401` for a key that is not active yet. The log then says the key was refused and that a new key can take a while to work. A `404` means the place in `WEATHER_API_LOCATION` was not found.
 :::
 
 ## Time of day

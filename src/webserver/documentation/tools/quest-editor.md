@@ -38,7 +38,7 @@ The editor uses the shared workbench described in [Tools Overview](#/tools/overv
 | Tabs | General, Texts, Objectives, Rewards |
 | Page | The form, with the "As a player meets it" card beside it |
 
-Quests are edited by search. The editor never loads the whole quest table: type part of a name and open a result. A search returns up to 50 quests.
+Quests are edited by search. The editor never loads the whole quest table: type part of a name and open a result. A search returns the matching quests.
 
 The **As a player meets it** card stays beside the form on every tab. It states in plain words what the quest asks for and what it gives, as a player would see it.
 

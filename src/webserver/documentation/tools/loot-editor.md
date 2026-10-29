@@ -67,7 +67,7 @@ Type part of an item name in "Add an item to this table". Matching items are lis
 A new row starts as one item that always drops: Fewest 1, Most 1, Chance 100.
 
 :::note
-The add field searches every item the server has. It lists up to 20 matches; type more of the name to narrow them.
+The add field searches every item the server has. It lists the matches; type more of the name to narrow them.
 :::
 
 ## Deleting a table

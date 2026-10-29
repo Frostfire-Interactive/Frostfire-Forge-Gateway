@@ -4,7 +4,7 @@ description: The packet type registry, with every packet name, its direction and
 order: 180
 ---
 
-Every message between the client and the game server is a packet with a `type`. This page lists all 348 types in the registry, says which way each one travels, and explains how packets are built, sent and dispatched, and how a plugin adds one.
+Every message between the client and the game server is a packet with a `type`. This page lists every type in the registry, says which way each one travels, and explains how packets are built, sent and dispatched, and how a plugin adds one.
 
 The transport underneath (WebTransport streams, datagrams and frame batching) is covered on the [Networking](#/engine/networking) page.
 
@@ -166,7 +166,7 @@ switch (type) {
 
 | Step | What happens |
 |------|--------------|
-| 1 | A message over the size limit closes the connection with code 1009. The limit is 16 KB before login and 256 KB for a logged-in player. An admin, a player who holds any permission, and everyone on a benchmark server get `webtransport.maxPayloadMB` from the settings, 1 MB when unset |
+| 1 | A message over the size limit closes the connection with code 1009. The limit is smaller before login and for an ordinary logged-in player. An admin, a player who holds any permission, and everyone on a benchmark server get the larger `webtransport.maxPayloadMB` from the settings |
 | 2 | A packet with no `type` closes it with code 1007 |
 | 3 | A `type` that is not in the valid set closes it with code 1007 |
 | 4 | The sender's player is looked up. It is `null` until the client has logged in |
@@ -226,7 +226,7 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `DRAG_PLAYER_STOP` | Both | Players | An admin stops dragging a player |
 | `DRAG_UPDATE` | To server | Players | The new position of a dragged player |
 | `MOUNT` | To server | Players | Mount or dismount |
-| `CHAT` | Both | Chat | A local chat message. To clients it may carry `links`: up to 5 entries (items and achievements together) named as `[Name]` in the message. Each has a `kind`: `"item"` entries carry the item's rarity and tooltip fields, `"achievement"` entries carry `id`, `name`, `description` and `icon` (a url). An item wins over an achievement of the same name; disabled achievements are not linked |
+| `CHAT` | Both | Chat | A local chat message. To clients it may carry `links`: entries (items and achievements together) named as `[Name]` in the message. Each has a `kind`: `"item"` entries carry the item's rarity and tooltip fields, `"achievement"` entries carry `id`, `name`, `description` and `icon` (a url). An item wins over an achievement of the same name; disabled achievements are not linked |
 | `TYPING` | Both | Chat | A player started typing |
 | `STOPTYPING` | Both | Chat | A player stopped typing |
 | `COMMAND` | To server | Chat | A slash command, see [Admin Commands](#/engine/admin-commands) |
@@ -371,12 +371,14 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `CREATURE_TARGETED` | To client | Creatures | The creature that tab targeting selected |
 | `CREATURE_DEBUG_SUBSCRIBE` | To server | Creatures | Turn the creature debug overlay on or off. Needs creature editor access |
 | `CREATURE_DEBUG` | To client | Creatures | Debug overlay data: radii and threat |
+| `CLUSTER_DEBUG` | To server | Cluster | Ask which node owns which block of the map (the F2 "Cluster Nodes" overlay). Any logged-in player may ask. See [Cluster Mode](#/engine/cluster/the-cluster-nodes-overlay) |
+| `CLUSTER_DEBUG_DATA` | To client | Cluster | The block grid: node ids, one owner index per block, blocks being moved, the block under the player. `{ cluster: false }` when the server is not in a cluster |
 | `CREATE_NPC` | Unused | NPCs | A builder exists (`packetManager.createNpc`) but nothing calls it. NPCs are sent with `LOAD_NPCS` |
 | `LOAD_NPCS` | To client | NPCs | A batch of NPCs to show |
 | `WEATHER` | To client | Weather | The weather of the world the player is in |
 | `CHANGE_WEATHER` | To client | Weather | The weather changed |
 | `LIGHTNING` | To client | Weather | A lightning flash |
-| `TORNADOES` | To client | Weather | `{ map, tornadoes: [{ id, x, y }] }`: where each tornado on the player's map is. Sent about five times a second while there are any, and once with none when the last has gone |
+| `TORNADOES` | To client | Weather | `{ map, tornadoes: [{ id, x, y }] }`: where each tornado on the player's map is. Sent repeatedly while there are any, and once with none when the last has gone |
 | `TOGGLE_TILE_EDITOR` | To client | Map editor | Open or close the map editor |
 | `SAVE_MAP` | To server | Map editor | Save map changes. Needs `server.admin` or `server.*` |
 | `EDITOR_OPEN` | To server | Map editor | An admin opened the editor on this map |
@@ -487,7 +489,7 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `GATHERING_EDITOR_RESULT` | To client | Gathering editor | Whether a save or delete was done |
 | `GATHERING_EDITOR_UPDATED` | To client | Gathering editor | Another admin changed the areas |
 | `FISH_CAST` | To server | Fishing | Cast a line at a fishable tile: `{ x, y }` in px |
-| `FISH_REEL` | To server | Fishing | The player began reeling in the fish that bit (no data). Without it within 5 s of the bite the fish gets away |
+| `FISH_REEL` | To server | Fishing | The player began reeling in the fish that bit (no data). Without it soon after the bite the fish gets away |
 | `FISH_LAND` | To server | Fishing | The fish on the line has been reeled to the shore (no data) |
 | `FISH_CANCEL` | To server | Fishing | The line was reeled in with no fish on it: take it in (no data) |
 | `FISHING` | To client | Fishing | A player's line, for everyone on the map: `{ id, state, x?, y?, item?, icon? }`. `state` is `cast` (the bobber lands at `x`, `y`), `bite`, `reel` (the reel began), `escape` (the fish got away: the bobber comes up, the line stays out), `catch` (the fish is pulled out: `item`, `icon`, `quality`) or `end` |
@@ -563,9 +565,14 @@ The registry is only consulted for incoming packets, so the server can send type
 | `UNLOAD_NPCS` | `packetManager.unloadNpcs` | NPCs the client should drop |
 | `SPRITE_SHEET_ANIMATION` | `packetManager.spriteSheetAnimation` | A player's sprite layers and animation |
 | `BATCH_SPRITE_SHEET_ANIMATION` | `packetManager.batchSpriteSheetAnimation` | The same for several players |
+| `SPRITE_SHEET_POSE` | `packetManager.spriteSheetPose` | A player's animation change alone (`{ id, animationState }`) for a client that already holds their sheets. Viewers get it as a datagram with a revision (see Pose datagrams below); this stream form is kept for a connection that takes no datagram and is still read by the client |
 | `COLLISION_DEBUG` | `packetManager.collisionDebug` | The tile a player collided with |
 | `PARTICLE_LIST` | `packetManager.custom` in the receiver | The list of particles for the editors |
 | `TEST_PARTICLE_EVENT` | `packetManager.custom` in the receiver | A particle preview for players nearby |
+| `SWITCH` | `packetManager.switchNode` | Cluster mode: connect to another node. `{ nodeId, publicHost, port, wtPort, useSSL, ticket }`, where `ticket` is signed for that node. Sent for a login that belongs on another node, and with `handoff: true` and `resume` when a player crosses a border. See [Cluster Mode](#/engine/cluster/crossing-a-border) |
+| `HANDOFF_PREPARE` | `packetManager.handoffPrepare` | Cluster mode: the player walks toward a border. `{ nodeId, publicHost, port, wtPort, useSSL }` of the next node, so the client can open a session there. No ticket |
+| `HANDOFF_ABORT` | `packetManager.handoffAbort` | Cluster mode: the handoff will not happen soon. The client closes the session it opened for it. `data` is `null` |
+| `HANDOFF_DONE` | `packetManager.handoffDone` | Cluster mode: the new node took the player over and the client keeps its world. `{ map, x, y, direction, walk }`; `walk` is the direction the node walks the player in as it sends the packet (one of the direction names MOVEXY uses), or `null` when it does not walk the player |
 
 ## Movement frames
 
@@ -573,7 +580,7 @@ Player positions are the highest-volume traffic, so the server sends them as bin
 
 | Header | Builder | Layout |
 |--------|---------|--------|
-| `0x02` | `packetManager.moveXY` | One movement, 21 bytes: `u8` header, `u32` player id, `i32` x, `i32` y, `u8` direction and stealth, `u8` padding, `u32` seconds and `u16` milliseconds of the server send time |
+| `0x02` | `packetManager.moveXY` | One movement: `u8` header, `u32` player id, `i32` x, `i32` y, `u8` direction and stealth, `u8` padding, `u32` seconds and `u16` milliseconds of the server send time |
 | `0x01` | `packetManager.batchMoveXY` | Many movements: `u8` header, `u16` count, then per movement `u32` player id, `i32` x, `i32` y, `u8` direction and stealth |
 
 All numbers are little-endian. The direction byte holds the direction in its low four bits and the stealth flag in bit 4:
@@ -590,6 +597,25 @@ All numbers are little-endian. The direction byte holds the direction in its low
 | 7 | `downright` |
 
 The client still sends movement as an ordinary `MOVEXY` JSON packet. How the transport batches these frames is described on the [Networking](#/engine/networking) page.
+
+## Pose datagrams
+
+A player's walk, idle or cast change reaches each viewer that already holds the player's sheets as a datagram with its own header, so one native call carries it (`TransportConnection.sendPoseRecords`):
+
+| Header | Builder | Layout |
+|--------|---------|--------|
+| `0x05` | `src/socket/pose_codec.ts` | Poses: `u8` header, `u16` count, then per pose `u32` player id, `u32` pose revision, `u8` length `n`, and `n` bytes of the animation state in UTF-8 (for example `walk_down`) |
+
+All numbers are little-endian, and a datagram holds whole records within the datagram size the movement datagrams respect. A pose whose id is not a number that fits `u32`, whose revision passed `u32` or whose state does not fit the `u8` length has no record and goes as the `SPRITE_SHEET_POSE` stream packet.
+
+A datagram can be lost, late or out of order, so a pose is state that is repeated, not an event that is queued:
+
+- The pose revision is a counter of one player's pose changes (`poseRev` on the player). It travels with a handed-off player in the handoff state, and the new node counts on from it, so it never sends a lower one.
+- After a change the current pose and its revision are sent again to the same viewers a few times shortly after, so a lost datagram is made up for (`POSE_REPEAT_MS` in `src/socket/posedgram.ts`). A newer change of the player stops the repeats of the older one, and repeats due together leave a connection in one datagram.
+- The stream copies of a viewer's pose carry the same revision as `poseRev`: the `SPRITE_SHEET_ANIMATION` sent to a viewer that does not hold the player's look yet, and the `SPRITE_SHEET_POSE` sent to a connection without datagrams. It is an added field; an older client ignores it.
+- The client applies a pose datagram only if its revision is newer than the one it shows for that player, and only for a player it knows (`applyPoseUpdate` in `core/posepacket.ts`, the same function the stream packet uses). A stream copy whose `poseRev` is older than the one shown is late: its pose is not shown (a sheet still applies its look) and the shown revision stays the higher of the two. The shown revision is forgotten only when the client builds the player anew (spawn, entering the view, a landing). A stream pose or sheet with no `poseRev` (the spawn path, the relay from a neighbouring node, an older engine) is a baseline: it applies and resets the shown revision.
+
+What a client needs to see a player for the first time stays reliable: the full sheets, the pose sent on spawn, on entering the view and at a landing after a handoff, the player's own copy and the relay to neighbouring nodes. With debug logging the `[Pose]` line reports `poseOnly` (stream pose frames), `datagramPose` and `datagramRepeats`, with `streamPoseFramesPerSec` and `datagramPoseSendsPerSec` over the reporting period.
 
 ## Adding a packet from a plugin
 

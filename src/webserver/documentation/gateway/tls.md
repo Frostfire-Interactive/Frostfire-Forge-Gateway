@@ -121,7 +121,7 @@ The game server answers the hash request like this:
 }
 ```
 
-It answers `404` when its certificate cannot be pinned. Browsers only accept a pinned certificate that uses an ECDSA P-256 key and is valid for no more than 14 days. The certificate the engine generates for local use meets both rules.
+It answers `404` when its certificate cannot be pinned. Browsers only accept a pinned certificate that uses an ECDSA P-256 key and is short lived. The certificate the engine generates for local use meets both rules.
 
 To compute the hash of a certificate yourself:
 

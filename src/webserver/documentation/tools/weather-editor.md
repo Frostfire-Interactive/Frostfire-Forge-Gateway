@@ -91,7 +91,7 @@ Wind draws wind streaks, slants rain and snow, and pushes particles that are set
 
 ### Sounds
 
-There is a card for each kind of sound: **Rain sounds**, **Wind sounds** and **Thunder sounds**. Each holds up to 12 sounds, added with its Add button. A kind with no sounds is silent.
+There is a card for each kind of sound: **Rain sounds**, **Wind sounds** and **Thunder sounds**. Each holds a list of sounds, added with its Add button. A kind with no sounds is silent.
 
 | Field | Range | Notes |
 | --- | --- | --- |

@@ -122,14 +122,14 @@ for (const player of Object.values(playerCache.list())) {
 A player object carries, among other things, `id`, `username`, `location` (`map` and `position`), `stats`, `wt` (the connection), `aoi` (see [AOI and layers](#/engine/aoi-and-layers)), `permissions`, `party` and `friends`.
 
 :::warning playerCache is not saved by itself
-Changing `player.stats` only changes memory. Stats and location are written to the database every 60 seconds (`onSave`) and at disconnect. Everything else that must survive (inventory, currency, quests) is written by its own system at the moment it changes.
+Changing `player.stats` only changes memory. Stats and location are written to the database on the `onSave` timer and at disconnect. Everything else that must survive (inventory, currency, quests) is written by its own system at the moment it changes.
 :::
 
 `list()` scans every player. To find the players on one map or near one player, use `mapIndex.getPlayersOnMap(map)` or the AOI helpers instead.
 
 ## Creature registry
 
-Live creatures are stored in `CreatureRegistry` (`src/systems/creatures/registry.ts`). Like the player grid, it buckets creatures per map into 512 pixel cells so that visibility and aggro checks only look at nearby cells.
+Live creatures are stored in `CreatureRegistry` (`src/systems/creatures/registry.ts`). Like the player grid, it buckets creatures per map into square cells so that visibility and aggro checks only look at nearby cells.
 
 | Method | Purpose |
 |--------|---------|
@@ -209,7 +209,7 @@ const rows = rowCache<Currency>("currency", async (username) => {
 | `drop(key)` | Forget one key, so the next `get` loads it again |
 | `clear()` | Forget every key |
 
-With `{ perPlayer: true }` the key is a username in any case. Those caches are reloaded when the player logs in (`refreshPlayer`) and emptied when they leave (`forgetPlayer`). An answer of "no such row" is believed for 60 seconds, then the database is asked again.
+With `{ perPlayer: true }` the key is a username in any case. Those caches are reloaded when the player logs in (`refreshPlayer`) and emptied when they leave (`forgetPlayer`). An answer of "no such row" is believed for a short while, then the database is asked again.
 
 ### Whole tables: tableCache
 

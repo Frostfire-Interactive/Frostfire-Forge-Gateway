@@ -39,7 +39,7 @@ The editor uses the shared workbench described in [Tools Overview](#/tools/overv
 | Page | The form, with the "At a glance" card beside it |
 
 :::note The list starts empty
-The editor never loads the whole item table. Type part of a name and it lists the matches, up to 50, with names that start with what you typed first. When more match, the list says so: narrow the search.
+The editor never loads the whole item table. Type part of a name and it lists the matches, with names that start with what you typed first. When more match than the list shows, it says so: narrow the search.
 :::
 
 The **At a glance** card beside the form shows the item as its fields describe it, with its icon in the rarity frame of its quality.

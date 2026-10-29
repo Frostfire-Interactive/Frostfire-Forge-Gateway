@@ -174,7 +174,7 @@ function ask<T>(work: { sql: string; values: any[] } | { transaction: Transactio
   return new Promise((resolve, reject) => {
     const queryId = `query_${++queryIdCounter}_${Date.now()}`;
     const worker = getNextWorker();
-    // ... a 30 second timeout is armed, then:
+    // ... a timeout is armed, then:
     worker.postMessage({ id: queryId, ...work });
   });
 }
@@ -182,13 +182,13 @@ function ask<T>(work: { sql: string; values: any[] } | { transaction: Transactio
 
 | Property | Value |
 |----------|-------|
-| Pool size | `DB_WORKER_POOL_SIZE`, default 8, at most 64 |
+| Pool size | `DB_WORKER_POOL_SIZE`, default 8 |
 | Worker choice | Round robin |
-| Connections | Each worker opens its own (MySQL: a pool of up to 10 per worker) |
-| Startup | The module waits for every worker to connect. A worker retries for 30 seconds, and the pool gives up after 60 seconds. |
-| Timeout in the worker | 15 seconds per attempt |
-| Retries in the worker | Up to 3 attempts, 1 second apart, only for connection errors and timeouts |
-| Timeout on the main thread | 30 seconds, then the promise rejects with `Query timeout after 30 seconds` |
+| Connections | Each worker opens its own (MySQL: a small pool per worker) |
+| Startup | The module waits for every worker to connect. A worker keeps retrying for a while, and the pool gives up after a longer one. |
+| Timeout in the worker | Each attempt of a statement has its own timeout |
+| Retries in the worker | A statement is tried again a few times, a short pause apart, only after connection errors and timeouts |
+| Timeout on the main thread | Longer than the worker's, so the worker times out first; the promise then rejects with a `Query timeout` error |
 
 Because statements are spread over workers, two statements sent one after the other without `await` may reach the database in either order. When order matters, `await` the first, or run both through a `turns()` queue (see [Caching](#/engine/caching/one-change-at-a-time-turns)).
 
@@ -237,7 +237,7 @@ try {
 | Result | One result per statement, as `query` would give it |
 | A statement fails | Everything is undone and the call throws the database's error |
 | `mustChange: true` | Everything is undone and the call throws a `GuardError` when that statement changes no rows |
-| Timeout | 15 seconds for the whole list, then it is undone |
+| Timeout | One timeout covers the whole list; when it passes, the list is undone |
 | Retries | Only when the transaction never opened. One that opened is never sent a second time. |
 
 :::warning mustChange counts rows that changed
@@ -333,7 +333,7 @@ Where the database is still read directly:
 | A cache's `load` function | To fill the cache |
 | The login worker threads | Caches are off there, a login reads fresh rows |
 | Startup (`assetloader.ts`, `loadTables()`) | To fill the caches |
-| The once a minute session check and save | Server side housekeeping, not a client request |
+| The regular session check and save | Server side housekeeping, not a client request |
 
 ## Main tables
 

@@ -16,6 +16,9 @@ import { screenToWorld } from "./worldzoom.js";
 import { closeAchievements, isAchievementsOpen, toggleAchievements } from "./achievements.js";
 let userHasInteracted: boolean = false;
 let lastSentDirection = "";
+// The direction the joystick (gamepad or touch stick) points in, upper case, or "" when it is let go. Kept even while
+// moves are held back (a node handoff), so the walk can be told to the new node.
+let stickDirection = "";
 
 let toggleInventory = false;
 let toggleSpellBook = false;
@@ -572,6 +575,14 @@ function setLastSentDirection(value: string) {
     lastSentDirection = value;
 }
 
+function getStickDirection() {
+    return stickDirection;
+}
+
+function setStickDirection(value: string) {
+    stickDirection = value;
+}
+
 function getLastTypingPacket() {
     return lastTypingPacket;
 }
@@ -827,7 +838,7 @@ for (const [element, close] of CLOSABLE) {
 
 export {
     getIsKeyPressed, setIsKeyPressed, pressedKeys, movementKeys, handleKeyPress, stopMovement, setIsMoving, getIsMoving, getUserHasInteracted, setUserHasInteracted,
-    getControllerConnected, setControllerConnected, getLastSentDirection, setLastSentDirection, getLastTypingPacket,
+    getControllerConnected, setControllerConnected, getLastSentDirection, setLastSentDirection, getStickDirection, setStickDirection, getLastTypingPacket,
     setLastTypingPacket, cooldowns, COOLDOWN_DURATION, getContextMenuKeyTriggered, setContextMenuKeyTriggered, blacklistedKeys,
     cast, mount, setupDragListeners, closeAllPanels, openInventory
 };

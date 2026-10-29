@@ -54,6 +54,18 @@ export function clearGatherNodes(): void {
   nodes.clear();
 }
 
+/** The nodes shown now, as they are held (a handoff keeps them, then drops what the new node does not re-send). */
+export function heldGatherNodes(): Map<number, GatherNode> {
+  return new Map(nodes);
+}
+
+/** Drops the nodes of `held` that are still the very entry held then: a re-sent node is a new entry (applyGatherSpawn). */
+export function dropGatherNodesNotResent(held: Map<number, GatherNode>): void {
+  for (const [id, node] of held) {
+    if (nodes.get(id) === node) nodes.delete(id);
+  }
+}
+
 /** The gathering editor's preview, or null to stop drawing it. */
 export function setGatherPreview(next: GatherPreview | null): void {
   preview = next;

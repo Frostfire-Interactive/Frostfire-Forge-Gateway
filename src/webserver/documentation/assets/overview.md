@@ -89,7 +89,7 @@ The server sets caching headers per asset type, so browsers do not download the 
 | The fallback icon | `public, max-age=300`. Sent when a sprite or icon does not exist, with the header `X-Asset-Fallback: missing_icon`. |
 | `/audio` | `public, max-age=31536000, immutable`, with an `ETag` and support for `Range` requests so players can seek. |
 | `/worldmap` | `public, max-age=0, must-revalidate` with an `ETag`. |
-| `/map-chunk` | Gzipped. Each built chunk is kept in a server side cache of up to 10000 entries, keyed by map, map checksum, chunk position and chunk size. |
+| `/map-chunk` | Gzipped. Each built chunk is kept in a server side cache, keyed by map, map checksum, chunk position and chunk size. |
 
 :::tip Replacing an image under the same name
 Sprites and icons are cached by browsers for a year. If you replace one without renaming it, players keep the old image until their cache is cleared. Give changed sprites and icons a new file name. Tilesets do not have this problem because they are revalidated.

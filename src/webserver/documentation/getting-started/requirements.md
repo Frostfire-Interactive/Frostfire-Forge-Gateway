@@ -60,7 +60,7 @@ On Windows the engine adds the local certificate it generates to the current use
 
 The game client connects to the engine over **WebTransport**, and the project supports **Chromium based browsers only** (Chrome, Edge and others built on Chromium).
 
-In local development the engine uses a self signed certificate that the browser pins by hash. That certificate is short lived on purpose (13 days by default, always under 14) and is generated again when the engine starts with an expired one. See [TLS](#/gateway/tls) and [Networking](#/engine/networking).
+In local development the engine uses a self signed certificate that the browser pins by hash. That certificate is short lived on purpose and is generated again when the engine starts with an expired one. See [TLS](#/gateway/tls) and [Networking](#/engine/networking).
 
 ## Ports
 

@@ -172,7 +172,7 @@ Select **Add item** to add a card, then fill it in:
 | Own price | Off: the item sells here for its own buy price, set in the Item Editor. On: it sells for the Price below. |
 | Price | Shown when Own price is on. What one costs to buy here, as gold, silver and copper. It starts at the item's buy price. |
 
-The line under each card's title says what the item is sold for and what vendors pay for it. The arrows move a card up or down, which is the order players see, and the bin removes it. A vendor stocks up to 40 different items, and never runs out.
+The line under each card's title says what the item is sold for and what vendors pay for it. The arrows move a card up or down, which is the order players see, and the bin removes it. A vendor never runs out of what it stocks.
 
 | Rule | What happens |
 | --- | --- |

@@ -155,11 +155,11 @@ Players send reports with `/report` or from the menu on another player (see [Pla
 
 | Form | What it answers |
 |------|-----------------|
-| `/reports` | The open reports, newest first, ten at most. The rest are in the control panel. |
+| `/reports` | The latest open reports, newest first. The rest are in the control panel. |
 | `/reports view 12` | Who reported whom and why, what the reporter typed, where the reported player was, and the lines attached |
 | `/reports resolve 12 warned` | Closes the report with a note for the other admins |
 
-A report carries the reported player's latest chat lines that reached the reporter, up to 20 from the half hour before. A whisper to somebody else is never attached. The control panel's Reports page shows the same and adds Mute, Kick and Ban.
+A report carries the reported player's latest chat lines that reached the reporter, from shortly before the report. A whisper to somebody else is never attached. The control panel's Reports page shows the same and adds Mute, Kick and Ban.
 
 ### /trades
 
@@ -167,7 +167,7 @@ A report carries the reported player's latest chat lines that reached the report
 /trades <username>
 ```
 
-Lists the latest trades a player completed, newest first and ten at most. Each line says who the trade was with, how long ago, what the player gave and what they got.
+Lists the latest trades a player completed, newest first. Each line says who the trade was with, how long ago, what the player gave and what they got.
 
 ```text title="Example answer"
 Aria's latest trades: 2
@@ -413,7 +413,7 @@ Adds an item to a player's inventory. The player can be offline. The item name i
 /drop <item> [amount]
 ```
 
-Spawns a loot drop at your position with no owner: any player who walks up to it can pick it up, and the first one to do so gets it. The amount defaults to 1 and is capped at 9999. The drop disappears after 30 minutes if nobody takes it.
+Spawns a loot drop at your position with no owner: any player who walks up to it can pick it up, and the first one to do so gets it. The amount defaults to 1. The drop disappears after a while if nobody takes it.
 
 ### /spawnchest
 

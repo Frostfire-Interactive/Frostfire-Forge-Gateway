@@ -64,6 +64,10 @@ The engine is one process (`src/socket/server.ts`) with worker threads. It opens
 
 Because the WebTransport listener owns the UDP side of the port, HTTP/3 is always off for the engine's HTTP API. See [Networking](#/engine/networking).
 
+### Cluster mode
+
+With `CLUSTER=true` several engine processes, called nodes, share one world. The map is cut into blocks, each block has one owner node, and players cross from node to node at the block borders without a loading screen. The nodes share Redis and the database, a coordinator process gives out the blocks, and the Gateway sends each login to the node that owns the player's saved position. With `CLUSTER=false` the engine is the single process described above. See [Cluster Mode](#/engine/cluster).
+
 ### Asset server
 
 The asset server is one process (`src/index.ts`). Like the other two it runs an edge proxy on the public port in front of an application server bound to `127.0.0.1`. Its ports are listed in [asset server configuration](#/assets/configuration).
@@ -103,7 +107,7 @@ Start the servers in this order:
 3. **Gateway.** The engine registers with it.
 4. **Game engine.**
 
-The engine tolerates a late gateway: it retries registration with a growing delay (up to 30 seconds between attempts) until the gateway answers. A missing asset server is only a warning, but the engine then starts with whatever maps it already has on disk, and it cannot start at all if it has none.
+The engine tolerates a late gateway: it retries registration with a growing delay until the gateway answers. A missing asset server is only a warning, but the engine then starts with whatever maps it already has on disk, and it cannot start at all if it has none.
 
 ## How the engine joins the gateway
 
@@ -129,7 +133,7 @@ On startup the engine sends its details to the gateway:
 - `authKey` must equal the gateway's `GATEWAY_AUTH_KEY`, otherwise the gateway answers 401.
 - If `GATEWAY_INTERNAL_URL` is set, the engine uses it instead of `GATEWAY_URL` for these calls.
 
-After a successful registration the engine sends `POST /heartbeat` on a timer (every 5 seconds by default, from `gateway.heartbeatInterval` in `src/config/settings.json`). Each heartbeat carries the connection count, CPU and RAM usage, and whether the realm whitelist is on. On shutdown it sends `POST /unregister`.
+After a successful registration the engine sends `POST /heartbeat` on a timer (set by `gateway.heartbeatInterval` in `src/config/settings.json`). Each heartbeat carries the connection count, CPU and RAM usage, and whether the realm whitelist is on. On shutdown it sends `POST /unregister`.
 
 The gateway keeps the list of realms in memory and exposes it at `GET /status`. See [Game servers](#/gateway/game-servers).
 
@@ -147,7 +151,7 @@ Both calls carry `ASSET_SERVER_AUTH_KEY`. The same map sync runs once more right
 1. **The browser loads the site** from the gateway's reverse proxy (`/`). The proxy checks the request and forwards it to the webserver.
 2. **The player logs in** (the form posts to `/login`). If two-factor login is enabled for the account, the player completes it on `/2fa-challenge`. See [Authentication](#/gateway/authentication).
 3. **The player picks a realm** on `/realm-selection`. The page calls `GET /api/gateway/servers`; the webserver fetches the list from the gateway server's `/status` endpoint and returns each realm's `publicHost`, `port`, `wtPort`, connection counts and status (`online`, `full` or `offline`).
-4. **The game page loads** (`/game`) and asks for a connection token at `GET /api/gateway/connection-token`. The webserver returns a random token, a timestamp, an expiry 60 seconds later, the page origin, a hash of the player's session token, and an HMAC-SHA256 signature over all of them made with `GATEWAY_GAME_SERVER_SECRET`.
+4. **The game page loads** (`/game`) and asks for a connection token at `GET /api/gateway/connection-token`. The webserver returns a random token, a timestamp, an expiry a short while later, the page origin, a hash of the player's session token, and an HMAC-SHA256 signature over all of them made with `GATEWAY_GAME_SERVER_SECRET`.
 5. **The client prepares the WebTransport connection.** It needs the engine's certificate hash unless the certificate is publicly trusted:
    - If the gateway was started with `GAME_WT_CERT_HASH`, that value is used (`off` disables pinning).
    - Otherwise the client fetches `/wt-cert-hash` from the engine's HTTP API at `publicHost:port`.

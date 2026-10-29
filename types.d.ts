@@ -18,6 +18,9 @@ interface GameServer {
   latency?: number;
   whitelisted?: boolean;
   pvp?: boolean;
+  /** Cluster mode: this process's node id (equal to `id`) and the region it serves. The nodes of one region are one realm. */
+  nodeId?: string;
+  regionId?: string;
 }
 
 interface ClientSession {

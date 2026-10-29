@@ -1,4 +1,5 @@
 import { serverTime, ambience, ambienceCool, sunFlare, timeOverrideSlider, timeOverrideLabel, timeOverrideCheckbox, timelapseBtn } from "./ui.ts";
+import { nextPlaceOffset } from "./handoffkeep.ts";
 
 let timeOfDay: string | null = null;
 let lastMinute: number | null = null;
@@ -101,13 +102,14 @@ let localEpochAtAnchor: number | null = null;
 // Anchor (or re-anchor) the clock from a server timestamp. Safe to call again
 // at any time to re-sync. `utcOffset` is the shift from UTC, in seconds, of
 // the place whose time of day the game keeps; none means this browser's own.
-function updateTime(time: string, utcOffset?: unknown) {
+function updateTime(time: string, utcOffset?: unknown, keepOffset: boolean = false) {
   if (!time) return;
 
   const date = new Date(time);
   if (isNaN(date.getTime())) return;
 
-  placeOffsetMs = typeof utcOffset === "number" && Number.isFinite(utcOffset) ? utcOffset * 1000 : null;
+  // (keepOffset: right after a handoff, a node that sent no offset does not drop the one held)
+  placeOffsetMs = nextPlaceOffset(placeOffsetMs, utcOffset, keepOffset);
   // The minute shown may be another one now: the ambience is worked out again.
   lastMinute = null;
   timeOfDay = time;

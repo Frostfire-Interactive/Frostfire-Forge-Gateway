@@ -40,7 +40,7 @@ The game server side of these settings is described in [Engine Configuration](#/
 
 ## Registration
 
-On startup a game server calls `POST /register` on the gateway and keeps retrying until it succeeds. The delay doubles from 1 second up to a cap of 30 seconds.
+On startup a game server calls `POST /register` on the gateway and keeps retrying until it succeeds. The delay grows after each failed try.
 
 ```json title="POST /register"
 {
@@ -69,7 +69,7 @@ On startup a game server calls `POST /register` on the gateway and keeps retryin
 | `wtPort` | The WebTransport port. The engine sends the same number as `port`. |
 | `wtEnabled` | Whether WebTransport is available. True when `wtPort` is a number. |
 | `useSSL` | Whether the game server's HTTP API is served over TLS. |
-| `maxConnections` | Player capacity. The gateway assumes 1000 when it is missing. |
+| `maxConnections` | Player capacity. The gateway uses a default capacity when it is missing. |
 | `whitelisted` | Whether the realm whitelist is on. |
 | `pvp` | Whether PvP is on for the realm. The realm list shows a `PvP` badge from it. |
 | `authKey` | Must equal the gateway's `GATEWAY_AUTH_KEY`. |
@@ -84,7 +84,7 @@ Two game servers with the same id overwrite each other in the list. Without `SER
 
 ## Heartbeats
 
-After registering, the game server sends `POST /heartbeat` on a timer. The interval is a game server setting and defaults to 5 seconds.
+After registering, the game server sends `POST /heartbeat` on a timer. The interval is a game server setting, `gateway.heartbeatInterval` (see [Configuration](#/engine/configuration)).
 
 ```json title="POST /heartbeat"
 {
@@ -111,6 +111,45 @@ Two gateway settings decide when a silent server is dropped:
 
 A clean shutdown calls `POST /unregister`, which removes the realm at once.
 
+## Cluster nodes and block owners
+
+A realm can run as a cluster: several game server processes, called nodes, each owning part of the map. Each node registers under its own node id and adds `nodeId` and `regionId` to the `POST /register` body. The nodes of one region are one realm to players. How the nodes work together is described in [Cluster Mode](#/engine/cluster). `GET /status` lists the nodes with their `nodeId`, `regionId` and `lastHeartbeat` (the time of the node's last heartbeat, in milliseconds), and adds a `regions` list with one entry per region.
+
+Every map is cut into square blocks, and each block belongs to one node. A node tells the gateway who owns what with `POST /blocks`, one call per map. It sends every map right after it registers, the map new characters start on first, so a restarted gateway learns the tables again, and it sends a map again when that map's table changes. Changes that come close together go out together, still one call per map. It does not send them with the heartbeat.
+
+```json title="POST /blocks"
+{
+  "id": "node-1",
+  "map": "overworld",
+  "epoch": 7,
+  "blockPx": 4096,
+  "blocksX": 3,
+  "blocksY": 2,
+  "nodes": ["node-1", "node-2"],
+  "owners": "01.100",
+  "authKey": "change-me"
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `id` | The node's registration id. The report belongs to the region it registered with. |
+| `map` | The map name without `.json`. |
+| `epoch` | The version of the table. The gateway keeps the table with the highest epoch for each region and map, and ignores a lower one. |
+| `blockPx` | The side of a block in pixels. |
+| `blocksX`, `blocksY` | The size of the map in blocks. |
+| `nodes` | The nodes that own blocks. |
+| `owners` | One character per block, row by row (`blocksX` blocks of the first row, then the next). The character is the position of the owner in `nodes`, counted `0-9`, `a-z`, `A-Z`, or `.` for a block no node owns. |
+| `authKey` | Must equal the gateway's `GATEWAY_AUTH_KEY`. |
+
+The gateway answers `{"success": true, "stored": true}`, with `"stored": false` when it already holds a higher epoch. A wrong key gets `401`, an unknown `id` gets `404`, a node that registered without a region or a report that fails validation gets `400`, and a body that is too large gets `413`.
+
+The tables are kept in memory only. When the last node of a region is removed (it stopped answering, or unregistered), the region's tables are dropped. A node that registers into a region none of whose other nodes is alive starts the region's tables again.
+
+`GET /route?realm=<region>&map=<map>&x=<x>&y=<y>` answers `{"nodeId": "node-2"}`, the node that owns the block that position is in, or `{"nodeId": null}` when the gateway has no table for the map, no node owns the block, or the owner is not alive. A position on or past the far edge of the map is in the last block, a negative one in the first. The route needs the same `GATEWAY_AUTH_KEY` as the other calls, sent in an `x-gateway-key` header and never in the URL. The webserver is its only caller.
+
+The answer is a hint. It never decides who owns a block. The webserver uses it to pick the node a player's connection token is bound to, see Connection tokens below, and the game server still checks the player's spawn point when the player logs in and passes the login on if the hint was wrong.
+
 ## Realm states
 
 `GET /status` reports one of three states per realm. The same data reaches the browser through `GET /api/gateway/servers` on the website.
@@ -125,7 +164,7 @@ A clean shutdown calls `POST /unregister`, which removes the realm at once.
 
 After login the player lands on `/realm-selection`.
 
-- The page loads the realm list and refreshes it every 5 seconds while the tab is visible.
+- The page loads the realm list and refreshes it on a timer while the tab is visible.
 - Each card shows the realm id, `Players: active/max`, a state badge, a `whitelist` badge when the flag is set and a `PvP` badge when PvP is on.
 - The latency shown is measured by the browser itself: it times a `GET /ping` request sent straight to each game server at `publicHost:port`.
 - Selecting a card shows the realm description. "Enter Realm" stores the id in the browser's local storage as `selectedServerId` and opens `/game`, or `/character` first when the account has no character yet.
@@ -162,12 +201,15 @@ A game server only accepts WebTransport sessions that present a token signed wit
 }
 ```
 
-- `expiresAt` is 60 seconds after `timestamp`.
+- `expiresAt` is a short while after `timestamp`.
 - `origin` is the origin of the page that asked. `account` is the SHA-256 of the caller's session token, in hexadecimal.
 - `signature` is the HMAC SHA-256 of the string `token:timestamp:expiresAt:origin:account` with the shared secret, in hexadecimal.
 - Without a valid session token the route answers `401`.
 - If the caller's account has an open two-factor challenge, has not verified its email, or needs a subscription, the route answers `403` and no token is issued. Guests need no verified email.
 - If `GATEWAY_GAME_SERVER_SECRET` is not set the route answers `500`.
+- For a cluster realm (`?realm=<region>`) the response also names the node the token is for, as `nodeId` and `node`, and the signature covers the node id too: `token:timestamp:expiresAt:origin:account:nodeId`. The client connects to that node. See below for how it is chosen.
+
+For a cluster realm the node is the one that owns the block of the account's saved position (the dead player's corpse, when the player is dead), when the gateway knows it and that node is online. Otherwise it is the online node with the fewest connections. The webserver counts each token it hands out as one more connection on its node until that node's next heartbeat, so a burst of logins is spread over the nodes. When the gateway cannot be asked in time, or knows nothing of the position or its map, the least-loaded node is used, exactly as for an account without a saved position.
 
 The client sends these six values, plus its user agent, in an `AUTH_CONNECT` frame as the first thing on the new session. The game server recomputes the signature, checks the expiry, checks the origin when its `CORS_ALLOWED_ORIGINS` is set, and refuses a token it has already accepted once. It then answers `AUTH_CONNECT_SUCCESS` and the normal login handshake begins. At login it only accepts the session token whose SHA-256 equals `account`. See [Networking](#/engine/networking).
 
@@ -188,13 +230,13 @@ Two separate mechanisms deal with a game server that disappears.
 
 ### In the game client
 
-When the session to a game server closes unexpectedly and `GATEWAY_ENABLED` is `true`, the client tries to reconnect up to 5 times, 2 seconds apart. Each attempt runs the connection steps above again: a fresh token, a fresh realm list, the chosen realm first and otherwise the first `online` realm. On success the page reloads. After 5 failures the player is asked to refresh the page.
+When the session to a game server closes unexpectedly and `GATEWAY_ENABLED` is `true`, the client tries to reconnect a few times, a short pause apart. Each attempt runs the connection steps above again: a fresh token, a fresh realm list, the chosen realm first and otherwise the first `online` realm. On success the page reloads. When every attempt has failed, the player is asked to refresh the page.
 
 ### In the gateway server
 
-The gateway server proxies any path it does not handle itself to a registered game server over HTTP. It picks a server at random and remembers the choice in a `gateway_http_session` cookie for one hour, so later requests go to the same server.
+The gateway server proxies any path it does not handle itself to a registered game server over HTTP. It picks a server at random and remembers the choice in a `gateway_http_session` cookie, so later requests go to the same server.
 
-When the sweep removes a dead server, these proxy sessions are moved to the remaining servers that still have room, in round robin order. If no server has room they are dropped. The dashboard API reports the number of moved sessions and the last 10 migrations. A proxy session is forgotten `SESSION_TIMEOUT` after it was created or moved.
+When the sweep removes a dead server, these proxy sessions are moved to the remaining servers that still have room, in round robin order. If no server has room they are dropped. The dashboard API reports the number of moved sessions and the latest migrations. A proxy session is forgotten `SESSION_TIMEOUT` after it was created or moved.
 
 :::note Sessions here are HTTP proxy sessions
 The migration in the gateway server concerns its own HTTP proxy sessions. It does not move a player's WebTransport connection, which runs directly between browser and game server. That part is handled by the reconnect logic in the client.
@@ -209,8 +251,10 @@ Served on `GATEWAY_PORT` (9999), or `GATEWAY_PORTSSL` (9443) with TLS. `OPTIONS`
 | POST | `/register` | `authKey` in body | Add or replace a game server |
 | POST | `/heartbeat` | `authKey` in body | Report load and keep the server alive |
 | POST | `/unregister` | `authKey` in body | Remove a game server |
+| POST | `/blocks` | `authKey` in body | A cluster node reports which node owns each block of one map |
+| GET | `/route` | `x-gateway-key` header | Which live node of a cluster region owns a position of a map. Used by the webserver. |
 | GET | `/status` | None | Public realm list with state, player counts and whitelist flag |
-| GET | `/debug/sessions` | None | The HTTP proxy sessions and which server each is bound to |
+| GET | `/debug/sessions` | Dashboard session (`dashboard_session` cookie) | The HTTP proxy sessions and which server each is bound to |
 | GET | `/` | None | Dashboard login page |
 | GET | `/api/session` | Website `token` cookie | Whether the caller is logged in and may open the dashboard |
 | POST | `/api/login` | Website `token` cookie of an admin with `server.gateway` or `server.*` | Start a dashboard session, sets the `dashboard_session` cookie |
@@ -248,7 +292,7 @@ curl http://localhost:9999/status
 ```
 
 :::warning Protect the gateway port
-`/status` and `/debug/sessions` need no key, and the request filter of the [Reverse Proxy](#/gateway/reverse-proxy) does not run on this port. Limit access to the gateway port with a firewall where you can. Browsers never need it: the website fetches the realm list for them over loopback.
+`/status` needs no key and `/debug/sessions` needs a dashboard session, and the request filter of the [Reverse Proxy](#/gateway/reverse-proxy) does not run on this port. Limit access to the gateway port with a firewall where you can. Browsers never need it: the website fetches the realm list for them over loopback.
 :::
 
 The dashboard routes are described in [Dashboard](#/gateway/dashboard).

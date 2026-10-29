@@ -102,7 +102,7 @@ If someone is bothering you, ignore them. You stop seeing what they say, their w
 | Chat | Type `/ignore` and their name. This also works when they are offline. |
 | Friends list | **Right-click** a friend and choose **Ignore**. This ends the friendship too. |
 
-The players you ignore are listed under **Ignored** in your friends list (press **O**). Click the **×** beside a name, or right-click it and choose **Stop Ignoring**, to hear them again. You can ignore up to 100 players. Admins cannot be ignored.
+The players you ignore are listed under **Ignored** in your friends list (press **O**). Click the **×** beside a name, or right-click it and choose **Stop Ignoring**, to hear them again. Admins cannot be ignored.
 
 ## Reporting a player
 
@@ -117,7 +117,7 @@ While the chat box is open, press the **Up** arrow to bring back the last messag
 ## Chat limits
 
 - A message can be at most 500 characters long. Shorter is safer: very long messages may not be sent.
-- You can send up to 5 messages within 3 seconds, counting all channels together. Faster than that and you see "You are sending messages too fast."
+- Messages in all channels count together. If you send them too fast, you see "You are sending messages too fast."
 - Party chat needs a party, and guild chat needs a guild. Otherwise you see "You are not in a party" or "You are not in a guild".
 
 ## Chat while dead

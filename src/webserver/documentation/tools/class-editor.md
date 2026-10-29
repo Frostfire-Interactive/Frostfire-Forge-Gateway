@@ -74,7 +74,7 @@ What a new character of the class starts with at level 1. These are starting val
 
 ### Spells
 
-The spells the class learns, each at a level from 1 to 1000, up to 50 spells. Each spell is a card of its own with the spell, picked from the spell list with its icon, and the level it is learned at. **Add spell** adds a card with the next spell not yet in the list. A spell can be in the list once.
+The spells the class learns, each at a level from 1 to 1000. Each spell is a card of its own with the spell, picked from the spell list with its icon, and the level it is learned at. **Add spell** adds a card with the next spell not yet in the list. A spell can be in the list once.
 
 | When | What is learned |
 | --- | --- |
@@ -86,7 +86,7 @@ A spell that has since been deleted in the [Spell Editor](#/tools/spell-editor) 
 
 ### Starter items
 
-The items a new character of the class has in its inventory when it is made, up to 50 items. Each item is a card of its own with the item, picked from the item list with its icon, and a quantity from 1 to 9999. **Add item** adds a card with the next item not yet in the list. An item can be in the list once.
+The items a new character of the class has in its inventory when it is made. Each item is a card of its own with the item, picked from the item list with its icon, and a quantity from 1 to 9999. **Add item** adds a card with the next item not yet in the list. An item can be in the list once.
 
 Starter items are given only when a character is made on the character page. Characters already made keep the items they have when the list is changed. An item that has since been deleted in the [Item Editor](#/tools/item-editor) is passed over. Items are made there first.
 

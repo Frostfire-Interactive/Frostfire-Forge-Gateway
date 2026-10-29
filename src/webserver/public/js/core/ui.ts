@@ -101,6 +101,8 @@ const timeOverrideCheckbox = document.getElementById("time-override-checkbox") a
 const timeOverrideLabel = document.getElementById("time-override-label") as HTMLSpanElement;
 const timelapseBtn = document.getElementById("timelapse-btn") as HTMLButtonElement;
 const loadedChunksText = document.getElementById("loaded-chunks") as HTMLDivElement;
+const clusterNodesDebugCheckbox = document.getElementById("cluster-nodes-debug-checkbox") as HTMLInputElement;
+const clusterNodesText = document.getElementById("cluster-nodes-text") as HTMLDivElement;
 const hotbar = document.getElementById("hotbar") as HTMLDivElement;
 const hotbarGrid = hotbar.querySelector("#grid") as HTMLDivElement;
 const hotbarSlots = hotbarGrid.querySelectorAll(".slot") as NodeListOf<HTMLDivElement>;
@@ -2124,7 +2126,7 @@ export {
     inventoryGrid, chatMessages, loadingScreen, usernameLabel, levelLabel, healthLabel, manaLabel, damageLabel, armorLabel, critChanceLabel, critDamageLabel, avoidanceLabel,
     serverTime, ambience, ambienceCool, sunFlare, weatherCanvas, weatherCtx, lightCanvas, lightCtx, lightDodgeCanvas, lightDodgeCtx, ghostCanvas, ghostCtx, aboveCanvas, aboveCtx, debugLayerCanvas, debugLayerCtx, guildContainer, guildName, guildRank, guildMembersList,
     guildMemberCount, guildMemberInviteInput, guildMemberInviteButton, collisionDebugCheckbox, chunkOutlineDebugCheckbox,
-    collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText, collectablesUI, timeOverrideSlider, timeOverrideLabel, timeOverrideCheckbox, timelapseBtn,
+    collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText, clusterNodesDebugCheckbox, clusterNodesText, collectablesUI, timeOverrideSlider, timeOverrideLabel, timeOverrideCheckbox, timelapseBtn,
     hotbarSlots, saveHotbarConfiguration, loadHotbarConfiguration, equipmentLeftColumn, equipmentRightColumn, equipmentBottomCenter,
     saveInventoryConfiguration, loadInventoryConfiguration, saveInventorySlots, flushInventorySlots, setupInventorySlotHandlers, updateCurrencyDisplay,
 };

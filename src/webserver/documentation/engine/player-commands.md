@@ -51,7 +51,7 @@ Rules the `CHAT` handler enforces:
 | Rule | Value |
 |------|-------|
 | Longest message | 500 characters |
-| Rate limit | 5 messages in 3 seconds per connection, then `You are sending messages too fast.` |
+| Rate limit | A short burst of messages per connection, then `You are sending messages too fast.` |
 | Audience | Players on the same map |
 | Corpses | Cannot talk |
 | Ghosts | A ghost who is not an admin speaks in generated spirit speech, not the text typed |
@@ -125,7 +125,7 @@ Each command needs a permission on your guild rank. The permission names are the
 | `/gmotd` | Set MOTD | Sets the message of the day, up to 128 characters. Empty text clears it |
 | `/gleader` | Guild Master only | Makes another member Guild Master |
 
-Each kind of change can be made once a second. A repeat inside that second is dropped without an answer.
+A repeat of the same kind of change that comes too soon is dropped without an answer.
 
 | Problem | Answer |
 |---------|--------|
@@ -220,7 +220,7 @@ Ignoring is decided on the server, in the same place every chat channel asks who
 | Speak in a party or guild you share | You do not receive that line |
 | Invite you to a party or guild, or send a friend request | It looks sent on their side and never reaches you |
 
-The command works on offline accounts and a list holds up to 100 names. Ignoring a friend ends the friendship on both sides. The same actions are on the menu that opens on a player, on a friend in the friends list, and on a name in the Ignored section of that list.
+The command works on offline accounts. Ignoring a friend ends the friendship on both sides. The same actions are on the menu that opens on a player, on a friend in the friends list, and on a name in the Ignored section of that list.
 
 | Problem | Answer |
 |---------|--------|
@@ -230,7 +230,7 @@ The command works on offline accounts and a list holds up to 100 names. Ignoring
 | The player is an admin | `You cannot ignore an admin` |
 | You are an admin | `Admins cannot ignore players` |
 | Already on your list | `You are already ignoring <username>` |
-| Your list is full | `Your ignore list is full (100 players)` |
+| Your list is full | The player is told the ignore list is full |
 
 :::note Admins are never held back
 An admin is always heard and hears everyone. A name left on a list from before an account became an admin holds nothing back.
@@ -252,7 +252,7 @@ The server attaches the reported player's latest chat lines that reached you and
 | No such account | `Player not found` |
 | You named yourself | `You cannot report yourself` |
 | You already have an open report on them | `You have already reported this player` |
-| More than five reports in an hour | `You have sent too many reports. Try again later` |
+| Too many reports in a short time | `You have sent too many reports. Try again later` |
 
 ## How the client sends a command
 

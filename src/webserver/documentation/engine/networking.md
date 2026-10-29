@@ -47,7 +47,7 @@ if (!webTransportTls) {
 }
 ```
 
-It also refuses to start with an expired or unreadable certificate, logs how many days remain, and warns when fewer than 3 days are left or when the certificate does not cover `PUBLIC_HOST` or `SERVER_HOST`.
+It also refuses to start with an expired or unreadable certificate, logs how long it still lasts, and warns when it is close to expiring or when the certificate does not cover `PUBLIC_HOST` or `SERVER_HOST`.
 
 ## Automatic local certificate
 
@@ -61,7 +61,7 @@ A certificate signed by a CA is never replaced. Renewing it is up to you.
 | Property | Value |
 |----------|-------|
 | Key | ECDSA P-256 |
-| Validity | 13 days (a pinned certificate may be valid for at most 14) |
+| Validity | Short lived, as a pinned certificate must be |
 | Hostnames | `localhost`, `127.0.0.1`, `::1`, plus `PUBLIC_HOST` and `SERVER_HOST` |
 | Trust | On Windows the certificate is added to the current user's root store with `certutil`, unless `SKIP_CERT_TRUST=true`. On other systems you import it yourself. |
 
@@ -93,7 +93,7 @@ Chrome does not accept a locally installed root CA for WebTransport. It accepts 
 }
 ```
 
-The endpoint answers `404` with `{"error": "Certificate is not suitable for pinning"}` when the certificate cannot be pinned (expired, valid for more than 14 days, not an EC key, or missing `localhost` or `127.0.0.1` among its names). The browser then has to trust the certificate the normal way.
+The endpoint answers `404` with `{"error": "Certificate is not suitable for pinning"}` when the certificate cannot be pinned (expired, valid for longer than a pinned certificate may be, not an EC key, or missing `localhost` or `127.0.0.1` among its names). The browser then has to trust the certificate the normal way.
 
 The game client fetches the hash before it opens the session:
 
@@ -169,7 +169,7 @@ A token opens one connection only. The connection remembers the token's `account
 |---------|----------------------|
 | Valid | Assigns a random numeric connection id, calls `onOpen`, replies `{"type":"AUTH_CONNECT_SUCCESS","data":null}` |
 | First frame is not a valid `AUTH_CONNECT` | Closes with code `1008`, reason `Unauthorized: Invalid token` |
-| No valid frame within `webtransport.authTimeoutMs` (10 seconds) | Closes with `1008`, reason `Authentication timeout` |
+| No valid frame within `webtransport.authTimeoutMs` | Closes with `1008`, reason `Authentication timeout` |
 | No stream opened | Closes with `1008`, reason `No control stream received` |
 
 On open, the connection is subscribed to the `CONNECTION_COUNT`, `BROADCAST` and `DISCONNECT_PLAYER` topics and the `onConnection` event is emitted.
@@ -228,9 +228,9 @@ export function encodeFrame(payload: Uint8Array): Uint8Array {
 
 | Stage | Largest frame |
 |-------|---------------|
-| Before `AUTH_CONNECT` | 4 KB |
-| After `AUTH_CONNECT`, before login | 16 KB |
-| A logged-in player | 256 KB |
+| Before `AUTH_CONNECT` | The smallest limit |
+| After `AUTH_CONNECT`, before login | A larger limit |
+| A logged-in player | A larger limit still |
 | An admin, a player holding any permission, or any player on a benchmark server | `webtransport.maxPayloadMB` (in megabytes) |
 
 Packets are built by `packetManager` and encoded with `packet.encode`:
@@ -267,7 +267,7 @@ Movement is loss tolerant (the next update replaces the last one), so it does no
 
 ### Single position: header 0x02
 
-Sent to the moving player on every tick as their own position echo. 21 bytes:
+Sent to the moving player on every tick as their own position echo:
 
 | Offset | Type | Content |
 |--------|------|---------|
@@ -287,15 +287,15 @@ Everyone else learns about movers through batches (`src/socket/movement_batch.ts
 |--------|------|---------|
 | 0 | u8 | `0x01` |
 | 1 | u16 | Number of entries |
-| 3 | 13 bytes each | `[u32 id][i32 x][i32 y][u8 direction and stealth]` |
-| end | 10 bytes | Latency probe: `[u32 sequence][u32 seconds][u16 ms]` |
+| 3 | one per mover | `[u32 id][i32 x][i32 y][u8 direction and stealth]` |
+| end | once | Latency probe: `[u32 sequence][u32 seconds][u16 ms]` |
 
 All multi byte values are little endian. Directions are numbered `up` 0, `down` 1, `left` 2, `right` 3, `upleft` 4, `upright` 5, `downleft` 6, `downright` 7.
 
-The encoder fills each datagram up to `MAX_DATAGRAM_SIZE` (1200 bytes) and starts a new one when it is full. If a `0x01` payload larger than `webtransport.maxDatagramSize` still reaches the connection, `sendSplitBatch` cuts it into several datagrams. Other movement payloads that are too large fall back to the stream.
+The encoder fills each datagram up to `MAX_DATAGRAM_SIZE` and starts a new one when it is full. If a `0x01` payload larger than `webtransport.maxDatagramSize` still reaches the connection, `sendSplitBatch` cuts it into several datagrams. Other movement payloads that are too large fall back to the stream.
 
 :::warning Keep the two sizes equal
-`MAX_DATAGRAM_SIZE` in `movement_batch.ts` is a constant and `webtransport.maxDatagramSize` comes from `settings.json`. Both are 1200 by default. Raising them risks packets being dropped on the path between client and server.
+`MAX_DATAGRAM_SIZE` in `movement_batch.ts` is a constant and `webtransport.maxDatagramSize` comes from `settings.json`. Both default to the same value (see [Configuration](#/engine/configuration/settingsjson)). Raising them risks packets being dropped on the path between client and server.
 :::
 
 ### The flush
@@ -304,14 +304,12 @@ Moving players queue their position per layer. A timer in `receiver.ts` flushes 
 
 | Condition | Interval |
 |-----------|----------|
-| Event loop lag above 120 ms | 150 ms |
-| Event loop lag above 60 ms | 100 ms |
-| Event loop lag above 30 ms | 66 ms |
-| Healthy, fewer than 8000 movement datagrams per second | 33 ms |
-| Healthy, 8000 or more per second | 50 ms |
-| Flush latency 15 ms or more | 66 to 120 ms, growing with latency |
+| The event loop is running late | Longer, the later it runs |
+| Healthy, with a moderate flow of movement datagrams | The shortest interval |
+| Healthy, with a heavy flow of movement datagrams | A little longer |
+| Flushes take long | Longer, growing with the flush latency |
 
-A layer with more than 20 receivers hands the encoding to a movement worker thread (see [Game loop](#/engine/game-loop/worker-pools)). Smaller layers are encoded inline.
+A layer with many receivers hands the encoding to a movement worker thread (see [Game loop](#/engine/game-loop/worker-pools)). Layers with few receivers are encoded inline.
 
 ### Best effort packets
 
@@ -324,7 +322,7 @@ playerData.wt.sendBestEffort(statsFrame);
 
 ### Slow clients
 
-Stream writes wait on QUIC flow control. Once a connection has more than 48 MB queued, new stream frames for it are dropped and a warning is logged at most every 10 seconds. The server also samples every connection's queue every 10 seconds and logs, at most once a minute, the ones with more than 256 KB queued.
+Stream writes wait on QUIC flow control. Once too much is queued for a connection, new stream frames for it are dropped and a warning is logged now and then. The server also samples every connection's queue on a timer and logs the ones with a long queue.
 
 ## HTTP API
 
@@ -368,7 +366,7 @@ export function register(engine: EngineAPI) {
 | `Access-Control-Allow-Origin` | The request's origin, when allowed |
 | `Access-Control-Allow-Methods` | `GET,POST` |
 | `Access-Control-Allow-Headers` | `Content-Type,Authorization` |
-| `Access-Control-Max-Age` | `3600` |
+| `Access-Control-Max-Age` | How long a browser may keep the answer to a preflight request |
 
 CORS headers are added to `/ping`, `/wt-cert-hash`, `/start-area` and `OPTIONS` answers. With an empty list no headers are sent, so browsers block every cross origin request, and the server logs a warning at startup.
 
@@ -381,8 +379,8 @@ When `CORS_ALLOWED_ORIGINS` is not empty, the `origin` field of `AUTH_CONNECT` m
 | Limit | Where | Rule |
 |-------|-------|------|
 | Packets per connection | `server.ts`, `packetRatelimit` in `settings.json` | When a connection's counter reaches `maxRequests`, it receives one `RATE_LIMITED` packet and its packets are ignored for `time` milliseconds |
-| Chat | `receiver.ts` | 5 messages per 3 seconds per connection, at most 500 characters each |
-| NPC and quest packets | `receiver.ts` | 5 per 3 seconds per connection |
+| Chat | `receiver.ts` | Messages per connection in a short window, and a length for each message |
+| NPC and quest packets | `receiver.ts` | Packets per connection in a short window |
 | Login | `receiver.ts` | One `AUTH` in progress per session token and per connection |
 | Unauthenticated sessions | `transport.ts` | Closed after `webtransport.authTimeoutMs` |
 | Sessions in total | `transport.ts` | `webtransport.maxSessions` |
@@ -399,7 +397,7 @@ if (client.requests >= RateLimitOptions.maxRequests) {
 }
 ```
 
-The public HTTP proxy filters requests before they reach the API. It answers `429` to an address that sends more than `webserverRatelimit.max` requests (default 500) in one `webserverRatelimit.windowMs` window, and `404` to any path with a segment listed in `src/config/security.cfg`. The handshake, stream and datagram limits under `webtransport.rateLimits` are described in [Configuration](#/engine/configuration/settingsjson).
+The public HTTP proxy filters requests before they reach the API. It answers `429` to an address that sends more than `webserverRatelimit.max` requests in one `webserverRatelimit.windowMs` window, and `404` to any path with a segment listed in `src/config/security.cfg`. The handshake, stream and datagram limits under `webtransport.rateLimits` are described in [Configuration](#/engine/configuration/settingsjson).
 
 ## Inbound dispatch
 
@@ -431,10 +429,10 @@ topicBus.publishBestEffort(
 );
 ```
 
-The built in topics are `CONNECTION_COUNT` (sent at most every 500 ms), `BROADCAST` (used by `events.Broadcast`) and `DISCONNECT_PLAYER`. Most game traffic does not use topics: it is sent to the players in a player's area of interest, described in [AOI and layers](#/engine/aoi-and-layers).
+The built in topics are `CONNECTION_COUNT` (sent no more often than a short interval), `BROADCAST` (used by `events.Broadcast`) and `DISCONNECT_PLAYER`. Most game traffic does not use topics: it is sent to the players in a player's area of interest, described in [AOI and layers](#/engine/aoi-and-layers).
 
 ## Gateway registration
 
-After the listeners are up, `GatewayClient` registers the realm with the gateway (`POST /register`) and keeps retrying with a growing delay (1 second up to 30 seconds) until it succeeds. Then it sends a heartbeat (`POST /heartbeat`) every `gateway.heartbeatInterval` milliseconds with the connection count, CPU and RAM usage, round trip time and the whitelist state. A failed heartbeat starts the registration again. On `SIGINT` or `SIGTERM` the server unregisters (`POST /unregister`) before it stops.
+After the listeners are up, `GatewayClient` registers the realm with the gateway (`POST /register`) and keeps retrying with a growing delay until it succeeds. Then it sends a heartbeat (`POST /heartbeat`) every `gateway.heartbeatInterval` milliseconds with the connection count, CPU and RAM usage, round trip time and the whitelist state. A failed heartbeat starts the registration again. On `SIGINT` or `SIGTERM` the server unregisters (`POST /unregister`) before it stops.
 
 The gateway side is described in [Game servers](#/gateway/game-servers).

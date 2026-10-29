@@ -5,12 +5,13 @@ import pako from "../libs/pako.js";
 import packet from "./packetencoder.ts";
 import Cache from "./cache.ts";
 import { updateTime, setHasWeather, setStormAmbience, setDarknessAmbience } from "./ambience.ts";
-import { setWeatherType, setWeatherData, getWeatherType } from "./renderer.ts";
+import { inHandoffWindow as inWindow, skipSameWeather, weatherKey } from "./handoffkeep.ts";
+import { setWeatherType, setWeatherData, getWeatherType, setDirection } from "./renderer.ts";
 import { addLightningStrike } from "./weather.ts";
 import { setTornadoes } from "./tornado.ts";
 import { setupItemTooltip, removeItemTooltip, hideItemTooltip, setupSpellTooltip } from "./tooltip.ts";
 import { startPersistentSpellCooldown } from "./ui.js";
-import { sampleTime, pushSample } from "./movementsmoothing.ts";
+import { sampleTime, pushSample, pushEcho, setServerTickRate, noteBatch, seedSamples, resetClockEpoch, lastRenderTime, renderHeadroom, getClockOffset } from "./movementsmoothing.ts";
 import { renderMessageParts } from "./itemlinks.ts";
 const cache = Cache.getInstance();
 
@@ -93,7 +94,7 @@ import { createInvitationPopup } from "./invites.ts";
 import { showTrade, closeTrade } from "./trade.ts";
 import { showVendor, closeVendor, refreshVendor } from "./vendor.ts";
 import { setMailboxes, showMail, mailSent, setUnreadMail, closeMail, refreshMail } from "./mail.ts";
-import { applyGatherSpawn, applyGatherDespawn, clearGatherNodes } from "./gathering.ts";
+import { applyGatherSpawn, applyGatherDespawn, clearGatherNodes, heldGatherNodes, dropGatherNodesNotResent } from "./gathering.ts";
 import { applyFishing, clearFishing, setFishingTiles } from "./fishing.ts";
 import { clearFootprints, setTileFootprints } from "./footprints.ts";
 import { rememberVisit } from "./visitedmaps.ts";
@@ -150,6 +151,13 @@ import {
 import { updateXp } from "./xp.ts";
 import { createNPC, reinitNpcSprite, sellsThings } from "./npc.ts";
 import { applyCreatureSpawn, applyCreatureDespawn, applyCreatureMove, applyCreatureState, applyCreatureHealth, applyCreatureCombatText, applyCreatureAttackStopped, applyCreatureTap, applyCreatureLootable, applyCreatureXp, applyCreatureCast, applyCreatureCastEnd, applyCreatureAuras, clearCreatures, parseCreatureTarget, creaturePositionFor } from "./creature.ts";
+import { CREATURE_MOVE_HEADER, decodeCreatureMoves } from "./creaturemoves.ts";
+import { POSE_DATAGRAM_HEADER, applyPoseDatagram, applyPoseUpdate, poseMark, reapplyPose, sheetPoseState } from "./posepacket.ts";
+import { planSelfSpawn } from "./selfspawn.ts";
+import { applyClusterDebug, pauseClusterRefresh, requestClusterRefresh, setClusterDebugRequester } from "./clusternodes.ts";
+import { MAX_PREDICT_MS, startEase, planHandoffDone, planPaceArm, hasAnchor, HandoffSettle, HandoffPace, KeptWalkDating, clearHeld, heldDirection } from "./handoffwalk.ts";
+import { doneFacing, doneSend, doneWalk, walkAtSwitch } from "./resumesend.ts";
+import { getIsKeyPressed, getIsMoving, getStickDirection, pressedKeys, setLastSentDirection } from "./input.js";
 import parseAPNG from "../libs/apng_parser.js";
 import { getCookie } from "./cookies.ts";
 import { createCachedImage } from "./images.ts";
@@ -173,10 +181,20 @@ function base64ToBytes(base64: string): Uint8Array {
   return bytes;
 }
 
+// The certificate hash of each game server origin, kept once fetched: a node the player is handed to is asked once, and
+// the next handoff to it (or the pre-opened session before it) does not fetch again. A hash that fails to connect is dropped.
+const certHashes = new Map<string, string>();
+
+function certOrigin(server: any): string {
+  return `${server.useSSL ? "https" : "http"}://${normalizeGameHost(server.publicHost)}:${server.port}`;
+}
+
 async function fetchServerCertHash(server: any): Promise<string | undefined> {
   try {
-    const protocol = server.useSSL ? "https" : "http";
-    const url = `${protocol}://${normalizeGameHost(server.publicHost)}:${server.port}/wt-cert-hash`;
+    const origin = certOrigin(server);
+    const known = certHashes.get(origin);
+    if (known) return known;
+    const url = `${origin}/wt-cert-hash`;
     const response = await fetch(url);
 
     if (!response.ok) {
@@ -185,6 +203,7 @@ async function fetchServerCertHash(server: any): Promise<string | undefined> {
 
     const data = await response.json();
     if (data && data.algorithm === "sha-256" && typeof data.value === "string" && data.value.length > 0) {
+      certHashes.set(origin, data.value);
       return data.value;
     }
   } catch (error) {
@@ -325,6 +344,9 @@ function sendRequest(data: any) {
   sentRequests++;
   sendRawFrame(packet.encode(JSON.stringify(data)));
 }
+
+// The F2 menu's "Cluster Nodes" box asks the node for the block table through this (core/clusternodes.ts).
+setClusterDebugRequester(() => sendRequest({ type: "CLUSTER_DEBUG", data: {} }));
 
 function sendRawFrame(bytes: Uint8Array) {
   if (!streamWriter) return;
@@ -726,10 +748,39 @@ function normalizeGameHost(host: string): string {
 // Set when the gateway refused the connection token because the realm needs a subscription.
 let subscriptionRequired = false;
 
+// Opens a WebTransport session to one game server (a realm entry, or a cluster node: { publicHost, port, wtPort, useSSL }).
+async function openGameTransport(server: any, marks?: { cert?: number; ready?: number }): Promise<WebTransport> {
+  if (!server.wtPort) {
+    throw new Error('Game server does not advertise a WebTransport port');
+  }
+
+  const gameServerUrl = `https://${normalizeGameHost(server.publicHost)}:${server.wtPort}`;
+  const options = await buildWebTransportOptions(server);
+  if (marks) marks.cert = performance.now();
+  console.info(
+    `WebTransport: connecting to ${gameServerUrl}` +
+      (options ? " with a pinned certificate hash" : " using normal certificate validation"),
+  );
+  const gameTransport = new WebTransport(gameServerUrl, options);
+  try {
+    await gameTransport.ready;
+  } catch (error) {
+    // The node may have a new certificate: the hash kept for it is asked again next time.
+    certHashes.delete(certOrigin(server));
+    throw error;
+  }
+  if (marks) marks.ready = performance.now();
+  return gameTransport;
+}
+
 async function connectThroughGateway(): Promise<WebTransport | undefined> {
 
+  // A failed request never leaves an earlier, expired ticket (perhaps bound to another node) in use.
+  connectionToken = null;
   try {
-    const tokenResponse = await fetch('/api/gateway/connection-token');
+    // The realm picked at realm selection: a ticket for a cluster realm is bound to one of its nodes.
+    const realm = localStorage.getItem('selectedServerId');
+    const tokenResponse = await fetch(realm ? `/api/gateway/connection-token?realm=${encodeURIComponent(realm)}` : '/api/gateway/connection-token');
     if (!tokenResponse.ok) {
       // A realm that locks Log In to subscribers: realm selection says so.
       if (tokenResponse.status === 403 && (await tokenResponse.json().catch(() => null))?.subscription) {
@@ -748,6 +799,22 @@ async function connectThroughGateway(): Promise<WebTransport | undefined> {
     throw new Error('Failed to obtain connection token from gateway');
   }
 
+  // A ticket bound to a cluster node is good on that node only: no other server is tried with it. A failure
+  // goes to the reconnect path, which asks the gateway for a new ticket.
+  if (connectionToken.node) {
+    try {
+      return await openGameTransport(connectionToken.node);
+    } catch (error: any) {
+      console.error(
+        "WebTransport: connecting to the realm's node failed:",
+        error?.name,
+        error?.message ?? error,
+        error?.source ? `source=${error.source}` : "",
+      );
+      return undefined;
+    }
+  }
+
   const selectedServerId = localStorage.getItem('selectedServerId');
 
   if (selectedServerId) {
@@ -764,19 +831,7 @@ async function connectThroughGateway(): Promise<WebTransport | undefined> {
 
       if (server) {
 
-        if (!server.wtPort) {
-          throw new Error('Game server does not advertise a WebTransport port');
-        }
-
-        const gameServerUrl = `https://${normalizeGameHost(server.publicHost)}:${server.wtPort}`;
-        const options = await buildWebTransportOptions(server);
-        console.info(
-          `WebTransport: connecting to ${gameServerUrl}` +
-            (options ? " with a pinned certificate hash" : " using normal certificate validation"),
-        );
-        const gameTransport = new WebTransport(gameServerUrl, options);
-        await gameTransport.ready;
-        return gameTransport;
+        return await openGameTransport(server);
       } else {
 
         localStorage.removeItem('selectedServerId');
@@ -816,19 +871,7 @@ async function connectThroughGateway(): Promise<WebTransport | undefined> {
 
     const server = healthyServers[0];
 
-    if (!server.wtPort) {
-      throw new Error('Game server does not advertise a WebTransport port');
-    }
-
-    const gameServerUrl = `https://${normalizeGameHost(server.publicHost)}:${server.wtPort}`;
-    const options = await buildWebTransportOptions(server);
-    console.info(
-      `WebTransport: connecting to ${gameServerUrl}` +
-        (options ? " with a pinned certificate hash" : " using normal certificate validation"),
-    );
-    const gameTransport = new WebTransport(gameServerUrl, options);
-    await gameTransport.ready;
-    return gameTransport;
+    return await openGameTransport(server);
   } catch (error: any) {
     // WebTransportError carries the useful detail on `source`, and the
     // session's own reason often arrives on `closed` rather than `ready`.
@@ -881,9 +924,9 @@ async function initializeSocket() {
   }
 }
 
-async function setupTransport() {
+async function setupTransport(preStream?: WebTransportBidirectionalStream | null) {
 
-  const bidi = await socket.createBidirectionalStream();
+  const bidi = preStream ?? await socket.createBidirectionalStream();
   streamWriter = bidi.writable.getWriter();
   streamReader = bidi.readable.getReader();
   streamDecoder = new FrameDecoder();
@@ -901,7 +944,18 @@ async function setupTransport() {
 
 function authenticateConnection(): Promise<void> {
   return new Promise((resolve, reject) => {
-    pendingAuthResolve = resolve;
+    // The timeout belongs to this attempt only: a later connection (a SWITCH) waits with a resolver of its own.
+    const resolveThis = () => {
+      clearTimeout(authTimer);
+      resolve();
+    };
+    const authTimer = setTimeout(() => {
+      if (pendingAuthResolve === resolveThis) {
+        pendingAuthResolve = null;
+        reject(new Error("Authentication timeout"));
+      }
+    }, 10000);
+    pendingAuthResolve = resolveThis;
 
     const authData = {
       token: connectionToken.token,
@@ -912,40 +966,46 @@ function authenticateConnection(): Promise<void> {
       // Both are part of the signed ticket: sent back as the Gateway signed them.
       origin: connectionToken.origin ?? window.location.origin,
       account: connectionToken.account ?? "",
+      // Signed too when the ticket is bound to a cluster node; empty otherwise.
+      nodeId: connectionToken.nodeId ?? "",
     };
 
     sendRawFrame(packet.encode(JSON.stringify({
       type: "AUTH_CONNECT",
       data: authData,
     })));
-
-    setTimeout(() => {
-      if (pendingAuthResolve) {
-        pendingAuthResolve = null;
-        reject(new Error("Authentication timeout"));
-      }
-    }, 10000);
+    if (handoffMarks && handoffMarks.auth_sent === undefined) handoffMarks.auth_sent = performance.now();
   });
+}
+
+/** What a fresh login clears: the players, the death UI, the snapshot and the queued movements. */
+function resetWorldForLogin() {
+  // A fresh world has nothing left over to sweep.
+  cancelHandoffSweep();
+  if (cache?.players) {
+    cache.players.clear();
+  }
+  clearSelfDeath();
+  snapshotRevision = null;
+  snapshotApplied = false;
+  animationUpdateBuffer = [];
+  pendingMovements = [];
+  pendingSpriteAnimations = [];
+  import("./skeletons.js").then((m) => m.clearSkeletons());
 }
 
 function initializeConnection() {
 
   reconnectAttempts = 0;
   closeHandled = false;
-
-  if (cache?.players) {
-    cache.players.clear();
-  }
-
   sessionActive = false;
-  cachedPlayerId = null;
-  (window as any).cachedPlayerId = null;
 
-  snapshotRevision = null;
-  snapshotApplied = false;
-  animationUpdateBuffer = [];
-  pendingMovements = [];
-  pendingSpriteAnimations = [];
+  // A handoff that resumes keeps the player's id and the world: the new node gives the connection the same id.
+  if (!handoffResume) {
+    cachedPlayerId = null;
+    (window as any).cachedPlayerId = null;
+    resetWorldForLogin();
+  }
 
   sendRequest({
     type: "PING",
@@ -966,19 +1026,470 @@ function initializeConnection() {
 // routes that into handleSocketClose.
 
 function setupSocketHandlers() {
-  socket.closed.then((info: any) => {
+  const transport = socket;
+  transport.closed.then((info: any) => {
+    // The session a SWITCH left: its close is the switch, not a lost connection.
+    if (leftBySwitch.has(transport)) return;
     handleSocketClose(info);
   }).catch(() => {
+    if (leftBySwitch.has(transport)) return;
     // Expected on session close (e.g. logout or server shutdown) - the
     // "Connection lost" rejection is not a real error.
     handleSocketClose({ closeCode: 1, reason: "" });
   });
 }
 
+// Cluster mode: a node hands the player to another with SWITCH (the next node and a ticket for it), then closes the
+// session with "switch". The client leaves quietly and logs in on the next node as after a fresh connect.
+const leftBySwitch = new WeakSet<WebTransport>();
+let switchInProgress = false;
+let switchesStarted = 0;
+// How long a "switch" close that was read before its SWITCH packet waits for that packet.
+const SWITCH_PACKET_WAIT_MS = 3000;
+// Nodes that keep handing the player on (a loop between nodes that each think another owns the login, or an owner
+// that is up but out of reach) are not followed forever: after SWITCH_LOOP_LIMIT switches with no login completed in
+// between (LOAD_MAP), the next SWITCH ends in the connection error instead. However long each try takes: there is no
+// time window. Counted in sessionStorage, so the reconnect that a failed switch falls back to (it reloads the page)
+// does not start the count again.
+const SWITCH_LOOP_LIMIT = 3;
+const SWITCH_COUNT_KEY = "nodeSwitches";
+// How long the next node has to answer (its transport ready) before the switch counts as failed. Without it a node
+// out of reach (UDP dropped) holds the switch until the browser's own QUIC handshake timeout.
+const SWITCH_CONNECT_TIMEOUT_MS = 5000;
+let switchingStopped = false;
+// A handoff (cells phase 6) moves the player to the node that owns the block they walked into. With resume, the
+// reconnect keeps the world on screen: nothing is cleared until HANDOFF_DONE, or a LOAD_MAP if the new node could
+// not resume after all.
+let handoffResume = false;
+/** When HANDOFF_DONE last arrived (performance.now()), for the window of the player's own deferred SPAWN_PLAYER. */
+let lastHandoffDoneAt: number | null = null;
+/** The map HANDOFF_DONE named: a self spawn on another map right after it is a warp or respawn, not the handoff's. */
+let lastHandoffDoneMap: string | null = null;
+/**
+ * When HANDOFF_DONE last arrived. A second variable, not lastHandoffDoneAt: that one is the self-spawn guard and is
+ * consumed by the first self spawn, while this one dates the window for the repeated clock and weather; both are cleared
+ * by a SWITCH and by LOAD_MAP.
+ */
+let lastHandoffDoneStamp: number | null = null;
+/** The WEATHER content applied last: the same content from the node taking over is not applied again. */
+let appliedWeatherKey: string | null = null;
+/** A resumed handoff is under way or has just finished: the new node's first packets repeat what the client shows. */
+function inHandoffWindow(): boolean {
+  return inWindow(handoffResume, lastHandoffDoneStamp, performance.now());
+}
+
+// What the new node re-sends after a resumed handoff replaces the entry it has; what it does not re-send is gone
+// from its view and is dropped once it has had time to send its initial world. The server sends no end marker for
+// that (players, NPCs and gather nodes follow HANDOFF_DONE in separate batches), so a short window after HANDOFF_DONE
+// is the end. Creatures are not swept: the new node diffs them (it sends only changes and despawns, not the whole set).
+const HANDOFF_SWEEP_MS = 4000;
+let handoffHeld: {
+  players: Set<any>;
+  npcs: Set<any>;
+  gather: ReturnType<typeof heldGatherNodes>;
+  seenPlayers: Set<any>;
+  seenNpcs: Set<any>;
+  timer: ReturnType<typeof setTimeout> | null;
+} | null = null;
+
+/** The world as the client holds it, taken when the new node logs a resumed handoff in. */
+function holdWorldForHandoffSweep() {
+  cancelHandoffSweep();
+  handoffHeld = {
+    players: new Set(cache.players),
+    npcs: new Set((cache.npcs ?? []).map((n: any) => n.id)),
+    gather: heldGatherNodes(),
+    seenPlayers: new Set(),
+    seenNpcs: new Set(),
+    timer: null,
+  };
+}
+
+function cancelHandoffSweep() {
+  if (handoffHeld?.timer) clearTimeout(handoffHeld.timer);
+  handoffHeld = null;
+}
+
+/** HANDOFF_DONE: the new node's initial world is on its way; what is still not re-sent after the window is dropped. */
+function startHandoffSweep() {
+  const held = handoffHeld;
+  if (!held || held.timer) return;
+  held.timer = setTimeout(() => {
+    if (handoffHeld !== held) return;
+    handoffHeld = null;
+    for (const player of held.players) {
+      if (!held.seenPlayers.has(player.id) && player.id !== cachedPlayerId) cache.players.delete(player);
+    }
+    if (held.npcs.size > 0 && cache?.npcs) {
+      cache.npcs = cache.npcs.filter((n: any) => !(held.npcs.has(n.id) && !held.seenNpcs.has(n.id)));
+    }
+    dropGatherNodesNotResent(held.gather);
+  }, HANDOFF_SWEEP_MS);
+}
+
+/** The switches followed since the last completed login. */
+function switchCount(): number {
+  try {
+    const count = Number(sessionStorage.getItem(SWITCH_COUNT_KEY));
+    return Number.isFinite(count) && count > 0 ? count : 0;
+  } catch {
+    return inPageSwitchCount;
+  }
+}
+// Where the count is kept when sessionStorage cannot be used: only as long as the page.
+let inPageSwitchCount = 0;
+
+function saveSwitchCount(count: number) {
+  inPageSwitchCount = count;
+  try {
+    sessionStorage.setItem(SWITCH_COUNT_KEY, String(count));
+  } catch {
+    // Storage unavailable: inPageSwitchCount only.
+  }
+}
+
+/** A login completed on a node (or switching was given up): the count starts again. */
+function clearSwitches() {
+  inPageSwitchCount = 0;
+  try {
+    sessionStorage.removeItem(SWITCH_COUNT_KEY);
+  } catch {
+    // Storage unavailable.
+  }
+}
+
+/**
+ * Too many switches in a row: leave the node and show the connection error, without following the SWITCH or
+ * reconnecting (which would only go round again). The count is cleared, so a refresh tries afresh.
+ */
+function stopSwitching() {
+  switchingStopped = true;
+  pauseClusterRefresh();
+  handoffSettle.cancel();
+  cancelKeptWalk();
+  endHandoffGap();
+  closePreOpened(preOpened);
+  clearSwitches();
+  leftBySwitch.add(socket);
+  closeHandled = true;
+  transportReady = false;
+  streamWriter = null;
+  streamReader = null;
+  try {
+    socket.close({ closeCode: 0, reason: "switch" });
+  } catch {
+    // Already closed by the node.
+  }
+  console.error(`Stopped following SWITCH: ${SWITCH_LOOP_LIMIT} switches in a row without a login`);
+  showNotification(
+    `You have been disconnected from the server: too many server switches`,
+    false,
+    true
+  );
+}
+
+/** The next node's transport, or an error once SWITCH_CONNECT_TIMEOUT_MS passes first (a late one is closed). */
+async function openSwitchTransport(server: any, marks?: { cert?: number; ready?: number }): Promise<WebTransport> {
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const opening = openGameTransport(server, marks);
+  opening.then(
+    (late) => {
+      if (!timedOut) return;
+      try {
+        late.close();
+      } catch {
+        // Already closed.
+      }
+    },
+    () => {},
+  );
+  try {
+    return await Promise.race([
+      opening,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          reject(new Error(`The next node did not answer within ${SWITCH_CONNECT_TIMEOUT_MS / 1000}s`));
+        }, SWITCH_CONNECT_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// A handoff the client is walked into (cells phase 7): the next node's session is opened while the player is still
+// walking toward the border (HANDOFF_PREPARE), and idles with no ticket and no login until the SWITCH names the same
+// node. At most one is held; it is closed when unused after HANDOFF_PREOPEN_MS, on HANDOFF_ABORT, and when another
+// prepare names a different node.
+const HANDOFF_PREOPEN_MS = 10_000;
+interface PreOpened {
+  key: string;
+  marks: { cert?: number; ready?: number };
+  opening: Promise<{ transport: WebTransport; stream: WebTransportBidirectionalStream }>;
+  closed: boolean;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+let preOpened: PreOpened | null = null;
+
+function nodeKey(server: any): string {
+  return `${normalizeGameHost(String(server.publicHost))}:${server.wtPort}`;
+}
+
+function closePreOpened(pre: PreOpened | null) {
+  if (!pre) return;
+  pre.closed = true;
+  if (pre.timer) clearTimeout(pre.timer);
+  pre.timer = null;
+  if (preOpened === pre) preOpened = null;
+  pre.opening.then(({ transport }) => {
+    try {
+      transport.close();
+    } catch {
+      // Already closed.
+    }
+  }, () => {});
+}
+
+/** HANDOFF_PREPARE: the node the player is about to be handed to. Its session is opened now and idled. */
+function preOpenNode(data: any) {
+  if (switchingStopped || switchInProgress || isReconnecting || !transportReady) return;
+  const wtPort = Number(data?.wtPort);
+  if (typeof data?.publicHost !== "string" || !data.publicHost || !Number.isFinite(wtPort) || wtPort <= 0) return;
+  const server = { publicHost: data.publicHost, port: data.port, wtPort, useSSL: data.useSSL };
+  const key = nodeKey(server);
+  if (preOpened && preOpened.key === key && !preOpened.closed) {
+    // The same node again: the session is kept, and its time is not extended (the node closes an idle one at 15 s).
+    return;
+  }
+  closePreOpened(preOpened);
+  const marks: { cert?: number; ready?: number } = {};
+  const pre: PreOpened = {
+    key,
+    marks,
+    // The session and its stream; no login frame is sent, so the node holds no player for it.
+    opening: openGameTransport(server, marks).then(async (transport) => ({ transport, stream: await transport.createBidirectionalStream() })),
+    closed: false,
+    timer: null,
+  };
+  pre.timer = setTimeout(() => closePreOpened(pre), HANDOFF_PREOPEN_MS);
+  preOpened = pre;
+  pre.opening.then(({ transport }) => {
+    // The node ended it (its own timeout, a restart): it is not offered at the SWITCH.
+    transport.closed.then(() => { pre.closed = true; }, () => { pre.closed = true; });
+  }, () => {
+    pre.closed = true;
+    if (preOpened === pre) preOpened = null;
+  });
+}
+
+/**
+ * The next node's session for a SWITCH: the pre-opened one when it is to the same node and still open, otherwise a new
+ * one as before. `used` says which.
+ */
+async function transportForSwitch(server: any, handoff: boolean): Promise<{ transport: WebTransport; stream: WebTransportBidirectionalStream | null; used: boolean }> {
+  const pre = preOpened;
+  preOpened = null;
+  if (pre) {
+    if (pre.timer) clearTimeout(pre.timer);
+    pre.timer = null;
+    if (handoff && !pre.closed && pre.key === nodeKey(server)) {
+      try {
+        const ready = await Promise.race([
+          pre.opening,
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("The pre-opened session did not answer")), SWITCH_CONNECT_TIMEOUT_MS)),
+        ]);
+        if (!pre.closed) {
+          if (handoffMarks) {
+            handoffMarks.cert = pre.marks.cert;
+            handoffMarks.ready = pre.marks.ready;
+          }
+          return { transport: ready.transport, stream: ready.stream, used: true };
+        }
+      } catch {
+        // Not usable: a session is opened below.
+      }
+    }
+    pre.closed = true;
+    pre.opening.then(({ transport }) => { try { transport.close(); } catch { /* Already closed. */ } }, () => {});
+  }
+  const marks: { cert?: number; ready?: number } = {};
+  const transport = await openSwitchTransport(server, marks);
+  if (handoffMarks) {
+    handoffMarks.cert = marks.cert;
+    handoffMarks.ready = marks.ready;
+  }
+  return { transport, stream: null, used: false };
+}
+
+// The times of one handoff on the client (performance.now()), printed at the first position from the new node.
+interface HandoffMarks {
+  switch_rx: number;
+  cert?: number;
+  ready?: number;
+  auth_sent?: number;
+  handoff_done?: number;
+  first_pos?: number;
+  preopened: boolean;
+  printTimer?: ReturnType<typeof setTimeout>;
+}
+let handoffMarks: HandoffMarks | null = null;
+
+/** Prints the line of marks (ms since the SWITCH arrived; 0: done before it, by the pre-opened session or the kept hash). */
+function printHandoffMarks() {
+  const m = handoffMarks;
+  if (!m) return;
+  handoffMarks = null;
+  if (m.printTimer) clearTimeout(m.printTimer);
+  const since = (t: number | undefined) => (t === undefined ? "n/a" : String(Math.max(0, Math.round(t - m.switch_rx))));
+  console.debug(
+    `[handoff] client switch_rx->cert/wt_ready/auth_sent/handoff_done/first_pos ms: ${since(m.cert)}/${since(m.ready)}/${since(m.auth_sent)}/${since(m.handoff_done)}/${since(m.first_pos)}` +
+      ` | pre-opened session ${m.preopened ? "used" : "not used"}`,
+  );
+}
+
+/** The first position of the player from the new node after HANDOFF_DONE. */
+function noteFirstPosition() {
+  const m = handoffMarks;
+  if (!m || m.handoff_done === undefined || m.first_pos !== undefined) return;
+  m.first_pos = performance.now();
+  printHandoffMarks();
+}
+
+// The walk the client predicts between the SWITCH and HANDOFF_DONE (core/handoffwalk.ts, drawn by renderer.ts).
+let handoffGap = false;
+let handoffGapAt = 0;
+// The fallback of a kept walk at HANDOFF_DONE (handoffwalk.ts): cancelled by a new switch, a closed socket and a real echo.
+const handoffSettle = new HandoffSettle();
+// The new node's echoes after a kept walk continue the predicted samples' timeline (handoffwalk.ts keptWalkShift).
+const keptWalkDating = new KeptWalkDating();
+// The local player's drawn position for a second after a handoff in which the client walked it (handoffwalk.ts HandoffPace, drawn by renderer.ts).
+const handoffPace = new HandoffPace();
+/** The dating ends (a switch, a closed socket, a map load, a reseed): the spots it held in the local player's samples are let go. */
+function cancelKeptWalk() {
+  keptWalkDating.cancel();
+  handoffPace.release();
+  const own: any = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
+  clearHeld(own?.moveSamples);
+}
+// The player was walking when the SWITCH came: the new node resumes that walk, so a key let go in the gap is told to it.
+let walkedAtSwitch = false;
+// The direction the player was known to walk in at the SWITCH (resumesend.ts): the new node resumes it by itself.
+let walkDirectionAtSwitch = "";
+
+/** The local player is being handed to another node and is walked on by the client for now. */
+function getHandoffGap(): boolean {
+  return handoffGap && performance.now() - handoffGapAt < MAX_PREDICT_MS;
+}
+
+function endHandoffGap() {
+  handoffGap = false;
+}
+
+async function switchNode(data: any) {
+  const ticket = data?.ticket;
+  if (switchingStopped || switchInProgress || isReconnecting || !ticket?.token || !data?.publicHost || !data?.wtPort) return;
+  // A handoff is the node following the player across a border: it is not a switch loop, and is not counted.
+  const handoff = data?.handoff === true;
+  // The old node's overlay answer is not shown any longer, and its poll waits for the new node.
+  // A handoff keeps the grid drawn (the next answer replaces it), so the overlay does not go blank; another switch clears it.
+  pauseClusterRefresh(handoff);
+  handoffSettle.cancel();
+  cancelKeptWalk();
+  if (handoff) {
+    handoffMarks = { switch_rx: performance.now(), preopened: false };
+    // The local player is walked on (renderer.ts) until the new node has them; a held key keeps its direction.
+    handoffGap = data?.resume === true;
+    handoffGapAt = performance.now();
+    walkedAtSwitch = getIsMoving() || getIsKeyPressed();
+    const own: any = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
+    walkDirectionAtSwitch = walkAtSwitch(pressedKeys, getStickDirection(), own?.lastServerUpdate, performance.now());
+  } else {
+    handoffMarks = null;
+    endHandoffGap();
+  }
+  if (!handoff) {
+    const switches = switchCount();
+    if (switches >= SWITCH_LOOP_LIMIT) {
+      stopSwitching();
+      return;
+    }
+    saveSwitchCount(switches + 1);
+    // A plain switch is a full login, even when an earlier resumed handoff never finished.
+    handoffResume = false;
+    // No gap here (the old node is left at once): the next node's clock is learned afresh. A handoff does it at
+    // HANDOFF_DONE instead, since its gap is drawn with the old lateness.
+    resetClockEpoch();
+  } else {
+    handoffResume = data?.resume === true;
+    // The old node no longer takes moves; the new one lets the player move at HANDOFF_DONE (or after LOAD_MAP).
+    movementAllowed = false;
+  }
+  switchInProgress = true;
+  switchesStarted++;
+
+  // Nothing more is sent to or read from the node being left.
+  leftBySwitch.add(socket);
+  closeHandled = true;
+  transportReady = false;
+  streamWriter = null;
+  streamReader = null;
+  try {
+    socket.close({ closeCode: 0, reason: "switch" });
+  } catch {
+    // Already closed by the node.
+  }
+
+  // The ticket in the packet is for the next node: no new one is asked of the gateway.
+  connectionToken = ticket;
+  let failed = false;
+  try {
+    const opened = await transportForSwitch({ publicHost: data.publicHost, port: data.port, wtPort: data.wtPort, useSSL: data.useSSL }, handoff);
+    const next = opened.transport;
+    if (handoffMarks) handoffMarks.preopened = opened.used;
+    socket = next;
+    // A node that refuses the ticket closes the session: that ends the switch at once, not at the auth timeout.
+    const closedFirst = next.closed.then(
+      () => { throw new Error("The next node closed the session"); },
+      () => { throw new Error("The next node closed the session"); },
+    );
+    closedFirst.catch(() => {});
+    await Promise.race([setupTransport(opened.stream), closedFirst]);
+  } catch (error: any) {
+    console.error("Switching to the next node failed:", error?.name, error?.message ?? error);
+    failed = true;
+  } finally {
+    switchInProgress = false;
+  }
+
+  if (failed) {
+    endHandoffGap();
+    handoffMarks = null;
+    // The usual way back in, with a new ticket from the gateway.
+    closeHandled = true;
+    transportReady = false;
+    try {
+      socket.close();
+    } catch {
+      // Never opened, or already closed.
+    }
+    // The way back in is a full login: nothing is resumed.
+    handoffResume = false;
+    await reconnectOrNotify(1000);
+  }
+}
+
 async function handleSocketClose(info: any) {
 
   if (closeHandled) return;
   closeHandled = true;
+  // No node answers any more: the overlay's poll waits and its old answer is not drawn.
+  pauseClusterRefresh();
+  handoffSettle.cancel();
+  cancelKeptWalk();
+  endHandoffGap();
+  closePreOpened(preOpened);
 
   progressBarContainer.style.display = "none";
 
@@ -986,6 +1497,18 @@ async function handleSocketClose(info: any) {
   const parsed = decodeCloseReason(info?.reason || "");
   const displayCode = parsed.code !== 0 && parsed.code !== 1 ? parsed.code : rawCode;
   const wasUnexpected = rawCode !== 0;
+
+  // The node closed for a SWITCH that is not read yet: the switch connects again. Without one, it is a lost connection.
+  if (parsed.reason === "switch") {
+    const switchesBefore = switchesStarted;
+    const deadline = Date.now() + SWITCH_PACKET_WAIT_MS;
+    while (switchesStarted === switchesBefore && !switchingStopped && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    // A switch loop (stopSwitching) has already shown its error.
+    if (switchesStarted === switchesBefore && !switchingStopped) await reconnectOrNotify(displayCode);
+    return;
+  }
 
   if (wasUnexpected && config.GATEWAY_ENABLED === 'true') {
     await attemptReconnect(displayCode);
@@ -1028,6 +1551,19 @@ async function attemptReconnect(displayCode: number) {
   );
 }
 
+// A switch that did not happen: reconnecting through the gateway where it is enabled, as for any lost connection.
+async function reconnectOrNotify(displayCode: number) {
+  if (config.GATEWAY_ENABLED === 'true') {
+    await attemptReconnect(displayCode);
+  } else {
+    showNotification(
+      `You have been disconnected from the server: ${displayCode}`,
+      false,
+      true
+    );
+  }
+}
+
 async function handleLoadPlayersPacket(data: any) {
 
   if (loadPlayersProcessing) {
@@ -1054,6 +1590,7 @@ async function handleLoadPlayersPacket(data: any) {
     const playerArray = Array.isArray(players) ? players : [];
 
     for (const player of playerArray) {
+      handoffHeld?.seenPlayers.add(player.id);
       const existingByUsername = Array.from(cache.players).find(
         (p) => p.username === player.username && p.userid === player.userid
       );
@@ -1260,6 +1797,12 @@ function decodeIncomingBytes(bytes: Uint8Array): { type: string; data: any; enve
     return { type: "BATCH_MOVEXY", data: bytes, envelope: null };
   } else if (FIRST_BYTE === 0x02) {
     return { type: "MOVEXY", data: bytes, envelope: null };
+  } else if (FIRST_BYTE === CREATURE_MOVE_HEADER) {
+    // Binary creature moves: the same entries as the JSON packet, handled by its case.
+    return { type: "CREATURE_MOVE", data: { c: decodeCreatureMoves(bytes) }, envelope: null };
+  } else if (FIRST_BYTE === POSE_DATAGRAM_HEADER) {
+    // Viewer pose changes by datagram: the bytes go to applyPoseDatagram as they are.
+    return { type: "SPRITE_SHEET_POSE_DATAGRAM", data: bytes, envelope: null };
   }
 
   try {
@@ -1275,15 +1818,19 @@ function decodeIncomingBytes(bytes: Uint8Array): { type: string; data: any; enve
 }
 
 async function receiveLoop() {
-  if (!streamReader) return;
+  // This session's stream: after a SWITCH the module's reader is the next node's, and this loop ends.
+  const reader = streamReader;
+  const decoder = streamDecoder;
+  if (!reader) return;
 
   try {
     while (true) {
-      const { value, done } = await streamReader.read();
+      const { value, done } = await reader.read();
       if (done) break;
 
-      const frames = streamDecoder.push(new Uint8Array(value));
+      const frames = decoder.push(new Uint8Array(value));
       for (const frame of frames) {
+        if (reader !== streamReader) return;
         try {
           const decoded = decodeIncomingBytes(frame);
           await dispatchMessage(decoded.type, decoded.data, frame, decoded.envelope);
@@ -1302,11 +1849,14 @@ async function receiveLoop() {
 }
 
 async function receiveDatagrams() {
+  const transport = socket;
   try {
-    const reader = socket.datagrams.readable.getReader();
+    const reader = transport.datagrams.readable.getReader();
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
+      // Left by a SWITCH: the next node's datagrams are read by its own loop.
+      if (transport !== socket) break;
 
       const bytes = new Uint8Array(value);
       try {
@@ -1339,7 +1889,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       // One-way push driving time of day. There is no reply: the server
       // refreshes each player's idle timestamp from any inbound packet.
       if (!data) return;
-      updateTime(data, envelope?.utcOffset);
+      updateTime(data, envelope?.utcOffset, inHandoffWindow());
       break;
     }
     case "EDITOR_TILE_EDIT": {
@@ -1472,6 +2022,9 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         (window as any).__pendingWeather = data;
         break;
       }
+      // The node that took the player over repeats the weather the client shows: nothing to apply or redraw.
+      if (skipSameWeather(appliedWeatherKey, data, inHandoffWindow())) break;
+      appliedWeatherKey = weatherKey(data);
       setHasWeather(true);
       setWeatherType(data.weather);
       setStormAmbience(data.weather === "thunderstorm", data.weatherData?.ambience);
@@ -1481,6 +2034,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     }
     case "CHANGE_WEATHER": {
       if (!data || !data.weather) return;
+      appliedWeatherKey = weatherKey(data);
       const weatherEl = document.getElementById('weather') as HTMLCanvasElement;
       // The same weather with new values (a save in the weather editor, a new reading of the real weather) is
       // taken as it comes; only a change of weather fades out and in.
@@ -2077,6 +2631,28 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       }
       break;
     }
+    case "SPRITE_SHEET_POSE": {
+      // A pose change on sheets this client holds. Without them the packet is dropped: the server sends the full sheets
+      // whenever they are new or changed.
+      try {
+        const { changeLayeredAnimation } = await import('./layeredAnimation.js');
+        await applyPoseUpdate(cache.players, cache.pendingPlayers, data?.id, data?.animationState, changeLayeredAnimation, data?.poseRev, true);
+      } catch (error) {
+        console.error("Error handling sprite sheet pose update:", error);
+      }
+      break;
+    }
+    case "SPRITE_SHEET_POSE_DATAGRAM": {
+      // The same pose as above, by datagram, with the player's pose revision: applied only if newer than the one shown.
+      // Not awaited past the revision check: the datagram loop also carries the movement datagrams.
+      try {
+        const { changeLayeredAnimation } = await import('./layeredAnimation.js');
+        void applyPoseDatagram(data, cache.players, cache.pendingPlayers, changeLayeredAnimation);
+      } catch (error) {
+        console.error("Error handling sprite sheet pose datagram:", error);
+      }
+      break;
+    }
     case "SPRITE_SHEET_ANIMATION": {
       try {
 
@@ -2115,9 +2691,10 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
           if (player) {
 
+            const poseSeen = poseMark(player, data.poseRev);
             const { initializeLayeredAnimation, changeLayeredAnimation } = await import('./layeredAnimation.js');
 
-            let animationState = data.animationState || 'idle';
+            let animationState = sheetPoseState(player, data.poseRev, data.animationState || 'idle');
 
             if (animationState.includes('_')) {
               const direction = animationState.split('_')[1];
@@ -2203,6 +2780,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
               }
             }
 
+            await reapplyPose(player, poseSeen, changeLayeredAnimation);
             player.animation = null;
 
             if (data.id === cachedPlayerId) {
@@ -2272,9 +2850,10 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
           if (targetPlayer) {
 
+            const poseSeen = poseMark(targetPlayer, animationData.poseRev);
             const { initializeLayeredAnimation, changeLayeredAnimation } = await import('./layeredAnimation.js');
 
-            let animationState = animationData.animationState || 'idle';
+            let animationState = sheetPoseState(targetPlayer, animationData.poseRev, animationData.animationState || 'idle');
 
             if (animationState.includes('_')) {
               const direction = animationState.split('_')[1];
@@ -2318,6 +2897,8 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
               await changeLayeredAnimation(targetPlayer.layeredAnimation, animationState);
             }
 
+            await reapplyPose(targetPlayer, poseSeen, changeLayeredAnimation);
+
             if (cache.pendingPlayers && cache.pendingPlayers.has(animationData.id)) {
               cache.pendingPlayers.delete(animationData.id);
               cache.players.add(targetPlayer);
@@ -2351,6 +2932,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
       await isLoaded();
 
+      handoffHeld?.seenPlayers.add(data.id);
       const existingByUsername = Array.from(cache.players).find(
         (p) => p.username === data.username && p.userid === data.userid
       );
@@ -2371,12 +2953,31 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
             delete (window as any).__pendingWeather;
           }
         }
+        // (a self spawn through here is consumed too: the guard is for the existing player only)
+        if (data.id === cachedPlayerId) lastHandoffDoneAt = null;
         await createPlayer(data);
       } else if (existingByUsername) {
         cache.onlinePlayers.add(data.username.toLowerCase());
         updateGuildMemberOnlineStatus(data.username, true);
         updatePartyMemberOnlineStatus(data.username, true);
         // Update existing player instead of recreating to avoid duplicates
+        const selfSpawn = data.id === cachedPlayerId
+          ? planSelfSpawn({
+            doneAt: lastHandoffDoneAt,
+            now: performance.now(),
+            doneMap: lastHandoffDoneMap,
+            spawnMap: data.location?.map ?? null,
+            position: existingByUsername.position ? { x: existingByUsername.position.x, y: existingByUsername.position.y } : null,
+            spawnPoint: data.location ? { x: Number(data.location.x), y: Number(data.location.y) } : null,
+            oldSprites: existingByUsername.spriteData,
+            newSprites: data.spriteData,
+            currentPose: existingByUsername.layeredAnimation?.currentAnimationName,
+            lastDirection: existingByUsername.lastDirection,
+            moveHeld: getIsKeyPressed() || !!getStickDirection(),
+          })
+          : { snap: true, rebuild: true, keepPose: null };
+        // One-shot: only the first self spawn after HANDOFF_DONE is the handoff's own.
+        if (data.id === cachedPlayerId) lastHandoffDoneAt = null;
         Object.assign(existingByUsername, data);
         // Update sprite data if provided
         if (data.spriteData) {
@@ -2385,8 +2986,9 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
             existingByUsername.lastDirection = data.spriteData.animationState.split('_')[1];
           }
           // Re-initialize layered animation for the self-player to ensure armor layers are loaded
-          if (data.id === cachedPlayerId) {
-            const { initializeLayeredAnimation } = await import('./layeredAnimation.js');
+          if (data.id === cachedPlayerId && selfSpawn.rebuild) {
+            const { initializeLayeredAnimation, changeLayeredAnimation } = await import('./layeredAnimation.js');
+            const poseSeen = poseMark(existingByUsername);
             try {
               existingByUsername.layeredAnimation = await initializeLayeredAnimation(
                 data.spriteData.mountSprite || null,
@@ -2400,15 +3002,18 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
                 data.spriteData.armorFeetSprite || null,
                 data.spriteData.armorLegsSprite || null,
                 data.spriteData.armorWeaponSprite || null,
-                data.spriteData.animationState || 'idle'
+                selfSpawn.keepPose || data.spriteData.animationState || 'idle'
               );
+              // Right after a handoff the pose from before the rebuild stands; a pose that arrived meanwhile wins.
+              await reapplyPose(existingByUsername, poseSeen, changeLayeredAnimation);
             } catch (e) {
               console.error("Error initializing layered animation:", e);
             }
           }
         }
-        // Sync position fields that Object.assign doesn't remap from data.location
-        if (data.location) {
+        // Sync position fields that Object.assign doesn't remap from data.location (not right after a handoff: the
+        // local position comes from HANDOFF_DONE and the echoes, and this spawn carries an older point)
+        if (data.location && selfSpawn.snap) {
           existingByUsername.position.x = Math.round(data.location.x);
           existingByUsername.position.y = Math.round(data.location.y);
           existingByUsername.serverPosition.x = Math.round(data.location.x);
@@ -2485,6 +3090,109 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     }
     case "RECONNECT": {
       window.location.reload();
+      break;
+    }
+    case "SWITCH": {
+      // Not waited for: the next node's packets are read by a new loop while this one ends.
+      lastHandoffDoneAt = null;
+      lastHandoffDoneStamp = null;
+      void switchNode(data);
+      break;
+    }
+    case "HANDOFF_PREPARE": {
+      // The player walks toward a border: the next node's session is opened now and idled.
+      preOpenNode(data);
+      break;
+    }
+    case "HANDOFF_ABORT": {
+      // The handoff will not happen soon: the session opened for it is closed.
+      closePreOpened(preOpened);
+      break;
+    }
+    case "HANDOFF_DONE": {
+      // The new node took the player over with the world as the client has it (cells phase 6).
+      clearSwitches();
+      handoffResume = false;
+      lastHandoffDoneAt = performance.now();
+      lastHandoffDoneMap = typeof data?.map === "string" ? data.map : null;
+      lastHandoffDoneStamp = performance.now();
+      if (handoffMarks) {
+        handoffMarks.handoff_done = performance.now();
+        // A player who stands has no position to wait for: the line is printed anyway.
+        const marks = handoffMarks;
+        marks.printTimer = setTimeout(() => { if (handoffMarks === marks) printHandoffMarks(); }, 3000);
+      }
+      const predicting = getHandoffGap();
+      endHandoffGap();
+      // The new node's clock reads differently from the old one's: its send times are learned afresh (movementsmoothing.ts).
+      resetClockEpoch();
+      requestClusterRefresh();
+      const self = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
+      const x = Math.round(Number(data?.x));
+      const y = Math.round(Number(data?.y));
+      // Drawn where the client walked the player to: that difference is eased out, not snapped, unless it is large.
+      const shown = self?.renderPosition ? { x: self.renderPosition.x, y: self.renderPosition.y } : null;
+      if (self && Number.isFinite(x) && Number.isFinite(y)) {
+        // A player the client walked through the gap and who still moves keeps the drawn position and the samples: the new
+        // node's next echoes continue them (no rewrite, no ease), so the draw has no jump. Else the node's point is taken.
+        // Decided from the walked position, not the drawn one, which trails it by the playback delay (handoffwalk.ts).
+        const moving = getIsKeyPressed() || !!getStickDirection();
+        const keep = planHandoffDone(predicting, moving, self, { x, y }, hasAnchor(self.moveSamples)) === "keep";
+        self.serverPosition.x = x;
+        self.serverPosition.y = y;
+        if (keep) {
+          self.handoffWalk = undefined;
+          self.handoffEase = undefined;
+          // No echo may follow (the key was let go at once): the node's point is then taken, eased.
+          handoffSettle.arm(self, x, y);
+          keptWalkDating.arm(performance.now());
+        } else {
+          cancelKeptWalk();
+          self.position.x = x;
+          self.position.y = y;
+          if (self.renderPosition) {
+            self.renderPosition.x = x;
+            self.renderPosition.y = y;
+          }
+          // Seeded with the point, older than the first echoes, so they are not dropped as older than a frame sample.
+          self.moveSamples = seedSamples(x, y, performance.now());
+        }
+        // The draw was walked ahead of the node (it stood the player through the gap): kept or reseeded, it goes on at the walking
+        // pace until the node's draw passes it, instead of standing (kept) or stepping back and bursting (reseeded).
+        const paceFrom = planPaceArm(predicting, moving, shown);
+        if (paceFrom) handoffPace.arm(performance.now(), paceFrom);
+        // Lower case, as the animation names are built from it; anything but one of the eight directions is ignored.
+        const direction = typeof data?.direction === "string" ? data.direction.toLowerCase() : "";
+        if (["up", "down", "left", "right", "upleft", "upright", "downleft", "downright"].includes(direction)) {
+          self.lastDirection = direction;
+        }
+        self.lastServerUpdate = performance.now();
+        positionText.innerText = `Position: ${x}, ${y}`;
+        if (!keep && predicting && shown) startEase(self, shown, { x, y }, performance.now());
+      }
+      movementAllowed = true;
+      // The new node resumed the walk the player had at the SWITCH. A key let go in the gap is told to it now; a key
+      // still held is sent by the renderer's next frame (movementAllowed was false, so its last sent direction is empty).
+      // A stick still held keeps walking: its direction is sent, never a stop. Where the walk is known to be resumed in
+      // the direction held, nothing is sent: a repeated move would restart the node's mover and unsettle its steps
+      // (resumesend.ts); the last sent direction is set as if it had been sent, so the next real change is sent.
+      const send = doneSend({
+        atSwitch: walkDirectionAtSwitch,
+        keyPressed: getIsKeyPressed(),
+        keyDirection: heldDirection(pressedKeys),
+        stick: getStickDirection(),
+        facing: doneFacing(data?.direction),
+        walkedAtSwitch,
+        // The direction the node walks the player in (from an engine that says it); else the facing decides, as before.
+        walk: doneWalk(data?.walk),
+      });
+      if (send.send !== null) sendRequest({ type: "MOVEXY", data: send.send });
+      if (send.lastSent !== null) setLastSentDirection(send.lastSent);
+      if (send.keyResumed !== null) setDirection(send.keyResumed);
+      walkedAtSwitch = false;
+      walkDirectionAtSwitch = "";
+      // The new node's players, NPCs and gather nodes follow; what it does not send is dropped after a short window.
+      startHandoffSweep();
       break;
     }
     case "LOAD_PLAYERS": {
@@ -2800,6 +3508,10 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       import("./creatureeditor.js").then((m) => m.default.onDebug(data));
       break;
     }
+    case "CLUSTER_DEBUG_DATA": {
+      applyClusterDebug(data);
+      break;
+    }
     case "CREATURE_TARGETED": {
       if (typeof data?.id !== "number") break;
       cache.players.forEach((player) => {
@@ -2916,7 +3628,18 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         // a teleport-sized jump snaps there instead of gliding. An out-of-order
         // step older than one already applied is dropped.
         const sentAt = typeof data.t === "number" ? data.t : null;
-        if (!pushSample(player.moveSamples ??= [], sx, sy, sampleTime(sentAt))) break;
+        // The local player's walk through a handoff gap may hold predicted steps newer than this echo: they are replaced.
+        // After a kept walk the local player's echoes are dated to continue the predicted samples, not after them (a ghost walks
+        // at the mounted speed, as the engine's MOVEXY steps it).
+        const echoAt = playerId == cachedPlayerId
+          ? keptWalkDating.date(player.moveSamples ??= [], sx, sy, sampleTime(sentAt), performance.now(), { renderAt: lastRenderTime(), headroom: renderHeadroom(), offset: getClockOffset() }, player.lastDirection, player.mounted === true || player.isGhost === true)
+          : sampleTime(sentAt);
+        // (the point is the drawn spot while the draw is past a kept walk's first echoes: it waits there, never steps back)
+        const drawnPoint = playerId == cachedPlayerId ? keptWalkDating.point(sx, sy) : { x: sx, y: sy, held: false, until: 0 };
+        if (!pushEcho(player.moveSamples ??= [], drawnPoint.x, drawnPoint.y, echoAt)) break;
+        if (drawnPoint.held) Object.assign(player.moveSamples[player.moveSamples.length - 1], { held: true, heldUntil: drawnPoint.until });
+        // (A held echo leaves the settle armed: it is not the node's walk shown yet.)
+        if (playerId == cachedPlayerId && !drawnPoint.held) handoffSettle.cancel();
         player.serverPosition.x = sx;
         player.serverPosition.y = sy;
         player.lastServerUpdate = performance.now();
@@ -2925,6 +3648,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
         if (playerId == cachedPlayerId) {
           positionText.innerText = `Position: ${player.serverPosition.x}, ${player.serverPosition.y}`;
+          noteFirstPosition();
         }
       } else if (!snapshotApplied) {
         pendingMovements.push({ id: playerId, _data: moveData, revision: data.r || 0 });
@@ -3002,6 +3726,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
       // One timeline point for the whole batch: every entry was sent together.
       const batchTime = movements.length > 0 ? sampleTime(batchSentAt) : 0;
+      if (movements.length > 0) noteBatch(batchTime);
 
       for (const movement of movements) {
 
@@ -3067,6 +3792,21 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     }
     case "LOAD_MAP":
       {
+        // The node took the login (a SWITCH comes before this): the switches that led here were not a loop.
+        lastHandoffDoneAt = null;
+        lastHandoffDoneStamp = null;
+        clearSwitches();
+        endHandoffGap();
+        cancelKeptWalk();
+        printHandoffMarks();
+        requestClusterRefresh();
+        cancelHandoffSweep();
+        // The new node could not resume the handoff (it sends LOAD_MAP instead of HANDOFF_DONE): a full login.
+        if (handoffResume) {
+          handoffResume = false;
+          resetClockEpoch();
+          resetWorldForLogin();
+        }
         // a different map: the world map view (worldmap.ts) closes and loads the new map's image next time
         import("./worldmap.js").then((m) => m.closeWorldMap());
         const isTransition = loaded;
@@ -3086,6 +3826,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
         if (isTransition) {
           (window as any).__pendingWeather = null;
+          appliedWeatherKey = null;
 
           const mapName = data?.name || '';
           const tw = data?.tilewidth || 32;
@@ -3225,7 +3966,10 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       {
         const connectionId = data;
         const chatDecryptionKey = envelope?.["chatDecryptionKey"];
+        // The server's movement tick rate, which movement smoothing is timed by (30 Hz if it does not say).
+        setServerTickRate(envelope?.["tickRate"]);
         sessionStorage.setItem("connectionId", connectionId);
+        const cachedPlayerIdBefore = cachedPlayerId;
         cachedPlayerId = connectionId;
         // Also where the modules that do not import this one look for it (tooltip.ts, npceditor.ts). It was read
         // there and never set, so both found no player: an item's level was checked against level 1, and the NPC
@@ -3233,20 +3977,15 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         (window as any).cachedPlayerId = connectionId;
         sessionActive = true;
 
-        if (cache?.players) {
-          cache.players.clear();
+        // A resumed handoff keeps the world: the new node gave this connection the same id.
+        if (handoffResume && connectionId === cachedPlayerIdBefore) {
+          holdWorldForHandoffSweep();
+        } else {
+          resetWorldForLogin();
+          // Not the resume the node announced (another id): this is a full login.
+          if (handoffResume) resetClockEpoch();
+          handoffResume = false;
         }
-        // Fresh login: drop any stale death UI. The spawn snapshot below
-        // re-applies the persisted phase, if any.
-        clearSelfDeath();
-
-        snapshotRevision = null;
-        snapshotApplied = false;
-        animationUpdateBuffer = [];
-        pendingMovements = [];
-        pendingSpriteAnimations = [];
-        pendingSpriteAnimations = [];
-        import("./skeletons.js").then((m) => m.clearSkeletons());
 
         const sessionToken = getCookie("token");
         if (!sessionToken) {
@@ -5313,7 +6052,7 @@ window.addEventListener('beforeunload', () => {
   flushInventorySlots();
 });
 
-export { sendRequest, cachedPlayerId, getIsLoaded, getMovementAllowed, itemsByName, showNotification };
+export { sendRequest, cachedPlayerId, getIsLoaded, getMovementAllowed, getHandoffGap, handoffPace, itemsByName, showNotification };
 (window as any).itemsByName = itemsByName;
 
 
@@ -5332,6 +6071,7 @@ function addStreamedNpc(npcData: any) {
     preloadedNpcs.set(key, held);
     return;
   }
+  handoffHeld?.seenNpcs.add(npcData.id);
   if (cache.npcs.some((n: any) => n.id === npcData.id)) return;
   if (npcData.particles) {
     npcData.particles = resolveParticles(npcData.particles);

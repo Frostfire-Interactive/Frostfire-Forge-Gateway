@@ -21,9 +21,8 @@ const log = {
     const timestamp = log.timestamp();
 
     const _folder = path.join(import.meta.dir, "..", "logs");
-    if (!fs.existsSync(_folder)) {
-      fs.mkdirSync(_folder);
-    }
+    // recursive: the webserver and gateway processes start together and may both create it
+    fs.mkdirSync(_folder, { recursive: true });
 
     const _file = path.join(import.meta.dir, "..", "logs", `${log.date()}.log`);
 

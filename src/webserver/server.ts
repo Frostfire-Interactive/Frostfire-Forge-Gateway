@@ -13,6 +13,7 @@ import { getDocsManifest, getDocsPage, getDocsSearchIndex } from "../services/do
 import { DOCS_ENABLED, docsNotFound } from "../modules/docs_switch";
 import { startSubscriptions, getSubscriptionInfo, createCheckout, createPortal, processStripeWebhook, type Reply } from "../systems/subscription";
 import { RateLimit, tooMany } from "../modules/ratelimit";
+import { HerdSpread, fetchGatewayRoute, pickRegionNode as pickNode, savedPointOf, type SavedPoint } from "./regionpick";
 
 const settings = {
   guest_mode: {
@@ -284,6 +285,49 @@ function redirectToGateway(req: Request) {
   return Response.redirect(`${ssl ? "https" : "http"}://${hostname}:${port}/dashboard`, 302);
 }
 
+// The gateway registry's /status: every registered game server and, in cluster mode, the regions they collapse into.
+function gatewayInternalUrl(): string {
+  const gatewayPort = process.env.GATEWAY_INTERNAL_PORT || "9998";
+  return getInternalBaseUrl(
+    parseInt(gatewayPort),
+    process.env.TLS_CERT_PATH,
+    process.env.TLS_KEY_PATH
+  );
+}
+
+async function fetchGatewayStatus(): Promise<any> {
+  const gatewayUrl = gatewayInternalUrl();
+
+  const response = await serverFetch(`${gatewayUrl}/status`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Gateway returned status ${response.status}`);
+  }
+
+  return response.json();
+}
+
+// The gateway's /route (regionpick.ts): the key is the one game servers use with the gateway, sent in a header.
+const askGatewayRoute = (realm: string, point: SavedPoint, signal: AbortSignal) =>
+  fetchGatewayRoute({ fetch: serverFetch, base: gatewayInternalUrl(), key: process.env.GATEWAY_AUTH_KEY }, realm, point, signal);
+
+const regionHerd = new HerdSpread();
+
+// When `realm` names a cluster region: the online node that owns the account's saved point, else its online node with
+// the fewest connections (regionpick.ts), which the ticket is bound to.
+// null for any other realm (the ticket is not bound); "unavailable" for a region with no online node.
+function pickRegionNode(realm: string | null, saved: SavedPoint | null = null): Promise<any | null | "unavailable"> {
+  return pickNode(realm, saved, {
+    fetchStatus: fetchGatewayStatus,
+    fetchRoute: askGatewayRoute,
+    herd: regionHerd,
+    warn: (message) => log.warn(message),
+  });
+}
+
 const routes = {
   "/status":(req: Request) => new Response(JSON.stringify({ status: "ok" }), { status: 200, headers: { "Content-Type": "application/json" } }),
   "/service-worker.js": (req: Request) => new Response(service_worker_js, { status: 200, headers: { "Content-Type": "application/javascript", "Cache-Control": "max-age=3600" } }),
@@ -330,26 +374,17 @@ const routes = {
     GET: async () => {
       try {
 
-        const gatewayPort = process.env.GATEWAY_INTERNAL_PORT || "9998";
-        const gatewayUrl = getInternalBaseUrl(
-          parseInt(gatewayPort),
-          process.env.TLS_CERT_PATH,
-          process.env.TLS_KEY_PATH
-        );
-
-        const response = await serverFetch(`${gatewayUrl}/status`, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-        });
-
-        if (!response.ok) {
-          throw new Error(`Gateway returned status ${response.status}`);
-        }
-
-        const data = await response.json();
+        const data = await fetchGatewayStatus();
+        // A cluster region is one realm: its entry stands in for the nodes that serve it (and for any server that
+        // shares its id, so no id is listed twice).
+        const regions = Array.isArray(data.regions) ? data.regions : [];
+        const regionIds = new Set(regions.map((region: any) => region.id));
+        const servers = regions.length > 0
+          ? [...(data.servers || []).filter((server: any) => !server.regionId && !regionIds.has(server.id)), ...regions]
+          : data.servers || [];
 
         return new Response(JSON.stringify({
-          servers: data.servers || []
+          servers
         }), {
           status: 200,
           headers: { "Content-Type": "application/json" }
@@ -392,7 +427,14 @@ const routes = {
             headers: { "Content-Type": "application/json" }
           });
         }
-        const accountRow = await query("SELECT email_verified, guest_mode FROM accounts WHERE username = ? LIMIT 1", [username]) as any[];
+        // The saved point is read with the rest: it names the node a cluster realm sends this login to. A database
+        // without those columns is read as before and sends the login to the least-loaded node.
+        let accountRow: any[];
+        try {
+          accountRow = await query("SELECT email_verified, guest_mode, map, position, is_dead, corpse_map, corpse_x, corpse_y FROM accounts WHERE username = ? LIMIT 1", [username]) as any[];
+        } catch {
+          accountRow = await query("SELECT email_verified, guest_mode FROM accounts WHERE username = ? LIMIT 1", [username]) as any[];
+        }
         // Guests are made and logged in here without an e-mail to verify.
         if (accountRow[0]?.email_verified !== 1 && accountRow[0]?.guest_mode !== 1) {
           return new Response(JSON.stringify({
@@ -430,9 +472,20 @@ const routes = {
             headers: { "Content-Type": "application/json" }
           });
         }
+        // A ticket for a cluster region is for one node of it: the node id is signed with the rest (the engine's
+        // ticketPayload appends it only when it is set) and the client connects to that node.
+        const node = await pickRegionNode(tryParseURL(req.url)?.searchParams.get("realm") ?? null, savedPointOf(accountRow[0]));
+        if (node === "unavailable") {
+          return new Response(JSON.stringify({
+            message: "No server of this realm is available"
+          }), {
+            status: 503,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
         const signature = crypto
           .createHmac("sha256", sharedSecret)
-          .update(`${token}:${timestamp}:${expiresAt}:${origin}:${account}`)
+          .update(`${token}:${timestamp}:${expiresAt}:${origin}:${account}${node ? `:${node.nodeId}` : ""}`)
           .digest("hex");
 
         return new Response(JSON.stringify({
@@ -441,7 +494,11 @@ const routes = {
           expiresAt,
           signature,
           origin,
-          account
+          account,
+          ...(node ? {
+            nodeId: node.nodeId,
+            node: { publicHost: node.publicHost, port: node.port, wtPort: node.wtPort, useSSL: node.useSSL }
+          } : {})
         }), {
           status: 200,
           headers: { "Content-Type": "application/json" }

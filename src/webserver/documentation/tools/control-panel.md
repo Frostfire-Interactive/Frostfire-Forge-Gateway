@@ -77,7 +77,7 @@ The status pill reads one of:
 | Connecting | Waiting for the first answer |
 | No access | The server refused this account |
 
-The panel refreshes itself every 5 seconds.
+The panel refreshes itself regularly.
 
 ## Dashboard
 
@@ -211,7 +211,7 @@ Weathers themselves are made in the [Weather Editor](#/tools/weather-editor).
 A chest is filled in one of two ways:
 
 - **From a loot table.** The chest rolls what it holds from the table when it is opened.
-- **With chosen items.** You list the rows yourself, up to 20, each with an item, the fewest and most that drop, and a chance in percent.
+- **With chosen items.** You list the rows yourself, each with an item, the fewest and most that drop, and a chance in percent.
 
 Each row of a loot table has an item, the fewest and most that drop, a chance in percent and a quality (common, uncommon, rare, epic or legendary). The same tables can be edited in the dedicated [Loot Editor](#/tools/loot-editor).
 

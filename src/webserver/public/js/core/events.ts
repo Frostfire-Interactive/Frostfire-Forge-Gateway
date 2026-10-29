@@ -8,7 +8,7 @@ import "./renderer.js";
 const cache = Cache.getInstance();
 import { chatInput, pauseMenu, optionsMenu, fpsSlider, musicSlider, effectsSlider, ambienceSlider, weatherSlider, mutedCheckbox, autoLootCheckbox, canvas, ctx, friendsList } from "./ui.js";
 import { showItemTooltip, hideItemTooltip } from "./tooltip.js";
-import { getUserHasInteracted, setUserHasInteracted, setControllerConnected, getLastSentDirection, setLastSentDirection,
+import { getUserHasInteracted, setUserHasInteracted, setControllerConnected, getLastSentDirection, setLastSentDirection, setStickDirection,
     getLastTypingPacket, setLastTypingPacket, getContextMenuKeyTriggered, setContextMenuKeyTriggered, blacklistedKeys, movementKeys,
     pressedKeys,
     setIsKeyPressed,
@@ -172,6 +172,13 @@ window.addEventListener("gamepaddisconnected", () => {
 });
 
 window.addEventListener("gamepadjoystick", (e: CustomEventInit) => {
+  // Where the stick points is kept even when the move is held back, for a node handoff to resume (socket.ts).
+  const heldX = e.detail.x, heldY = e.detail.y;
+  const stickAngle = Math.atan2(heldY, heldX) * (180 / Math.PI);
+  const stickHeld = !(Math.abs(heldX) < 0.5 && Math.abs(heldY) < 0.5);
+  setStickDirection(!stickHeld ? "" : stickAngle >= -30 && stickAngle < 30 ? "RIGHT" : stickAngle >= 30 && stickAngle < 60 ? "DOWNRIGHT"
+    : stickAngle >= 60 && stickAngle < 120 ? "DOWN" : stickAngle >= 120 && stickAngle < 150 ? "DOWNLEFT" : stickAngle >= 150 || stickAngle < -150 ? "LEFT"
+    : stickAngle >= -150 && stickAngle < -120 ? "UPLEFT" : stickAngle >= -120 && stickAngle < -60 ? "UP" : "UPRIGHT");
   if (!getIsLoaded() || !getMovementAllowed()) {
     // A map is loading (a warp): the server has stopped the player, and nothing is sent to it until the map is in.
     // What was last sent no longer holds, and is forgotten: a direction is only sent when it differs from the last,

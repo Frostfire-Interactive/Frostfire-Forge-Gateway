@@ -129,7 +129,7 @@ The engine keeps its own copy of every map so that it can run collision, warps a
 - The response can be several megabytes and is gzipped.
 - An engine that sends an empty `checksums` object receives every map.
 
-The sync runs twice: once before the maps are loaded, and once more after the engine has registered with the gateway. The second run retries up to 30 times with a growing delay if the asset server does not answer.
+The sync runs twice: once before the maps are loaded, and once more after the engine has registered with the gateway. The second run retries with a growing delay if the asset server does not answer.
 
 :::warning Start the asset server first
 If the first sync fails, the engine logs a warning and loads whatever maps it already has. On a fresh install it has none, and it cannot start without at least one map.

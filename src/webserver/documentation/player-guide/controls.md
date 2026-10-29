@@ -168,7 +168,7 @@ To close a window, press its key again, select the **✕** at its top right corn
 
 Messages from the game appear at the bottom right of the screen, on top of everything else. On a phone or tablet they appear at the top of the screen in the middle instead, with the newest at the top, so they stay clear of your thumbs. They tell you things like why an item could not be used, or that your home was updated.
 
-- Each new one is added at the bottom and moves the earlier ones up (on a phone or tablet: at the top, moving the others down). Up to five are shown at once.
+- Each new one is added at the bottom and moves the earlier ones up (on a phone or tablet: at the top, moving the others down).
 - A notification closes by itself after a few seconds. Longer messages stay longer.
 - Select the **✕** beside one to close it straight away.
 - The same message arriving again while it is still shown does not stack. Its border flashes and its time starts again.

@@ -28,7 +28,7 @@ The window has two sides.
 | You offer | The items and coins you are putting up. You change this side. |
 | The other player's name | What they are putting up. You can only look. |
 
-Each side holds up to **8** different items, plus gold, silver and copper.
+Each side offers several different items, plus gold, silver and copper.
 
 ### Offering items
 

@@ -38,7 +38,7 @@ const FUNNEL_PUFFS = isMobileDevice ? 70 : 160, DEBRIS = isMobileDevice ? 16 : 4
 const FORM = 2.5, FADE = 2;
 /**
  * How quickly it closes on where the server last put it (ten times a second): a time constant, seconds. Short, so it is
- * drawn where it pulls from, not trailing behind (the server moves it at 30 Hz).
+ * drawn where it pulls from, not trailing behind (the server moves it on every movement tick).
  */
 const EASE = 0.1;
 /** The roar: heard from ROAR_FAR px away, full at its foot; "regular wind" played this much slower (deeper). */

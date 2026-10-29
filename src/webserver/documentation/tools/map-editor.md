@@ -124,7 +124,7 @@ The **Fishing** tab chooses what can be caught from tiles. A tile that gives cat
 - **Take from picked** starts the list from what the picked tiles have now. **Pick all with them** picks every tile of the tileset with the same catches and fishing items.
 - Fishable tiles are tinted in the colour of their catches and fishing items together, with a wave in the corner. The footer names the tileset's combinations and how many tiles have each.
 
-A tile gives at most 12 catches, each with a chance from 0.01 to 100 %, and names at most 12 fishing items. The chances do not need to add up to 100 %: each counts as its share of their sum, which the Catches list shows after the `=`.
+A tile gives several catches, each with a chance from 0.01 to 100 %, and names the fishing items. The chances do not need to add up to 100 %: each counts as its share of their sum, which the Catches list shows after the `=`.
 
 :::note Tiles made before fishing items
 Tiles given catches before fishing items existed name none, so nobody can fish them. The footer shows them as "no item fishes them". Pick them, choose their fishing items and apply again.
@@ -221,7 +221,7 @@ Save sends a `SAVE_MAP` packet with the changed chunks, the map bounds, and all 
 
 Large world maps (see [World Maps](#/engine/world-maps)) are saved the same way, except that the asset server writes the chunks into the world's packs and the game server fetches the new collision and no-PvP data afterwards. A world's size is fixed. For larger edits, a world can also be edited in Tiled with [Frostfire Worlds for Tiled](#/tools/tiled-worlds).
 
-Saves are limited to one every half second. If the tool window reports "The game window did not save the map", the game window shows the reason: an invalid warp or a save sent too soon after the last one.
+If the tool window reports "The game window did not save the map", the game window shows the reason: an invalid warp or a save sent too soon after the last one.
 
 How the asset server stores maps is described in [Asset Server Integration](#/assets/integration).
 

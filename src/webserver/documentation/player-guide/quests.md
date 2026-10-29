@@ -71,11 +71,11 @@ Press **L** to open the quest log. It lists your active quests, grouped by zone.
 - Select **Track** or **Untrack** to choose whether the quest is shown on your screen.
 - Double-click a quest in the list to switch tracking quickly.
 
-You can hold up to **25** active quests.
+You can hold several active quests at once. A full quest log refuses new ones.
 
 ### The quest tracker
 
-Tracked quests are listed on your screen with live counts for every objective, so you do not have to open the log. Up to **5** quests can be tracked at once. Select a quest's name in the tracker to jump to it in the quest log.
+Tracked quests are listed on your screen with live counts for every objective, so you do not have to open the log. Select a quest's name in the tracker to jump to it in the quest log.
 
 ### Abandoning a quest
 

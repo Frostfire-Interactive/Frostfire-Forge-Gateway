@@ -92,8 +92,8 @@ const verify_listener = async () => {
 
 login.addEventListener('click', login_listener);
 
-guestLogin.addEventListener('click', async (event) => {
-    event.preventDefault();
+const guest_listener = async (event?: Event) => {
+    event?.preventDefault();
     const response = await fetch('/guest-login', {
         method: 'POST',
         headers: {
@@ -106,7 +106,20 @@ guestLogin.addEventListener('click', async (event) => {
         const body = await response.json();
         window.Notify('error', body.message);
     }
-});
+};
+
+guestLogin.addEventListener('click', guest_listener);
+
+// Demo links open straight into guest play (/?guest=1). The parameter is
+// dropped from the address first so Back to this page does not make
+// another guest account.
+const pageParams = new URLSearchParams(window.location.search);
+if (pageParams.get('guest') === '1') {
+    pageParams.delete('guest');
+    const query = pageParams.toString();
+    history.replaceState(null, '', window.location.pathname + (query ? `?${query}` : '') + window.location.hash);
+    guest_listener();
+}
 
 document.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {

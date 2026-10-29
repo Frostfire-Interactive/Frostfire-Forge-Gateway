@@ -1,5 +1,6 @@
-import { getIsLoaded, getMovementAllowed, cachedPlayerId, sendRequest } from "./socket.js";
-import { getIsKeyPressed, pressedKeys, setIsMoving, getIsMoving } from "./input.js";
+import { getIsLoaded, getMovementAllowed, getHandoffGap, handoffPace, cachedPlayerId, sendRequest } from "./socket.js";
+import { advanceSelf, applyEase, blockedAt, gapDirection, gapSampleTime, gapStepMs, releaseHeld, stepWalkMs } from "./handoffwalk.js";
+import { getIsKeyPressed, getStickDirection, pressedKeys, setIsMoving, getIsMoving } from "./input.js";
 import Cache from "./cache.ts";
 import { getParticleSprite, particleBrightness, particlePool, renderNpcInteractBadge, tickNpcGossip } from "./npc.js";
 import { queueGlow } from "./glowqueue.js";
@@ -42,7 +43,7 @@ import { chatInput } from "./chat.js";
 import { friendsListSearch } from "./friends.js";
 import { animationManager } from "./animationStateManager.js";
 import { updateLayeredAnimation } from "./layeredAnimation.js";
-import { renderTime, pushSample, positionAt, type MoveSample } from "./movementsmoothing.js";
+import { renderTime, pushSample, pushPredicted, getLateness, positionAt, needsPositionSample, type MoveSample } from "./movementsmoothing.js";
 const times = [] as number[];
 let lastFpsUpdate = 0;
 let lastDirection = "";
@@ -59,7 +60,8 @@ const CHUNK_FADE_DURATION = 0.5; // Fade duration in seconds
 
 // Tileset lookup cache for fast tile->tileset resolution
 
-import { canvas, ctx, ghostCanvas, ghostCtx, aboveCanvas, aboveCtx, debugLayerCanvas, debugLayerCtx, fpsSlider, healthBar, staminaBar, collisionDebugCheckbox, chunkOutlineDebugCheckbox, collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText } from "./ui.js";
+import { canvas, ctx, ghostCanvas, ghostCtx, aboveCanvas, aboveCtx, debugLayerCanvas, debugLayerCtx, fpsSlider, healthBar, staminaBar, collisionDebugCheckbox, chunkOutlineDebugCheckbox, collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText, clusterNodesDebugCheckbox } from "./ui.js";
+import { drawClusterNodes } from "./clusternodes.ts";
 
 // Frame pacing: the measured display refresh interval (ms), from rAF deltas.
 let rafInterval = 1000 / 60;
@@ -102,10 +104,23 @@ function smoothPlayerRenderPositions(players: any[], now: number) {
     // Position set outside a move packet (spawn, snapshot, warp): take it as
     // the next step. It lands right after the newest one so later packets are
     // still accepted, and a large jump snaps.
-    if (!last || last.x !== player.position.x || last.y !== player.position.y) {
-      pushSample(samples, player.position.x, player.position.y, last ? last.t + 0.01 : now);
+    if (needsPositionSample(last, player.position, now)) {
+      // In the handoff gap the local player's predicted step is dated like an echo (now), not right after the newest
+      // one: the draw stays its usual delay behind instead of running ahead and jumping (handoffwalk.ts gapSampleTime).
+      if (last && player.id === cachedPlayerId && getHandoffGap()) {
+        pushPredicted(samples, player.position.x, player.position.y, gapSampleTime(now, last.t, getLateness(), stepWalkMs(last, player.position.x, player.position.y, player.mounted === true)));
+      } else if (last?.held && player.id === cachedPlayerId) {
+        // A held spot timed out: the real position is behind it, reached at the walking speed, not as a step back.
+        releaseHeld(samples, player.position.x, player.position.y, at, player.mounted === true);
+      } else {
+        pushSample(samples, player.position.x, player.position.y, last ? last.t + 0.01 : now);
+      }
     }
-    const p = positionAt(samples, at)!;
+    const smoothed = positionAt(samples, at)!;
+    // The local player's difference to the new node's position after a handoff is eased out (handoffwalk.ts).
+    const eased = player.handoffEase && player.id === cachedPlayerId ? applyEase(player, smoothed, now) : smoothed;
+    // For a second after a handoff in which the client walked the player, the draw is played at the walking pace (handoffwalk.ts HandoffPace).
+    const p = player.id === cachedPlayerId ? handoffPace.stepFor(eased, now, pressedKeys, getStickDirection(), player.mounted === true, (x, y) => blockedAt(window.mapData, x, y)) : eased;
     if (!player.renderPosition) {
       player.renderPosition = { x: p.x, y: p.y };
     } else {
@@ -1188,12 +1203,24 @@ function animationLoop() {
     cameraInitialized = true;
   }
 
+  // A node handoff is switching connections: no position arrives for a moment, so the local player is walked on along the
+  // held keys or the stick (handoffwalk.ts). The move is only drawn: nothing here is sent, and the new node's position replaces it.
+  if (currentPlayer && getHandoffGap() && !isSelfDead() && document.activeElement !== chatInput && document.activeElement !== friendsListSearch) {
+    const walked = currentPlayer.moveSamples;
+    const stepMs = gapStepMs(deltaTime * 1000, currentPlayer.handoffWalk !== undefined, now, walked?.[walked.length - 1], getLateness());
+    advanceSelf(currentPlayer, gapDirection(pressedKeys, getStickDirection()), stepMs, window.mapData);
+  }
+
   smoothPlayerRenderPositions(playersArray, now);
 
   updateCamera(currentPlayer, deltaTime * 60);
 
   (window as any).cameraX = cameraX;
   (window as any).cameraY = cameraY;
+
+  // While moves are blocked (a node handoff or switch in progress) nothing is sent, so forget the last sent
+  // direction: a key still held then sends its MOVEXY again the moment movement is allowed (as the gamepad does).
+  if (!getMovementAllowed()) lastDirection = "";
 
   if (getMovementAllowed() && getIsMoving() && getIsKeyPressed() && !isSelfDead()) {
     if (document.activeElement === chatInput || document.activeElement === friendsListSearch) {
@@ -1933,6 +1960,21 @@ function animationLoop() {
 
       dbg.strokeRect(chunkWorldX, chunkWorldY, chunkPixelSize, chunkPixelSize);
     }
+  }
+
+  if (clusterNodesDebugCheckbox.checked && window.mapData) {
+    // Which node owns which block of the map (any logged-in player, cluster mode): the world in view, as the zoom shows it.
+    const zoom = worldZoom();
+    const halfW = window.innerWidth / zoom / 2;
+    const halfH = window.innerHeight / zoom / 2;
+    drawClusterNodes(
+      dbg,
+      { left: smoothMapX - halfW, top: smoothMapY - halfH, right: smoothMapX + halfW, bottom: smoothMapY + halfH },
+      zoom,
+      String(window.mapData.name ?? ""),
+      window.mapData.width * window.mapData.tilewidth,
+      window.mapData.height * window.mapData.tileheight,
+    );
   }
 
   if (collisionTilesDebugCheckbox.checked && window.mapData) {

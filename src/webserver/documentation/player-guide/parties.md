@@ -1,10 +1,10 @@
 ---
 title: Parties
-description: Team up with up to four other players, share experience and loot, and stay together in the world.
+description: Team up with other players, share experience and loot, and stay together in the world.
 order: 80
 ---
 
-A party is a small group of up to **5** players who play together. Party members cannot hurt each other, can heal each other, share what they earn from creatures, and have a private chat channel.
+A party is a small group of players who play together. Party members cannot hurt each other, can heal each other, share what they earn from creatures, and have a private chat channel.
 
 :::note
 Parties need a full account. Guests cannot invite or be invited.
@@ -28,7 +28,7 @@ Rules for invitations:
 - If you are not in a party yet, the first player who accepts forms a new party with you, and you become the leader.
 - Once a party exists, only the leader can invite more players.
 - You cannot invite a player who is already in a party.
-- A party can have at most 5 members.
+- A player cannot join a party that is full.
 
 ## Accepting or declining
 

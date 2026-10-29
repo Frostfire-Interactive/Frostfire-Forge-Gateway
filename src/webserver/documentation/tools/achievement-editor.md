@@ -74,4 +74,4 @@ Players open their achievements window with **Y** (on a touch screen, from the m
 
 ## Storage
 
-Achievements are kept in the `achievements` table and each player's progress in `player_achievements`. Both are made when the game server starts if they are missing. Progress is written every 60 seconds, when the player leaves and when the game server shuts down; only a crash can lose up to a minute of progress, but an achievement that was earned is written at once, with its reward, and is never lost. A completed achievement is never written twice, so its reward is never given twice.
+Achievements are kept in the `achievements` table and each player's progress in `player_achievements`. Both are made when the game server starts if they are missing. Progress is written on a regular timer, when the player leaves and when the game server shuts down; an achievement that was earned is written at once, with its reward, and is never lost. A completed achievement is never written twice, so its reward is never given twice.

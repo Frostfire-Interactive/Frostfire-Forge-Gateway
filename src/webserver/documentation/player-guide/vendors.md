@@ -22,7 +22,7 @@ The window closes when you walk away, press **Escape** or select **Close**.
 
 The **Buy** tab lists what the vendor sells, each with its price.
 
-1. Set how many you want in the box beside the item. It starts at 1 and goes up to 999.
+1. Set how many you want in the box beside the item. It starts at 1.
 2. Select **Buy**.
 
 | What you see | What it means |

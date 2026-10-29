@@ -47,7 +47,7 @@ For large runs, these server side settings matter:
 |---------|-------|--------|
 | `webtransport.maxSessions` | `src/config/settings.json` | The session limit. Must be above your client count. |
 | `packetRatelimit` | `src/config/settings.json` | The per connection packet limit still applies to benchmark clients |
-| `BENCHMARK_PROFILE=1` | Game server environment | Prints server side profiling lines every 5 seconds |
+| `BENCHMARK_PROFILE=1` | Game server environment | Prints server side profiling lines at regular intervals |
 
 ## Concurrent client load test
 
@@ -215,7 +215,7 @@ bun benchmark:connections:production --connections 10000 --duration 300
 bun benchmark:connections:development --connections 2000 --wt https://127.0.0.1:3000
 ```
 
-Connections are opened in batches of 10 with a 100 ms pause between batches, about 100 per second. The tool waits up to 60 seconds for all of them to open or fail.
+Connections are opened in small batches with a short pause between batches. The tool waits until every connection has either opened or failed, or a timeout passes.
 
 ### Reading the results
 
@@ -266,12 +266,12 @@ BENCHMARK_PROFILE=1
 
 | Line | Shows |
 |------|-------|
-| `[profile:gameloop]` | Ticks in the last 5 seconds, overlapping ticks, time spent, slowest tick, players moving, memory. See [Game loop](#/engine/game-loop/profiling-the-loop). |
+| `[profile:gameloop]` | Ticks in the last reporting window, overlapping ticks, time spent, slowest tick, players moving, memory. See [Game loop](#/engine/game-loop/profiling-the-loop). |
 | `[profile:inbound]` | Per packet type: how many arrived and the total time spent handling them, sorted by time |
 
 ## Creature load test
 
-`bun creature-loadtest` does not connect any clients. It fills a map with creature spawns and then samples the game server's `/creature-stats` route, so you can check that the 100 ms creature tick keeps up. Run a player benchmark alongside it for combined load.
+`bun creature-loadtest` does not connect any clients. It fills a map with creature spawns and then samples the game server's `/creature-stats` route, so you can check that the creature tick keeps up. Run a player benchmark alongside it for combined load.
 
 ```bash title="Creature load test"
 bun creature-loadtest seed --count 2000 --map main

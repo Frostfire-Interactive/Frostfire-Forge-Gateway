@@ -152,7 +152,7 @@ Quests that are locked by level or by a missing prerequisite are hidden, and do 
 
 A vendor or an innkeeper never skips the list: with one or more quests it always answers `NPC_GOSSIP`. A vendor (that is not also an innkeeper) with nothing to show opens its goods instead.
 
-Each player may send at most 5 quest packets of one kind in 3 seconds. Extra ones are dropped.
+Each player may send only a few quest packets of one kind in a short window. Extra ones are dropped.
 
 ### Dialogue and gossip chains
 
@@ -212,18 +212,13 @@ The client sends `QUEST_ACCEPT` with `npcId` and `questId`. The server checks th
 | `completed` | Done, and not repeatable | You have already completed that quest. |
 | `level_too_low` | Below `required_level` | You are not high enough level for that quest. |
 | `missing_prerequisite` | A prerequisite quest is not completed | You must complete the previous quest first. |
-| `log_full` | 25 active quests already | Your quest log is full. |
+| `log_full` | The quest log is full | Your quest log is full. |
 | `daily_not_reset` | A daily quest completed since the last reset | That daily quest is not available yet. |
 | `unknown_quest` | No such quest | You cannot accept that quest. |
 
 On success the client gets `QUEST_LOG_ENTRY` with the new entry and the quest definition. The server then backfills what the player already has: `collect` objectives are set from the inventory, whole-map `explore` objectives are credited if the player is on that map, and a radius objective is credited if the player is already standing inside it. A quest with no objectives is `ready` the moment it is accepted.
 
-The log holds at most 25 active quests:
-
-```ts title="src/systems/quests/log.ts"
-export const MAX_ACTIVE_QUESTS = 25;
-export const DAILY_RESET_UTC_HOUR = 3;
-```
+A full quest log refuses new quests. The size of the log and the hour of the daily reset are set in `src/systems/quests/log.ts`.
 
 ### Progress
 

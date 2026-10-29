@@ -2,6 +2,8 @@ import { startHttpsServers, getInternalServerOptions, serverFetch } from "../mod
 import query from "../controllers/sqldatabase";
 import player from "../systems/player";
 import { brandHtmlText } from "../modules/branding";
+import crypto from "crypto";
+import { BlockRoutes, handleBlocks, handleRoute, liveNodesOf } from "./blockroute";
 
 const httpPort = parseInt(process.env.GATEWAY_PORT || "9999");
 const httpsPort = parseInt(process.env.GATEWAY_PORTSSL || "9443");
@@ -16,7 +18,32 @@ const config: GatewayConfig = {
   authKey: process.env.GATEWAY_AUTH_KEY || null
 };
 
+// Game servers prove themselves with this key. Without one every /register,
+// /heartbeat and /unregister call would be open, so the gateway does not run.
+if (typeof config.authKey !== "string" || config.authKey.trim() === "") {
+  console.error("[Gateway] GATEWAY_AUTH_KEY is missing or empty. Set a strong random value in the gateway environment. Refusing to start.");
+  process.exit(1);
+}
+
+// Constant-time key check. Both sides are hashed first, so keys of different
+// lengths compare without throwing, and a non-string key never matches.
+function isValidAuthKey(provided: unknown): boolean {
+  if (typeof provided !== "string" || typeof config.authKey !== "string") return false;
+  const providedDigest = crypto.createHash("sha256").update(provided).digest();
+  const expectedDigest = crypto.createHash("sha256").update(config.authKey).digest();
+  return crypto.timingSafeEqual(providedDigest, expectedDigest);
+}
+
 const gameServers: Map<string, GameServer> = new Map();
+
+// Cluster mode: which node of each region owns which block (POST /blocks), for GET /route. Memory only: the nodes send
+// every table again when they register, so a restarted gateway learns them back.
+const blockRoutes = new BlockRoutes();
+
+// The ids of a region's nodes with a heartbeat inside the timeout: the only nodes /route may name.
+function liveNodeIds(regionId: string): Set<string> {
+  return liveNodesOf(gameServers.values(), regionId, Date.now(), config.serverTimeout);
+}
 
 const clientSessions: Map<string, ClientSession> = new Map();
 
@@ -188,6 +215,8 @@ function cleanupDeadServers() {
       }
 
       gameServers.delete(id);
+      // The last node of a region gone: its block owners are no longer true.
+      blockRoutes.dropRegionIfEmpty(server.regionId, gameServers.values());
     }
   }
 }
@@ -206,6 +235,61 @@ function cleanupExpiredSessions() {
   if (removedCount > 0) {
     console.log(`[Gateway] Cleaned up ${removedCount} expired sessions`);
   }
+}
+
+type ServerStatus = {
+  id: string;
+  description: string;
+  publicHost: string;
+  port: number;
+  wtPort?: number;
+  wtEnabled: boolean;
+  useSSL: boolean;
+  activeConnections: number;
+  maxConnections: number;
+  latency: number;
+  whitelisted: boolean;
+  pvp: boolean;
+  status: string;
+  regionId?: string;
+};
+
+// The nodes of one cluster region, as /status lists them, collapsed into the one realm players see. Its host and
+// ports are those of the least-loaded online node (what realm selection pings); its counts are the region's.
+function collapseRegions(servers: ServerStatus[]) {
+  const byRegion = new Map<string, ServerStatus[]>();
+  for (const server of servers) {
+    if (!server.regionId) continue;
+    const nodes = byRegion.get(server.regionId);
+    if (nodes) nodes.push(server);
+    else byRegion.set(server.regionId, [server]);
+  }
+
+  return Array.from(byRegion.entries()).map(([regionId, nodes]) => {
+    const online = nodes.filter(node => node.status === 'online');
+    const pick = (online.length > 0 ? online : nodes)
+      .reduce((best, node) => node.activeConnections < best.activeConnections ? node : best);
+    const status = online.length > 0 ? 'online' : (nodes.some(node => node.status === 'full') ? 'full' : 'offline');
+    // A node that stopped answering neither holds players nor has room for them.
+    const live = nodes.filter(node => node.status !== 'offline');
+
+    return {
+      id: regionId,
+      description: nodes.find(node => node.description)?.description || '',
+      publicHost: pick.publicHost,
+      port: pick.port,
+      wtPort: pick.wtPort,
+      wtEnabled: pick.wtEnabled,
+      useSSL: pick.useSSL,
+      activeConnections: live.reduce((sum, node) => sum + node.activeConnections, 0),
+      maxConnections: live.reduce((sum, node) => sum + node.maxConnections, 0),
+      latency: pick.latency,
+      whitelisted: nodes.some(node => node.whitelisted),
+      pvp: nodes.some(node => node.pvp),
+      status,
+      cluster: true
+    };
+  });
 }
 
 setInterval(cleanupDeadServers, config.heartbeatInterval);
@@ -239,9 +323,9 @@ const serverConfig: any = {
     if (url.pathname === "/register" && req.method === "POST") {
       try {
         const body = await req.json();
-        const { id, host, publicHost, port, wtPort, wtEnabled, useSSL, maxConnections, authKey, description, whitelisted, pvp } = body;
+        const { id, host, publicHost, port, wtPort, wtEnabled, useSSL, maxConnections, authKey, description, whitelisted, pvp, nodeId, regionId } = body;
 
-        if (authKey !== config.authKey) {
+        if (!isValidAuthKey(authKey)) {
           console.warn(`[Gateway] Registration attempt with invalid auth key from ${host}`);
           return new Response(JSON.stringify({ error: "Invalid authentication key" }), {
             status: 401,
@@ -274,7 +358,12 @@ const serverConfig: any = {
           whitelisted: whitelisted === true,
           pvp: pvp === true
         };
+        // Sent by game servers in cluster mode only.
+        if (typeof nodeId === "string" && nodeId) server.nodeId = nodeId;
+        if (typeof regionId === "string" && regionId) server.regionId = regionId;
 
+        // The first node back into a region whose other nodes are gone starts its block owners again.
+        blockRoutes.dropRegionIfAlone(server.regionId, id, gameServers.values(), Date.now(), config.serverTimeout);
         gameServers.set(id, server);
 
         if (isReRegistration) {
@@ -299,7 +388,7 @@ const serverConfig: any = {
         const body = await req.json();
         const { id, activeConnections, cpuUsage, ramUsage, authKey, rtt, whitelisted } = body;
 
-        if (authKey !== config.authKey) {
+        if (!isValidAuthKey(authKey)) {
           return new Response(JSON.stringify({ error: "Invalid authentication key" }), {
             status: 401,
             headers: { "Content-Type": "application/json" }
@@ -341,19 +430,31 @@ const serverConfig: any = {
       }
     }
 
+    // A cluster node's block owners, one map at a time; same key as /heartbeat.
+    if (url.pathname === "/blocks" && req.method === "POST") {
+      return handleBlocks({ routes: blockRoutes, isValidAuthKey, server: (id) => gameServers.get(id) }, req);
+    }
+
+    // Which live node of a region owns a point of a map (the webserver asks, with the key in a header).
+    if (url.pathname === "/route" && req.method === "GET") {
+      return handleRoute({ routes: blockRoutes, isValidAuthKey, liveNodes: liveNodeIds }, req);
+    }
+
     if (url.pathname === "/unregister" && req.method === "POST") {
       try {
         const body = await req.json();
         const { id, authKey } = body;
 
-        if (authKey !== config.authKey) {
+        if (!isValidAuthKey(authKey)) {
           return new Response(JSON.stringify({ error: "Invalid authentication key" }), {
             status: 401,
             headers: { "Content-Type": "application/json" }
           });
         }
 
+        const leaving = gameServers.get(id);
         if (gameServers.delete(id)) {
+          blockRoutes.dropRegionIfEmpty(leaving?.regionId, gameServers.values());
           console.log(`[Gateway] Server unregistered: ${id}`);
           return new Response(JSON.stringify({ success: true }), {
             headers: { "Content-Type": "application/json" }
@@ -537,19 +638,36 @@ const serverConfig: any = {
           latency: s.latency || 0,
           whitelisted: s.whitelisted || false,
           pvp: s.pvp || false,
-          status: !isHealthy ? 'offline' : (isFull ? 'full' : 'online')
+          status: !isHealthy ? 'offline' : (isFull ? 'full' : 'online'),
+          // lastHeartbeat tells the webserver when a node's player count was last refreshed.
+          ...(s.nodeId ? { nodeId: s.nodeId, lastHeartbeat: s.lastHeartbeat } : {}),
+          ...(s.regionId ? { regionId: s.regionId } : {})
         };
       });
 
+      const regions = collapseRegions(servers);
+
       return new Response(JSON.stringify({
         totalServers: gameServers.size,
-        servers
+        servers,
+        // Only when a cluster region is registered, so /status reads as it always did without one.
+        ...(regions.length > 0 ? { regions } : {})
       }), {
         headers: {
           "Content-Type": "application/json",
           ...corsHeaders
         }
       });
+    }
+
+    // Every /debug route needs the same signed-in dashboard session as /api/stats.
+    if (url.pathname === "/debug" || url.pathname.startsWith("/debug/")) {
+      if (!(await getDashboardSession(req))) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
     }
 
     if (url.pathname === "/debug/sessions" && req.method === "GET") {
@@ -571,7 +689,7 @@ const serverConfig: any = {
       });
     }
 
-    const gatewayRoutes = ['/register', '/heartbeat', '/unregister', '/status', '/debug', '/api', '/dashboard'];
+    const gatewayRoutes = ['/register', '/heartbeat', '/unregister', '/blocks', '/route', '/status', '/debug', '/api', '/dashboard'];
     const webRoutes = ['/','/login','/logout'];
     const isGatewayRoute = gatewayRoutes.some(route => url.pathname.startsWith(route)) || url.pathname === '/';
     const isWebRoute = webRoutes.some(route => url.pathname === route);

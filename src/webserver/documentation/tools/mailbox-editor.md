@@ -24,7 +24,7 @@ The permission is read from the database on every packet, so granting or removin
 
 ## The window
 
-The editor uses the shared workbench described in [Tools Overview](#/tools/overview/the-editor-workbench). The side pane lists the map you are on, marked **You are here**, and the last 10 maps you visited, newest first. The game remembers them in your browser. Any other map is found by searching for its name: a search shows 50 maps at most, and says how many more match. Each map shows how many mailboxes it has, and **placed by hand** when they were saved from the editor. When you go to another map, the list follows.
+The editor uses the shared workbench described in [Tools Overview](#/tools/overview/the-editor-workbench). The side pane lists the map you are on, marked **You are here**, and the maps you visited last, newest first. The game remembers them in your browser. Any other map is found by searching for its name: a search says how many more maps match than it shows. Each map shows how many mailboxes it has, and **placed by hand** when they were saved from the editor. When you go to another map, the list follows.
 
 The open map lists its mailboxes, each with its **X** and **Y** in px from the map's top left: the middle of the mailbox's foot. **In plain words** beside it says what the map's mailboxes are in the game.
 
