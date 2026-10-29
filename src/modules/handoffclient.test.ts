@@ -101,7 +101,8 @@ test("socket.ts: the client opens the next node's session on HANDOFF_PREPARE and
   // The measurement line.
   expect(client).toContain("[handoff] client switch_rx->cert/wt_ready/auth_sent/handoff_done/first_pos ms:");
   // The walk is drawn while the gap lasts; movementAllowed still holds the sending.
-  expect(renderer).toContain("advanceSelf(currentPlayer, gapDirection(pressedKeys, getStickDirection()), stepMs, window.mapData);");
+  expect(renderer).toContain("const direction = gapDirection(pressedKeys, getStickDirection());");
+  expect(renderer).toContain("advanceSelf(currentPlayer, direction, stepMs, window.mapData);");
   expect(client).toContain("handoffGap = data?.resume === true;");
   // A stick still held after HANDOFF_DONE sends its direction and never a stop; a repeat prepare does not extend the timer.
   const done = client.slice(client.indexOf('case "HANDOFF_DONE"'), client.indexOf('case "LOAD_PLAYERS"'));

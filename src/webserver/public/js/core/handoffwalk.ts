@@ -179,7 +179,7 @@ export function gapSampleTime(now: number, lastT: number, lateness: number, walk
   return Math.max(now - Math.max(0, lateness), lastT + 0.01, lastT + walkMs);
 }
 
-/** The first step of the gap walks at most this long: the time since the last echo, which is one tick or so old. */
+/** The first step of the gap walks at most this long, unless the walk at the switch is held: the time since the last echo, which is one tick or so old. */
 const MAX_FIRST_STEP_MS = 60;
 /** ... but never cut below this: the last echo of a 60 Hz node is up to a tick (17 ms) old, more than 2 frames at 144 Hz. */
 const MIN_FIRST_STEP_MS = 25;
@@ -189,12 +189,17 @@ const MIN_FIRST_STEP_MS = 25;
  * tick before the switch, not at the frame before: walking one frame from it put the first predicted sample 1.4 px ahead of
  * (or 0.8 px behind) where the walk is, drawn at 2.6 (or 0.56) times the walk. So the first step walks the time since the
  * echo (its sample time, and now less the lateness: the time gapSampleTime dates the step at); the next ones a frame each.
+ * `walkedOn`: the walk the player had at the switch is still held (walkAtSwitch). The old node stops stepping as it drains,
+ * a tick or more before the switch, and the new node makes all of that time up (its catch-up counts from the old node's
+ * last step): the step walks all of it, up to the most it makes up (HANDOFF_CATCH_UP_MAX_MS). Cut to two frames it fell
+ * 1.5-2 px short, drawn at 0.75 times the walk for 3 frames; cut to one frame after a drain of 60 ms or more, 9 px short.
  */
-export function gapStepMs(frameMs: number, started: boolean, now: number, newest: { t: number; predicted?: boolean } | undefined, lateness: number): number {
+export function gapStepMs(frameMs: number, started: boolean, now: number, newest: { t: number; predicted?: boolean } | undefined, lateness: number, walkedOn = false): number {
   if (started || !newest || newest.predicted) return frameMs;
   const since = now - Math.max(0, lateness) - newest.t;
-  // At most two frames (or MIN_FIRST_STEP_MS): a key let go and pressed again within 60 ms of the echo has not walked all that time.
-  return since > 0 && since <= MAX_FIRST_STEP_MS ? Math.min(since, Math.max(2 * frameMs, MIN_FIRST_STEP_MS)) : frameMs;
+  if (!(since > 0 && since <= (walkedOn ? HANDOFF_CATCH_UP_MAX_MS : MAX_FIRST_STEP_MS))) return frameMs;
+  // Else at most two frames (or MIN_FIRST_STEP_MS): a key let go and pressed again within 60 ms of the echo has not walked all that time.
+  return walkedOn ? since : Math.min(since, Math.max(2 * frameMs, MIN_FIRST_STEP_MS));
 }
 
 /**
@@ -277,6 +282,30 @@ export function planHandoffDone(
   return lead / speed > HANDOFF_KEEP_LEAD_MS ? "reseed" : "keep";
 }
 
+/** The longest catch-up a HANDOFF_DONE point is moved on by (the engine's MAX_RESUME_CATCH_UP_MS). */
+export const HANDOFF_CATCH_UP_MAX_MS = 500;
+
+/**
+ * The point planHandoffDone weighs the walked position against: the new node's point moved on along `walk` by `catchUpMs`
+ * of walking (HANDOFF_DONE's, at most HANDOFF_CATCH_UP_MAX_MS). The node stood the player from the old node's last step to
+ * its own first one while the client walked on, and takes the missed steps at once with its first: its first echo is that
+ * far past the point. Weighed against the point itself, a gap longer than HANDOFF_KEEP_WALK_PX of walk would reseed although
+ * the echo lands on the walk. No walk or no catch-up (an engine that does not make it up): the point as it is.
+ */
+export function madeUpPoint(
+  server: { x: number; y: number },
+  walk: string | null | undefined,
+  catchUpMs: unknown,
+  mounted: boolean,
+): { x: number; y: number } {
+  const unit = UNITS[walk ?? ""];
+  const ms = Math.min(HANDOFF_CATCH_UP_MAX_MS, Number(catchUpMs));
+  if (!unit || !(ms > 0)) return server;
+  // A diagonal steps the same px on both axes as a straight walk on one.
+  const px = ((WALK_SPEED_PX_S * (mounted ? MOUNT_SPEED_MULTIPLIER : 1)) / 1000) * ms;
+  return { x: server.x + unit[0] * px, y: server.y + unit[1] * px };
+}
+
 /** The most a kept walk's echoes are dated earlier (keptWalkShift): a longer stand on the server is still shown as one. */
 export const KEPT_SHIFT_MAX_MS = 40;
 /** The shift falls away at this part of the time that passes: the draw plays 10% slow meanwhile, as the delay slews. */
@@ -286,7 +315,7 @@ export const KEPT_SHIFT_SLEW = 0.1;
  * delay slew already allow. Faster would be a burst of the node's first steps (not on its tick cadence); slower a dip.
  */
 export const KEPT_PACE_MIN = 1 - KEPT_SHIFT_SLEW;
-/** An echo later than the slowest pace by more than this is not dated earlier to keep it (a stall, or a slowed player). */
+/** An echo later than the slowest pace by more than this plus one server tick is not dated earlier to keep it (a stall, or a slowed player). */
 export const KEPT_PACE_LATE_MS = 15;
 /** The most a catch-up after a stall of the link plays at, in walking speeds: past the lead cap, never faster than this. */
 export const KEPT_CATCHUP_SPEED = 1.5;
@@ -626,7 +655,8 @@ export class KeptWalkDating {
         // ahead of the data (the first shift's bound), unless it is so late that the player is slowed, not the node.
         const early = t - Math.max(0, Math.min(KEPT_SHIFT_MAX_MS, clock.headroom + KEPT_HEADROOM_SLACK_MS));
         const slowest = from + walkMs / KEPT_PACE_MIN;
-        if (dated > slowest && dated - slowest <= KEPT_PACE_LATE_MS) dated = Math.min(dated, Math.max(slowest, early));
+        // A step late by up to a tick is the node's first ticks (one sat out after the catch-up step, a late one), not a stall.
+        if (dated > slowest && dated - slowest <= KEPT_PACE_LATE_MS + getTickMs()) dated = Math.min(dated, Math.max(slowest, early));
         dated = Math.max(dated, from + walkMs * KEPT_PACE_MIN);
         // Past KEPT_LEAD_SHIFT_MAX_MS after the arrival no more is dated, except what a catch-up after a stall needs to play
         // no faster than KEPT_CATCHUP_SPEED, up to KEPT_CATCHUP_LEAD_MAX_MS.

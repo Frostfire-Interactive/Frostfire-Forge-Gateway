@@ -1,4 +1,4 @@
-import { getIsLoaded, getMovementAllowed, getHandoffGap, handoffPace, cachedPlayerId, sendRequest } from "./socket.js";
+import { getIsLoaded, getMovementAllowed, getHandoffGap, getWalkAtSwitch, handoffPace, cachedPlayerId, sendRequest } from "./socket.js";
 import { advanceSelf, applyEase, blockedAt, gapDirection, gapSampleTime, gapStepMs, releaseHeld, stepWalkMs } from "./handoffwalk.js";
 import { getIsKeyPressed, getStickDirection, pressedKeys, setIsMoving, getIsMoving } from "./input.js";
 import Cache from "./cache.ts";
@@ -1207,8 +1207,10 @@ function animationLoop() {
   // held keys or the stick (handoffwalk.ts). The move is only drawn: nothing here is sent, and the new node's position replaces it.
   if (currentPlayer && getHandoffGap() && !isSelfDead() && document.activeElement !== chatInput && document.activeElement !== friendsListSearch) {
     const walked = currentPlayer.moveSamples;
-    const stepMs = gapStepMs(deltaTime * 1000, currentPlayer.handoffWalk !== undefined, now, walked?.[walked.length - 1], getLateness());
-    advanceSelf(currentPlayer, gapDirection(pressedKeys, getStickDirection()), stepMs, window.mapData);
+    const direction = gapDirection(pressedKeys, getStickDirection());
+    const walkedOn = direction !== "" && direction === getWalkAtSwitch();
+    const stepMs = gapStepMs(deltaTime * 1000, currentPlayer.handoffWalk !== undefined, now, walked?.[walked.length - 1], getLateness(), walkedOn);
+    advanceSelf(currentPlayer, direction, stepMs, window.mapData);
   }
 
   smoothPlayerRenderPositions(playersArray, now);

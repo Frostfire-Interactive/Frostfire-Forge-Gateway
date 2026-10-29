@@ -155,7 +155,7 @@ import { CREATURE_MOVE_HEADER, decodeCreatureMoves } from "./creaturemoves.ts";
 import { POSE_DATAGRAM_HEADER, applyPoseDatagram, applyPoseUpdate, poseMark, reapplyPose, sheetPoseState } from "./posepacket.ts";
 import { planSelfSpawn } from "./selfspawn.ts";
 import { applyClusterDebug, pauseClusterRefresh, requestClusterRefresh, setClusterDebugRequester } from "./clusternodes.ts";
-import { MAX_PREDICT_MS, startEase, planHandoffDone, planPaceArm, hasAnchor, HandoffSettle, HandoffPace, KeptWalkDating, clearHeld, heldDirection } from "./handoffwalk.ts";
+import { MAX_PREDICT_MS, startEase, planHandoffDone, madeUpPoint, planPaceArm, hasAnchor, HandoffSettle, HandoffPace, KeptWalkDating, clearHeld, heldDirection } from "./handoffwalk.ts";
 import { doneFacing, doneSend, doneWalk, walkAtSwitch } from "./resumesend.ts";
 import { getIsKeyPressed, getIsMoving, getStickDirection, pressedKeys, setLastSentDirection } from "./input.js";
 import parseAPNG from "../libs/apng_parser.js";
@@ -1398,6 +1398,11 @@ let walkDirectionAtSwitch = "";
 /** The local player is being handed to another node and is walked on by the client for now. */
 function getHandoffGap(): boolean {
   return handoffGap && performance.now() - handoffGapAt < MAX_PREDICT_MS;
+}
+
+/** The direction the player walked in at the SWITCH (walkAtSwitch), "" for none: the gap walk goes on from the last echo in it. */
+function getWalkAtSwitch(): string {
+  return walkDirectionAtSwitch;
 }
 
 function endHandoffGap() {
@@ -3151,7 +3156,9 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         // node's next echoes continue them (no rewrite, no ease), so the draw has no jump. Else the node's point is taken.
         // Decided from the walked position, not the drawn one, which trails it by the playback delay (handoffwalk.ts).
         const moving = getIsKeyPressed() || !!getStickDirection();
-        const keep = planHandoffDone(predicting, moving, self, { x, y }, hasAnchor(self.moveSamples)) === "keep";
+        // Weighed against where the node's first echo will be: it makes up the steps it stood through the gap (madeUpPoint).
+        const target = madeUpPoint({ x, y }, doneWalk(data?.walk), data?.catchUpMs, self.mounted === true);
+        const keep = planHandoffDone(predicting, moving, self, target, hasAnchor(self.moveSamples)) === "keep";
         self.serverPosition.x = x;
         self.serverPosition.y = y;
         if (keep) {
@@ -6053,7 +6060,7 @@ window.addEventListener('beforeunload', () => {
   flushInventorySlots();
 });
 
-export { sendRequest, cachedPlayerId, getIsLoaded, getMovementAllowed, getHandoffGap, handoffPace, itemsByName, showNotification };
+export { sendRequest, cachedPlayerId, getIsLoaded, getMovementAllowed, getHandoffGap, getWalkAtSwitch, handoffPace, itemsByName, showNotification };
 (window as any).itemsByName = itemsByName;
 
 
