@@ -115,7 +115,7 @@ function renderServers(): void {
     realmList.innerHTML = servers.map((server, index) => {
         const status = server.status;
 
-        const realmName = server.id;
+        const realmName = server.name || server.id;
 
         let statusClass = 'healthy';
         let statusText = 'Online';
@@ -185,7 +185,7 @@ function renderServers(): void {
                 if (message && server) {
                     message.innerHTML = `
                         <div class="no-selection-icon">⚔️</div>
-                        <h3>${server.id}</h3>
+                        <h3>${server.name || server.id}</h3>
                         <p>${server.description || 'No description available.'}</p>
                     `;
                 }

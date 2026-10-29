@@ -377,7 +377,10 @@ const routes = {
         const data = await fetchGatewayStatus();
         // A cluster region is one realm: its entry stands in for the nodes that serve it (and for any server that
         // shares its id, so no id is listed twice).
-        const regions = Array.isArray(data.regions) ? data.regions : [];
+        // Shown as "<GAME_NAME>-<region>"; the id stays the region's, which the client connects by.
+        const gameName = process.env.GAME_NAME || "Frostfire Forge";
+        const regions = (Array.isArray(data.regions) ? data.regions : [])
+          .map((region: any) => ({ ...region, name: `${gameName}-${region.id}` }));
         const regionIds = new Set(regions.map((region: any) => region.id));
         const servers = regions.length > 0
           ? [...(data.servers || []).filter((server: any) => !server.regionId && !regionIds.has(server.id)), ...regions]
