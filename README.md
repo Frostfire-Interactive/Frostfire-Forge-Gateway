@@ -13,9 +13,9 @@ A production-grade authentication and reverse proxy gateway for Frostfire Forge 
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/github/actions/workflow/status/Lillious-Networks/Frostfire-Forge-Gateway/release.yml?branch=main&label=Docker&style=flat-square" alt="Docker">
+  <img src="https://img.shields.io/github/actions/workflow/status/Frostfire-Interactive/Frostfire-Forge-Gateway/release.yml?branch=main&label=Docker&style=flat-square" alt="Docker">
   <img src="https://img.shields.io/badge/status-Beta-blue?style=flat-square&label=Status" alt="Beta">
-  <img src="https://img.shields.io/github/stars/Lillious-Networks/Frostfire-Forge?style=flat-square&label=Stars&color=tomato" alt="GitHub Stars">
+  <img src="https://img.shields.io/github/stars/Frostfire-Interactive/Frostfire-Forge?style=flat-square&label=Stars&color=tomato" alt="GitHub Stars">
 </p>
 
 ---
@@ -60,7 +60,7 @@ The Frostfire Forge Gateway is a critical infrastructure component of the Frostf
 - **Asset Serving** - Fast delivery of compressed game data and static assets
 - **Monitoring & Administration** - Real-time dashboard and health status APIs
 
-The gateway works in conjunction with the [Frostfire Forge Game Engine](https://github.com/Lillious-Networks/Frostfire-Forge) and [Frostfire Forge Assets](https://github.com/Lillious-Networks/Frostfire-Forge-Assets) to provide a complete MMO platform.
+The gateway works in conjunction with the [Frostfire Forge Game Engine](https://github.com/Frostfire-Interactive/Frostfire-Forge) and [Frostfire Forge Assets](https://github.com/Frostfire-Interactive/Frostfire-Forge-Assets) to provide a complete MMO platform.
 
 ---
 
@@ -85,8 +85,8 @@ The gateway works in conjunction with the [Frostfire Forge Game Engine](https://
 > **Required Software**:
 > - [Bun](https://bun.sh/) - JavaScript runtime & package manager
 > - [MySQL](https://www.mysql.com/downloads/) - Database for users and game state
-> - [Frostfire Forge Game Engine](https://github.com/Lillious-Networks/Frostfire-Forge) - Game servers that register with gateway
-> - [Frostfire Forge Assets](https://github.com/Lillious-Networks/Frostfire-Forge-Assets) - Asset server for game data
+> - [Frostfire Forge Game Engine](https://github.com/Frostfire-Interactive/Frostfire-Forge) - Game servers that register with gateway
+> - [Frostfire Forge Assets](https://github.com/Frostfire-Interactive/Frostfire-Forge-Assets) - Asset server for game data
 > - [Docker](https://www.docker.com/) (Optional) - For containerized deployment
 > - SMTP Server (Optional) - For email verification (recommended for production)
 
@@ -262,7 +262,7 @@ GAME_WT_CERT_HASH=
 
 **Option 1: Use prebuilt Docker image:**
 ```bash
-docker run -d --name frostfire-gateway-dev -p 80:80 -p 443:443 -p 443:443/udp -p 9999:9999 -p 9443:9443 -p 9443:9443/udp ghcr.io/lillious-networks/frostfire-forge-gateway-dev:latest
+docker run -d --name frostfire-gateway-dev -p 80:80 -p 443:443 -p 443:443/udp -p 9999:9999 -p 9443:9443 -p 9443:9443/udp ghcr.io/Frostfire-Interactive/frostfire-forge-gateway-dev:latest
 ```
 
 **Option 2: Build and run from source:**
