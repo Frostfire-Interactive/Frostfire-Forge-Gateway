@@ -1,5 +1,5 @@
-import { getIsLoaded, getMovementAllowed, getHandoffGap, getWalkAtSwitch, handoffPace, cachedPlayerId, sendRequest } from "./socket.js";
-import { advanceSelf, applyEase, blockedAt, gapDirection, gapSampleTime, gapStepMs, releaseHeld, stepWalkMs } from "./handoffwalk.js";
+import { getIsLoaded, getMovementAllowed, getHandoffGap, getWalkAtSwitch, getGapReports, gapWalkStarted, noteGapFrame, finishGapWalk, gapFrameMs, handoffPace, cachedPlayerId, sendRequest } from "./socket.js";
+import { advanceSelf, applyEase, atMountSpeed, blockedAt, gapDirection, gapSampleTime, gapStepMs, releaseHeld, stepWalkMs } from "./handoffwalk.js";
 import { getIsKeyPressed, getStickDirection, pressedKeys, setIsMoving, getIsMoving } from "./input.js";
 import Cache from "./cache.ts";
 import { getParticleSprite, particleBrightness, particlePool, renderNpcInteractBadge, tickNpcGossip } from "./npc.js";
@@ -42,7 +42,8 @@ import { updateTileSounds } from './tilesounds.js';
 import { chatInput } from "./chat.js";
 import { friendsListSearch } from "./friends.js";
 import { animationManager } from "./animationStateManager.js";
-import { updateLayeredAnimation } from "./layeredAnimation.js";
+import { updateLayeredAnimation, changeLayeredAnimation } from "./layeredAnimation.js";
+import { gapPose } from "./gappose.js";
 import { renderTime, pushSample, pushPredicted, getLateness, positionAt, needsPositionSample, type MoveSample } from "./movementsmoothing.js";
 const times = [] as number[];
 let lastFpsUpdate = 0;
@@ -108,10 +109,10 @@ function smoothPlayerRenderPositions(players: any[], now: number) {
       // In the handoff gap the local player's predicted step is dated like an echo (now), not right after the newest
       // one: the draw stays its usual delay behind instead of running ahead and jumping (handoffwalk.ts gapSampleTime).
       if (last && player.id === cachedPlayerId && getHandoffGap()) {
-        pushPredicted(samples, player.position.x, player.position.y, gapSampleTime(now, last.t, getLateness(), stepWalkMs(last, player.position.x, player.position.y, player.mounted === true)));
+        pushPredicted(samples, player.position.x, player.position.y, gapSampleTime(now, last.t, getLateness(), stepWalkMs(last, player.position.x, player.position.y, atMountSpeed(player))));
       } else if (last?.held && player.id === cachedPlayerId) {
         // A held spot timed out: the real position is behind it, reached at the walking speed, not as a step back.
-        releaseHeld(samples, player.position.x, player.position.y, at, player.mounted === true);
+        releaseHeld(samples, player.position.x, player.position.y, at, atMountSpeed(player));
       } else {
         pushSample(samples, player.position.x, player.position.y, last ? last.t + 0.01 : now);
       }
@@ -120,7 +121,7 @@ function smoothPlayerRenderPositions(players: any[], now: number) {
     // The local player's difference to the new node's position after a handoff is eased out (handoffwalk.ts).
     const eased = player.handoffEase && player.id === cachedPlayerId ? applyEase(player, smoothed, now) : smoothed;
     // For a second after a handoff in which the client walked the player, the draw is played at the walking pace (handoffwalk.ts HandoffPace).
-    const p = player.id === cachedPlayerId ? handoffPace.stepFor(eased, now, pressedKeys, getStickDirection(), player.mounted === true, (x, y) => blockedAt(window.mapData, x, y)) : eased;
+    const p = player.id === cachedPlayerId ? handoffPace.stepFor(eased, now, pressedKeys, getStickDirection(), atMountSpeed(player), (x, y) => blockedAt(window.mapData, x, y)) : eased;
     if (!player.renderPosition) {
       player.renderPosition = { x: p.x, y: p.y };
     } else {
@@ -1207,10 +1208,29 @@ function animationLoop() {
   // held keys or the stick (handoffwalk.ts). The move is only drawn: nothing here is sent, and the new node's position replaces it.
   if (currentPlayer && getHandoffGap() && !isSelfDead() && document.activeElement !== chatInput && document.activeElement !== friendsListSearch) {
     const walked = currentPlayer.moveSamples;
+    const newest = walked?.[walked.length - 1];
+    // The keys as held: a change after the gap report is sent to the new node, which walks it the same (socket.ts noteGapFrame).
     const direction = gapDirection(pressedKeys, getStickDirection());
-    const walkedOn = direction !== "" && direction === getWalkAtSwitch();
-    const stepMs = gapStepMs(deltaTime * 1000, currentPlayer.handoffWalk !== undefined, now, walked?.[walked.length - 1], getLateness(), walkedOn);
-    advanceSelf(currentPlayer, direction, stepMs, window.mapData);
+    // A node that walks the reported gap takes the first step as walked, in any direction (gapStepMs).
+    const reports = getGapReports();
+    const walkedOn = direction !== "" && (reports || direction === getWalkAtSwitch());
+    const started = currentPlayer.handoffWalk !== undefined || (reports && gapWalkStarted());
+    const stepMs = gapStepMs(deltaTime * 1000, started, now, newest, getLateness(), walkedOn);
+    // A turn or a key let go first walks the walk going on to the end of its tick, where the node ends it (socket.ts finishGapWalk).
+    const finished = finishGapWalk(direction);
+    if (finished) advanceSelf(currentPlayer, finished.walk, finished.ms, window.mapData);
+    // The keys held walk only the part of the frame a finish did not already walk (socket.ts gapFrameMs).
+    const walkMs = gapFrameMs(stepMs);
+    // Counted from the last echo's time, the time gapStepMs measures the first step from.
+    noteGapFrame(direction, direction ? walkMs : 0, now, newest && !newest.predicted ? newest.t + Math.max(0, getLateness()) : null);
+    advanceSelf(currentPlayer, direction, walkMs, window.mapData);
+    // Posed as the node will pose the walk it reports: a key let go stands the player, a turn faces the new way (gappose.ts).
+    const pose = reports && currentPlayer.layeredAnimation ? gapPose(currentPlayer.layeredAnimation.currentAnimationName, direction) : null;
+    if (pose) {
+      currentPlayer.lastDirection = pose.slice(pose.indexOf("_") + 1);
+      currentPlayer.animation = null;
+      void changeLayeredAnimation(currentPlayer.layeredAnimation, pose);
+    }
   }
 
   smoothPlayerRenderPositions(playersArray, now);

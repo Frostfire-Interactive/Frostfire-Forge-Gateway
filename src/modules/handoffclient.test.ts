@@ -102,10 +102,11 @@ test("socket.ts: the client opens the next node's session on HANDOFF_PREPARE and
   expect(client).toContain("[handoff] client switch_rx->cert/wt_ready/auth_sent/handoff_done/first_pos ms:");
   // The walk is drawn while the gap lasts; movementAllowed still holds the sending.
   expect(renderer).toContain("const direction = gapDirection(pressedKeys, getStickDirection());");
-  expect(renderer).toContain("advanceSelf(currentPlayer, direction, stepMs, window.mapData);");
-  expect(client).toContain("handoffGap = data?.resume === true;");
+  expect(renderer).toContain("advanceSelf(currentPlayer, direction, walkMs, window.mapData);");
+  expect(client).toContain("else startHandoffGap(data?.resume === true, data?.report === true, data?.gapUpdates === true);");
   // A stick still held after HANDOFF_DONE sends its direction and never a stop; a repeat prepare does not extend the timer.
-  const done = client.slice(client.indexOf('case "HANDOFF_DONE"'), client.indexOf('case "LOAD_PLAYERS"'));
+  // (HANDOFF_DONE, or HANDOFF_GAP_DONE after it, settles the gap in settleHandoff.)
+  const done = client.slice(client.indexOf("function settleHandoff("), client.indexOf("async function switchNode("));
   // (What is sent is decided by doneSend in resumesend.ts, which has its own tests; here the stick is handed to it,
   // what it names is sent as a MOVEXY, and HANDOFF_DONE sends no ABORT of its own.)
   expect(done).toContain("stick: getStickDirection(),");

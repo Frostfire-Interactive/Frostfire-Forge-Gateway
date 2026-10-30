@@ -6,12 +6,13 @@ import packet from "./packetencoder.ts";
 import Cache from "./cache.ts";
 import { updateTime, setHasWeather, setStormAmbience, setDarknessAmbience } from "./ambience.ts";
 import { inHandoffWindow as inWindow, skipSameWeather, weatherKey } from "./handoffkeep.ts";
+import { keepGapPose } from "./gappose.ts";
 import { setWeatherType, setWeatherData, getWeatherType, setDirection } from "./renderer.ts";
 import { addLightningStrike } from "./weather.ts";
 import { setTornadoes } from "./tornado.ts";
 import { setupItemTooltip, removeItemTooltip, hideItemTooltip, setupSpellTooltip } from "./tooltip.ts";
 import { startPersistentSpellCooldown } from "./ui.js";
-import { sampleTime, pushSample, pushEcho, setServerTickRate, noteBatch, seedSamples, resetClockEpoch, lastRenderTime, renderHeadroom, getClockOffset } from "./movementsmoothing.ts";
+import { sampleTime, pushSample, pushEcho, setServerTickRate, noteBatch, seedSamples, resetClockEpoch, lastRenderTime, renderHeadroom, getClockOffset, getTickMs } from "./movementsmoothing.ts";
 import { renderMessageParts } from "./itemlinks.ts";
 const cache = Cache.getInstance();
 
@@ -154,8 +155,9 @@ import { applyCreatureSpawn, applyCreatureDespawn, applyCreatureMove, applyCreat
 import { CREATURE_MOVE_HEADER, decodeCreatureMoves } from "./creaturemoves.ts";
 import { POSE_DATAGRAM_HEADER, applyPoseDatagram, applyPoseUpdate, poseMark, reapplyPose, sheetPoseState } from "./posepacket.ts";
 import { planSelfSpawn } from "./selfspawn.ts";
+import { layerSheetsChanged } from "./layersheets.ts";
 import { applyClusterDebug, pauseClusterRefresh, requestClusterRefresh, setClusterDebugRequester } from "./clusternodes.ts";
-import { MAX_PREDICT_MS, startEase, planHandoffDone, madeUpPoint, planPaceArm, hasAnchor, HandoffSettle, HandoffPace, KeptWalkDating, clearHeld, heldDirection } from "./handoffwalk.ts";
+import { MAX_PREDICT_MS, GapLog, MAX_GAP_UPDATES, GAP_DONE_WAIT_MS, atMountSpeed, startEase, planHandoffDone, madeUpPoint, planPaceArm, planStopPace, hasAnchor, HandoffSettle, HandoffPace, KeptWalkDating, clearHeld, heldDirection, gapDirection, advanceSelf, beginPoint } from "./handoffwalk.ts";
 import { doneFacing, doneSend, doneWalk, walkAtSwitch } from "./resumesend.ts";
 import { getIsKeyPressed, getIsMoving, getStickDirection, pressedKeys, setLastSentDirection } from "./input.js";
 import parseAPNG from "../libs/apng_parser.js";
@@ -525,7 +527,7 @@ let snapshotRevision: number | null = null;
 let snapshotApplied: boolean = false;
 let animationUpdateBuffer: Array<{id: string, name: string, data: any, revision: number}> = [];
 let pendingMovements: Array<{id: string, _data: any, revision: number}> = [];
-let pendingSpriteAnimations: Array<{id: string, animationState: string, bodySprite: any, headSprite: any, mountSprite: any, armorHelmetSprite: any, armorShoulderguardsSprite: any, armorNeckSprite: any, armorHandsSprite: any, armorChestSprite: any, armorFeetSprite: any, armorLegsSprite: any, armorWeaponSprite: any}> = [];
+let pendingSpriteAnimations: Array<{id: string, animationState: string, bodySprite: any, headSprite: any, mountSprite: any, armorHelmetSprite: any, armorShoulderguardsSprite: any, armorNeckSprite: any, armorHandsSprite: any, armorChestSprite: any, armorFeetSprite: any, armorLegsSprite: any, armorWeaponSprite: any, mounted?: boolean}> = [];
 
 // Projectiles arrive as unreliable datagrams and can race ahead of the
 // reliable-stream spawn packets for their source/target. Missing participants
@@ -1021,8 +1023,18 @@ function sendLogin() {
     return;
   }
   const language = navigator.language.split("-")[0] || navigator.language || "en";
+  // A resumed handoff's gap walk so far, which the new node walks the same way before HANDOFF_DONE (handoffwalk.ts GapLog).
+  // An engine that does not take it ignores the field (an unknown packet type would close the connection). A change of
+  // key from here on is sent as a HANDOFF_GAP (noteGapFrame), only to an engine that took this report (`report`).
+  // A SWITCH within a frame of HANDOFF_BEGIN comes before the gap walk's first frame: nothing ended, the keys held now go
+  // on. Unreported, the node walked the whole gap the way the player walked into it, past a key let go.
+  const gap = handoffResume && gapReports && getHandoffGap()
+    ? (gapLog.started ? gapLog.report() : { segments: [], held: gapDirection(pressedKeys, getStickDirection()) })
+    : null;
   sendRequest({ type: "LOGIN", data: null });
-  sendRequest({ type: "AUTH", data: sessionToken, language });
+  sendRequest({ type: "AUTH", data: sessionToken, language, ...(gap ? { gap } : {}) });
+  gapSeq = 0;
+  if (gap && gapUpdates) gapSentHeld = gap.held;
 }
 
 function initializeConnection() {
@@ -1374,9 +1386,11 @@ function noteFirstPosition() {
   printHandoffMarks();
 }
 
-// The walk the client predicts between the SWITCH and HANDOFF_DONE (core/handoffwalk.ts, drawn by renderer.ts).
+// The walk the client predicts between HANDOFF_BEGIN (or the SWITCH) and HANDOFF_DONE (core/handoffwalk.ts, drawn by renderer.ts).
 let handoffGap = false;
 let handoffGapAt = 0;
+// HANDOFF_BEGIN came and neither the SWITCH nor HANDOFF_STAY yet: the old node steps the player no more.
+let handoffBegun = false;
 // The fallback of a kept walk at HANDOFF_DONE (handoffwalk.ts): cancelled by a new switch, a closed socket and a real echo.
 const handoffSettle = new HandoffSettle();
 // The new node's echoes after a kept walk continue the predicted samples' timeline (handoffwalk.ts keptWalkShift).
@@ -1390,23 +1404,292 @@ function cancelKeptWalk() {
   const own: any = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
   clearHeld(own?.moveSamples);
 }
-// The player was walking when the SWITCH came: the new node resumes that walk, so a key let go in the gap is told to it.
+// The player was walking when the gap walk started (HANDOFF_BEGIN, or the SWITCH): the new node resumes that walk, so a key let go in the gap is told to it.
 let walkedAtSwitch = false;
-// The direction the player was known to walk in at the SWITCH (resumesend.ts): the new node resumes it by itself.
+// The direction the player was known to walk in as the gap walk started (resumesend.ts): the new node resumes it by itself.
 let walkDirectionAtSwitch = "";
+// The node walks the gap as the client reports it with AUTH (HANDOFF_BEGIN's or the SWITCH's `report`; handoffwalk.ts GapLog).
+let gapReports = false;
+// ... and each change of key after AUTH as a HANDOFF_GAP (`gapUpdates`): an engine without it closes the connection on one.
+let gapUpdates = false;
+const gapLog = new GapLog();
+// The number of the last gap report sent: AUTH's is 0, each HANDOFF_GAP after it (a change of key) one more.
+let gapSeq = 0;
+// The direction held in the last report sent, null before AUTH's or once one could not be sent: a change from it is sent.
+let gapSentHeld: string | null = null;
+// HANDOFF_DONE came before the node walked the newest report: the gap walk goes on until the answer to it (HANDOFF_GAP_DONE).
+let gapDoneWait: { data: any; timer: ReturnType<typeof setTimeout> } | null = null;
+// The local player's echoes sent before this (the node's clock) are of a walk that the answer to a report replaced.
+let ownEchoesFrom = 0;
+// The walk a finish took at once (finishGapWalk) ahead of the frames' time: the next frames' walk starts after it (gapFrameMs).
+let gapFinishedAheadMs = 0;
 
 /** The local player is being handed to another node and is walked on by the client for now. */
 function getHandoffGap(): boolean {
   return handoffGap && performance.now() - handoffGapAt < MAX_PREDICT_MS;
 }
 
-/** The direction the player walked in at the SWITCH (walkAtSwitch), "" for none: the gap walk goes on from the last echo in it. */
+/** The direction the player walked in as the gap walk started (walkAtSwitch), "" for none: the gap walk goes on from the last echo in it. */
 function getWalkAtSwitch(): string {
   return walkDirectionAtSwitch;
 }
 
+/** The new node walks the gap the client reports: the gap walk's first step is taken as walked (gapStepMs). */
+function getGapReports(): boolean {
+  return gapReports;
+}
+
+/** The gap walk had a frame: its first step is behind (gapStepMs `started`, where the gap is reported). */
+function gapWalkStarted(): boolean {
+  return gapLog.started;
+}
+
+/**
+ * One frame of the gap walk, for the report (GapLog.frame). After AUTH's report a change of key is sent at once with the
+ * whole gap so far (HANDOFF_GAP): the new node walks the gap as it says even when it came after HANDOFF_DONE, so the
+ * gap walk follows the keys as drawn and the node ends where it did.
+ */
+function noteGapFrame(direction: string, walkMs: number, now: number, from: number | null) {
+  gapLog.frame(direction, walkMs, now, from);
+  if (gapSentHeld === null || direction === gapSentHeld) return;
+  const report = gapSeq < MAX_GAP_UPDATES ? gapLog.report() : null;
+  if (!report) {
+    gapSentHeld = null;
+    return;
+  }
+  gapSeq++;
+  gapSentHeld = report.held;
+  sendRequest({ type: "HANDOFF_GAP", data: { seq: gapSeq, ...report } });
+}
+
+/**
+ * A change of key in the gap walk (a turn, or a key let go): the walk going on first walks on to the end of its tick
+ * (GapLog.finish), as the node steps a stretch in whole ticks and ends it there. Returns that walk and its ms for the
+ * caller to walk the player (advanceSelf), null when nothing is left or the node does not walk the reported gap.
+ */
+function finishGapWalk(direction: string): { walk: string; ms: number } | null {
+  if (!gapReports) return null;
+  const left = gapLog.stepLeft(getTickMs());
+  if (!left || left.walk === direction) return null;
+  gapLog.finish(left.ms);
+  gapFinishedAheadMs += left.ms;
+  return left;
+}
+
+/**
+ * The part of a gap frame of `ms` the keys held now walk: none of the time a finish already walked (finishGapWalk walks
+ * it at once). Walked twice, the walk after a turn went on that much longer than the node walks it, which counts the
+ * gap's time on its own clock.
+ */
+function gapFrameMs(ms: number): number {
+  const taken = Math.min(Math.max(0, ms), gapFinishedAheadMs);
+  gapFinishedAheadMs -= taken;
+  return ms - taken;
+}
+
+/**
+ * HANDOFF_DONE came: a change of key since the gap walk's last frame (no frame saw it, and none follows if the gap
+ * ended now) is noted as one more frame, which stood since that one as the draw did, and sent (noteGapFrame). Unsent,
+ * the node would walk on as the last report said while the client took the key as let go. The walk going on is finished
+ * first, as a frame finishes it (finishGapWalk).
+ */
+function noteGapChange() {
+  if (gapSentHeld === null || !getHandoffGap()) return;
+  const direction = gapDirection(pressedKeys, getStickDirection());
+  if (direction === gapSentHeld) return;
+  const finished = finishGapWalk(direction);
+  const own: any = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
+  if (finished && own) advanceSelf(own, finished.walk, finished.ms, window.mapData);
+  noteGapFrame(direction, 0, performance.now(), null);
+}
+
 function endHandoffGap() {
   handoffGap = false;
+  handoffBegun = false;
+  gapSentHeld = null;
+  if (gapDoneWait) clearTimeout(gapDoneWait.timer);
+  gapDoneWait = null;
+}
+
+/**
+ * The gap walk starts: it goes on from the last echo, in the direction walked now (walkAtSwitch). `report`: the node walks
+ * the gap as reported; `updates`: and takes the changes of key after AUTH (HANDOFF_GAP).
+ */
+function startHandoffGap(resume: boolean, report: boolean, updates: boolean) {
+  handoffGap = resume;
+  handoffGapAt = performance.now();
+  gapReports = report;
+  gapUpdates = report && updates;
+  gapLog.reset();
+  gapSeq = 0;
+  gapSentHeld = null;
+  if (gapDoneWait) clearTimeout(gapDoneWait.timer);
+  gapDoneWait = null;
+  ownEchoesFrom = 0;
+  gapFinishedAheadMs = 0;
+  walkedAtSwitch = getIsMoving() || getIsKeyPressed();
+  const own: any = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
+  walkDirectionAtSwitch = walkAtSwitch(pressedKeys, getStickDirection(), own?.lastServerUpdate, performance.now());
+  // A walk carried from an earlier gap would take this one's first step as a later one (gapStepMs).
+  if (own) own.handoffWalk = undefined;
+}
+
+/**
+ * HANDOFF_BEGIN: the old node stopped stepping the player (the drain) and sends the SWITCH only after its lock, release
+ * and save, 150-200 ms later. The gap walk starts now, from an echo a tick old, so its first step makes up the time since
+ * it (gapStepMs). Started at the SWITCH that echo was too old to walk on from: the draw stood through the drain and save,
+ * and HANDOFF_DONE found the walk too far behind the node's point to keep it. The walk goes on from BEGIN's point, the
+ * old node's last step, whose own echo may come after this frame and be dropped, or not come (handoffwalk.ts beginPoint).
+ */
+function beginHandoffGap(data: any) {
+  if (switchInProgress || isReconnecting) return;
+  handoffSettle.cancel();
+  cancelKeptWalk();
+  startHandoffGap(true, data?.report === true, data?.gapUpdates === true);
+  const own: any = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
+  const point = own?.moveSamples ? beginPoint(own.moveSamples[own.moveSamples.length - 1], data, atMountSpeed(own)) : null;
+  if (point && pushEcho(own.moveSamples, point.x, point.y, point.t)) {
+    own.serverPosition.x = point.x;
+    own.serverPosition.y = point.y;
+    own.position.x = point.x;
+    own.position.y = point.y;
+  }
+  handoffBegun = true;
+  // The node drops all but PING/PONG until it sends the SWITCH or HANDOFF_STAY: moves wait for the node that has the player.
+  movementAllowed = false;
+}
+
+/**
+ * HANDOFF_STAY: the old node gave the handoff up after HANDOFF_BEGIN and keeps the player at `at` (null: where its last
+ * echo put them). The walked difference is eased out, as a reseed at HANDOFF_DONE; a key still held is sent by the
+ * renderer's next frame (movementAllowed was false, so its last sent direction is empty).
+ */
+function stayAfterHandoffBegin(at: any) {
+  if (!handoffBegun || switchInProgress) return;
+  const predicting = getHandoffGap();
+  endHandoffGap();
+  walkedAtSwitch = false;
+  walkDirectionAtSwitch = "";
+  const self: any = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
+  if (self) {
+    const sx = Math.round(Number(at?.x));
+    const sy = Math.round(Number(at?.y));
+    const x = Number.isFinite(sx) && Number.isFinite(sy) ? sx : self.serverPosition.x;
+    const y = Number.isFinite(sx) && Number.isFinite(sy) ? sy : self.serverPosition.y;
+    const shown = self.renderPosition ? { x: self.renderPosition.x, y: self.renderPosition.y } : null;
+    self.serverPosition.x = x;
+    self.serverPosition.y = y;
+    self.position.x = x;
+    self.position.y = y;
+    if (self.renderPosition) {
+      self.renderPosition.x = x;
+      self.renderPosition.y = y;
+    }
+    self.moveSamples = seedSamples(x, y, performance.now());
+    if (predicting && shown) startEase(self, shown, { x, y }, performance.now());
+    else self.handoffWalk = undefined;
+    positionText.innerText = `Position: ${x}, ${y}`;
+  }
+  movementAllowed = true;
+}
+
+/**
+ * HANDOFF_DONE came before the node walked the newest gap report: the gap walk goes on (movement stays blocked, the
+ * node's echoes are of the walk the answer replaces) until HANDOFF_GAP_DONE answers it. Without the answer in
+ * GAP_DONE_WAIT_MS the player is placed as HANDOFF_DONE, or the last answer, said.
+ */
+function waitGapDone(done: any) {
+  if (gapDoneWait) clearTimeout(gapDoneWait.timer);
+  gapDoneWait = {
+    data: done,
+    timer: setTimeout(() => {
+      if (gapDoneWait) settleHandoff(gapDoneWait.data);
+    }, GAP_DONE_WAIT_MS),
+  };
+}
+
+/**
+ * The gap walk ends where the new node has the player (HANDOFF_DONE, or HANDOFF_GAP_DONE when it walked a report that
+ * came later): the client takes its position and lets the player move again.
+ */
+function settleHandoff(data: any) {
+  const predicting = getHandoffGap();
+  endHandoffGap();
+  // The new node's clock reads differently from the old one's: its send times are learned afresh (movementsmoothing.ts).
+  resetClockEpoch();
+  const self = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
+  const x = Math.round(Number(data?.x));
+  const y = Math.round(Number(data?.y));
+  // Drawn where the client walked the player to: that difference is eased out, not snapped, unless it is large.
+  const shown = self?.renderPosition ? { x: self.renderPosition.x, y: self.renderPosition.y } : null;
+  if (self && Number.isFinite(x) && Number.isFinite(y)) {
+    // A player the client walked through the gap and who still moves keeps the drawn position and the samples: the new
+    // node's next echoes continue them (no rewrite, no ease), so the draw has no jump. Else the node's point is taken.
+    // Decided from the walked position, not the drawn one, which trails it by the playback delay (handoffwalk.ts).
+    const moving = getIsKeyPressed() || !!getStickDirection();
+    // Weighed against where the node's first echo will be: it makes up the steps it stood through the gap (madeUpPoint).
+    const target = madeUpPoint({ x, y }, doneWalk(data?.walk), data?.catchUpMs, atMountSpeed(self));
+    const keep = planHandoffDone(predicting, moving, self, target, hasAnchor(self.moveSamples)) === "keep";
+    self.serverPosition.x = x;
+    self.serverPosition.y = y;
+    if (keep) {
+      self.handoffWalk = undefined;
+      self.handoffEase = undefined;
+      // No echo may follow (the key was let go at once): the node's point is then taken, eased.
+      handoffSettle.arm(self, x, y);
+      keptWalkDating.arm(performance.now());
+    } else {
+      cancelKeptWalk();
+      self.position.x = x;
+      self.position.y = y;
+      if (self.renderPosition) {
+        self.renderPosition.x = x;
+        self.renderPosition.y = y;
+      }
+      // Seeded with the point, older than the first echoes, so they are not dropped as older than a frame sample.
+      self.moveSamples = seedSamples(x, y, performance.now());
+    }
+    // The draw was walked ahead of the node (it stood the player through the gap): kept or reseeded, it goes on at the walking
+    // pace until the node's draw passes it, instead of standing (kept) or stepping back and bursting (reseeded).
+    const paceFrom = planPaceArm(predicting, moving, shown);
+    if (paceFrom) handoffPace.arm(performance.now(), paceFrom);
+    // A key let go in the gap: the draw goes on to the node's point at the walking pace, not eased.
+    const stopFrom = planStopPace(predicting, moving, shown);
+    if (stopFrom) {
+      handoffPace.arm(performance.now(), stopFrom);
+      handoffPace.release();
+    }
+    // Lower case, as the animation names are built from it; anything but one of the eight directions is ignored.
+    const direction = typeof data?.direction === "string" ? data.direction.toLowerCase() : "";
+    if (["up", "down", "left", "right", "upleft", "upright", "downleft", "downright"].includes(direction)) {
+      self.lastDirection = direction;
+    }
+    self.lastServerUpdate = performance.now();
+    positionText.innerText = `Position: ${x}, ${y}`;
+    if (!keep && predicting && shown && !stopFrom) startEase(self, shown, { x, y }, performance.now());
+  }
+  movementAllowed = true;
+  // The new node walks on as the newest gap report it walked said (or resumed the walk the player had at the SWITCH). A
+  // key let go since is told to it now; a key still held is sent by the renderer's next frame (movementAllowed was false,
+  // so its last sent direction is empty). A stick still held keeps walking: its direction is sent, never a stop. Where
+  // the walk is known to be resumed in the direction held, nothing is sent: a repeated move would restart the node's
+  // mover and unsettle its steps (resumesend.ts); the last sent direction is set as if it had been sent, so the next real
+  // change is sent.
+  const send = doneSend({
+    atSwitch: walkDirectionAtSwitch,
+    keyPressed: getIsKeyPressed(),
+    keyDirection: heldDirection(pressedKeys),
+    stick: getStickDirection(),
+    facing: doneFacing(data?.direction),
+    walkedAtSwitch,
+    // The direction the node walks the player in (from an engine that says it); else the facing decides, as before.
+    walk: doneWalk(data?.walk),
+  });
+  if (send.send !== null) sendRequest({ type: "MOVEXY", data: send.send });
+  if (send.lastSent !== null) setLastSentDirection(send.lastSent);
+  if (send.keyResumed !== null) setDirection(send.keyResumed);
+  walkedAtSwitch = false;
+  walkDirectionAtSwitch = "";
 }
 
 async function switchNode(data: any) {
@@ -1421,12 +1704,11 @@ async function switchNode(data: any) {
   cancelKeptWalk();
   if (handoff) {
     handoffMarks = { switch_rx: performance.now(), preopened: false };
-    // The local player is walked on (renderer.ts) until the new node has them; a held key keeps its direction.
-    handoffGap = data?.resume === true;
-    handoffGapAt = performance.now();
-    walkedAtSwitch = getIsMoving() || getIsKeyPressed();
-    const own: any = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
-    walkDirectionAtSwitch = walkAtSwitch(pressedKeys, getStickDirection(), own?.lastServerUpdate, performance.now());
+    // The local player is walked on (renderer.ts) until the new node has them; a held key keeps its direction. A walk begun
+    // at HANDOFF_BEGIN goes on as it began: the node took the walk it resumes from the player as they were at the drain.
+    if (handoffBegun) handoffGap = handoffGap && data?.resume === true;
+    else startHandoffGap(data?.resume === true, data?.report === true, data?.gapUpdates === true);
+    handoffBegun = false;
   } else {
     handoffMarks = null;
     endHandoffGap();
@@ -1726,6 +2008,7 @@ async function handleLoadPlayersPacket(data: any) {
     for (const anim of pendingSpriteAnimations) {
       const player = Array.from(cache.players).find((p: any) => p.id === anim.id);
       if (player) {
+        if (typeof anim.mounted === "boolean") player.mounted = anim.mounted;
         try {
           const { initializeLayeredAnimation, changeLayeredAnimation } = await import('./layeredAnimation.js');
           let animationState = anim.animationState || 'idle';
@@ -1735,19 +2018,7 @@ async function handleLoadPlayersPacket(data: any) {
             animationState = `${animationState}_${player.lastDirection}`;
           }
           const hasExisting = player.layeredAnimation;
-          const spriteSheetsChanged = hasExisting ? (
-            player.layeredAnimation.layers.mount?.spriteSheet?.name !== anim.mountSprite?.name ||
-            player.layeredAnimation.layers.body?.spriteSheet?.name !== anim.bodySprite?.name ||
-            player.layeredAnimation.layers.head?.spriteSheet?.name !== anim.headSprite?.name ||
-            player.layeredAnimation.layers.armor_helmet?.spriteSheet?.name !== anim.armorHelmetSprite?.name ||
-            player.layeredAnimation.layers.armor_shoulderguards?.spriteSheet?.name !== anim.armorShoulderguardsSprite?.name ||
-            player.layeredAnimation.layers.armor_neck?.spriteSheet?.name !== anim.armorNeckSprite?.name ||
-            player.layeredAnimation.layers.armor_hands?.spriteSheet?.name !== anim.armorHandsSprite?.name ||
-            player.layeredAnimation.layers.armor_chest?.spriteSheet?.name !== anim.armorChestSprite?.name ||
-            player.layeredAnimation.layers.armor_feet?.spriteSheet?.name !== anim.armorFeetSprite?.name ||
-            player.layeredAnimation.layers.armor_legs?.spriteSheet?.name !== anim.armorLegsSprite?.name ||
-            player.layeredAnimation.layers.armor_weapon?.spriteSheet?.name !== anim.armorWeaponSprite?.name
-          ) : true;
+          const spriteSheetsChanged = layerSheetsChanged(player.layeredAnimation, anim);
           if (!hasExisting || spriteSheetsChanged) {
             player.layeredAnimation = await initializeLayeredAnimation(
               anim.mountSprite || null,
@@ -2707,16 +2978,24 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
               armorFeetSprite: data.armorFeetSprite,
               armorLegsSprite: data.armorLegsSprite,
               armorWeaponSprite: data.armorWeaponSprite,
+              mounted: !!data.mountSprite,
             });
             return;
           }
 
           if (player) {
 
+            // The engine names the mount sheet exactly while the player is mounted: the walk's speed follows it.
+            player.mounted = !!data.mountSprite;
             const poseSeen = poseMark(player, data.poseRev);
             const { initializeLayeredAnimation, changeLayeredAnimation } = await import('./layeredAnimation.js');
 
             let animationState = sheetPoseState(player, data.poseRev, data.animationState || 'idle');
+            // In a handoff gap the client poses its own player as it walks them (renderer.ts): a node's walk or stand is
+            // of an older gap report, and the new node poses the newest once it walked it (gappose.ts).
+            if (data.id === cachedPlayerId && gapReports && getHandoffGap()) {
+              animationState = keepGapPose(player.layeredAnimation?.currentAnimationName, animationState);
+            }
 
             if (animationState.includes('_')) {
               const direction = animationState.split('_')[1];
@@ -2727,19 +3006,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
             }
 
             const hasExisting = player.layeredAnimation;
-            const spriteSheetsChanged = hasExisting ? (
-              player.layeredAnimation.layers.mount?.spriteSheet?.name !== data.mountSprite?.name ||
-              player.layeredAnimation.layers.body?.spriteSheet?.name !== data.bodySprite?.name ||
-              player.layeredAnimation.layers.head?.spriteSheet?.name !== data.headSprite?.name ||
-              player.layeredAnimation.layers.armor_helmet?.spriteSheet?.name !== data.armorHelmetSprite?.name ||
-              player.layeredAnimation.layers.armor_shoulderguards?.spriteSheet?.name !== data.armorShoulderguardsSprite?.name ||
-              player.layeredAnimation.layers.armor_neck?.spriteSheet?.name !== data.armorNeckSprite?.name ||
-              player.layeredAnimation.layers.armor_hands?.spriteSheet?.name !== data.armorHandsSprite?.name ||
-              player.layeredAnimation.layers.armor_chest?.spriteSheet?.name !== data.armorChestSprite?.name ||
-              player.layeredAnimation.layers.armor_feet?.spriteSheet?.name !== data.armorFeetSprite?.name ||
-              player.layeredAnimation.layers.armor_legs?.spriteSheet?.name !== data.armorLegsSprite?.name ||
-              player.layeredAnimation.layers.armor_weapon?.spriteSheet?.name !== data.armorWeaponSprite?.name
-            ) : true;
+            const spriteSheetsChanged = layerSheetsChanged(player.layeredAnimation, data);
 
             if (!hasExisting || spriteSheetsChanged) {
 
@@ -2885,19 +3152,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
             }
 
             const hasExisting = targetPlayer.layeredAnimation;
-            const spriteSheetsChanged = hasExisting ? (
-              targetPlayer.layeredAnimation.layers.mount?.spriteSheet?.name !== animationData.mountSprite?.name ||
-              targetPlayer.layeredAnimation.layers.body?.spriteSheet?.name !== animationData.bodySprite?.name ||
-              targetPlayer.layeredAnimation.layers.head?.spriteSheet?.name !== animationData.headSprite?.name ||
-              targetPlayer.layeredAnimation.layers.armor_helmet?.spriteSheet?.name !== animationData.armorHelmetSprite?.name ||
-              targetPlayer.layeredAnimation.layers.armor_shoulderguards?.spriteSheet?.name !== animationData.armorShoulderguardsSprite?.name ||
-              targetPlayer.layeredAnimation.layers.armor_neck?.spriteSheet?.name !== animationData.armorNeckSprite?.name ||
-              targetPlayer.layeredAnimation.layers.armor_hands?.spriteSheet?.name !== animationData.armorHandsSprite?.name ||
-              targetPlayer.layeredAnimation.layers.armor_chest?.spriteSheet?.name !== animationData.armorChestSprite?.name ||
-              targetPlayer.layeredAnimation.layers.armor_feet?.spriteSheet?.name !== animationData.armorFeetSprite?.name ||
-              targetPlayer.layeredAnimation.layers.armor_legs?.spriteSheet?.name !== animationData.armorLegsSprite?.name ||
-              targetPlayer.layeredAnimation.layers.armor_weapon?.spriteSheet?.name !== animationData.armorWeaponSprite?.name
-            ) : true;
+            const spriteSheetsChanged = layerSheetsChanged(targetPlayer.layeredAnimation, animationData);
 
             if (!hasExisting || spriteSheetsChanged) {
               targetPlayer.layeredAnimation = await initializeLayeredAnimation(
@@ -3128,6 +3383,16 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       closePreOpened(preOpened);
       break;
     }
+    case "HANDOFF_BEGIN": {
+      // The node stopped stepping the player for a handoff: the client walks them on from now.
+      beginHandoffGap(data);
+      break;
+    }
+    case "HANDOFF_STAY": {
+      // The handoff was given up after HANDOFF_BEGIN: the node keeps the player where it stood them.
+      stayAfterHandoffBegin(data);
+      break;
+    }
     case "HANDOFF_DONE": {
       // The new node took the player over with the world as the client has it (cells phase 6).
       clearSwitches();
@@ -3141,79 +3406,24 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         const marks = handoffMarks;
         marks.printTimer = setTimeout(() => { if (handoffMarks === marks) printHandoffMarks(); }, 3000);
       }
-      const predicting = getHandoffGap();
-      endHandoffGap();
-      // The new node's clock reads differently from the old one's: its send times are learned afresh (movementsmoothing.ts).
-      resetClockEpoch();
       requestClusterRefresh();
-      const self = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
-      const x = Math.round(Number(data?.x));
-      const y = Math.round(Number(data?.y));
-      // Drawn where the client walked the player to: that difference is eased out, not snapped, unless it is large.
-      const shown = self?.renderPosition ? { x: self.renderPosition.x, y: self.renderPosition.y } : null;
-      if (self && Number.isFinite(x) && Number.isFinite(y)) {
-        // A player the client walked through the gap and who still moves keeps the drawn position and the samples: the new
-        // node's next echoes continue them (no rewrite, no ease), so the draw has no jump. Else the node's point is taken.
-        // Decided from the walked position, not the drawn one, which trails it by the playback delay (handoffwalk.ts).
-        const moving = getIsKeyPressed() || !!getStickDirection();
-        // Weighed against where the node's first echo will be: it makes up the steps it stood through the gap (madeUpPoint).
-        const target = madeUpPoint({ x, y }, doneWalk(data?.walk), data?.catchUpMs, self.mounted === true);
-        const keep = planHandoffDone(predicting, moving, self, target, hasAnchor(self.moveSamples)) === "keep";
-        self.serverPosition.x = x;
-        self.serverPosition.y = y;
-        if (keep) {
-          self.handoffWalk = undefined;
-          self.handoffEase = undefined;
-          // No echo may follow (the key was let go at once): the node's point is then taken, eased.
-          handoffSettle.arm(self, x, y);
-          keptWalkDating.arm(performance.now());
-        } else {
-          cancelKeptWalk();
-          self.position.x = x;
-          self.position.y = y;
-          if (self.renderPosition) {
-            self.renderPosition.x = x;
-            self.renderPosition.y = y;
-          }
-          // Seeded with the point, older than the first echoes, so they are not dropped as older than a frame sample.
-          self.moveSamples = seedSamples(x, y, performance.now());
-        }
-        // The draw was walked ahead of the node (it stood the player through the gap): kept or reseeded, it goes on at the walking
-        // pace until the node's draw passes it, instead of standing (kept) or stepping back and bursting (reseeded).
-        const paceFrom = planPaceArm(predicting, moving, shown);
-        if (paceFrom) handoffPace.arm(performance.now(), paceFrom);
-        // Lower case, as the animation names are built from it; anything but one of the eight directions is ignored.
-        const direction = typeof data?.direction === "string" ? data.direction.toLowerCase() : "";
-        if (["up", "down", "left", "right", "upleft", "upright", "downleft", "downright"].includes(direction)) {
-          self.lastDirection = direction;
-        }
-        self.lastServerUpdate = performance.now();
-        positionText.innerText = `Position: ${x}, ${y}`;
-        if (!keep && predicting && shown) startEase(self, shown, { x, y }, performance.now());
-      }
-      movementAllowed = true;
-      // The new node resumed the walk the player had at the SWITCH. A key let go in the gap is told to it now; a key
-      // still held is sent by the renderer's next frame (movementAllowed was false, so its last sent direction is empty).
-      // A stick still held keeps walking: its direction is sent, never a stop. Where the walk is known to be resumed in
-      // the direction held, nothing is sent: a repeated move would restart the node's mover and unsettle its steps
-      // (resumesend.ts); the last sent direction is set as if it had been sent, so the next real change is sent.
-      const send = doneSend({
-        atSwitch: walkDirectionAtSwitch,
-        keyPressed: getIsKeyPressed(),
-        keyDirection: heldDirection(pressedKeys),
-        stick: getStickDirection(),
-        facing: doneFacing(data?.direction),
-        walkedAtSwitch,
-        // The direction the node walks the player in (from an engine that says it); else the facing decides, as before.
-        walk: doneWalk(data?.walk),
-      });
-      if (send.send !== null) sendRequest({ type: "MOVEXY", data: send.send });
-      if (send.lastSent !== null) setLastSentDirection(send.lastSent);
-      if (send.keyResumed !== null) setDirection(send.keyResumed);
-      walkedAtSwitch = false;
-      walkDirectionAtSwitch = "";
+      // The node walked the gap as an older report said than the newest sent (a change of key on the way): it walks it
+      // again as the newest says and answers (HANDOFF_GAP_DONE). Till then the gap walk goes on as drawn, so nothing is
+      // set back and the node's point is weighed once, where it ends up.
+      noteGapChange();
+      if (gapSeq > 0 && typeof data?.gapSeq === "number" && data.gapSeq < gapSeq && getHandoffGap()) waitGapDone(data);
+      else settleHandoff(data);
       // The new node's players, NPCs and gather nodes follow; what it does not send is dropped after a short window.
       startHandoffSweep();
+      break;
+    }
+    case "HANDOFF_GAP_DONE": {
+      // The node walked a gap report that came after HANDOFF_DONE: its echoes from before are of the walk it replaced.
+      if (typeof data?.t === "number" && Number.isFinite(data.t)) ownEchoesFrom = Math.max(ownEchoesFrom, data.t);
+      if (!gapDoneWait) break;
+      const done = { ...gapDoneWait.data, x: data?.x, y: data?.y, direction: data?.direction, walk: data?.walk, catchUpMs: data?.catchUpMs };
+      gapDoneWait.data = done;
+      if (Number(data?.seq) >= gapSeq) settleHandoff(done);
       break;
     }
     case "LOAD_PLAYERS": {
@@ -3649,11 +3859,17 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         // a teleport-sized jump snaps there instead of gliding. An out-of-order
         // step older than one already applied is dropped.
         const sentAt = typeof data.t === "number" ? data.t : null;
+        // After HANDOFF_BEGIN the old node steps the local player no more: a step it sent before (a datagram that came after
+        // the stream's BEGIN) is already walked by the gap walk, and taken it would set the walked position back.
+        if (playerId == cachedPlayerId && handoffBegun) break;
+        // The new node walks a gap report that came after HANDOFF_DONE again from the start (HANDOFF_GAP_DONE): its steps
+        // before that are of the walk it replaced, which the gap walk did not take.
+        if (playerId == cachedPlayerId && (gapDoneWait || (sentAt !== null && sentAt < ownEchoesFrom))) break;
         // The local player's walk through a handoff gap may hold predicted steps newer than this echo: they are replaced.
         // After a kept walk the local player's echoes are dated to continue the predicted samples, not after them (a ghost walks
         // at the mounted speed, as the engine's MOVEXY steps it).
         const echoAt = playerId == cachedPlayerId
-          ? keptWalkDating.date(player.moveSamples ??= [], sx, sy, sampleTime(sentAt), performance.now(), { renderAt: lastRenderTime(), headroom: renderHeadroom(), offset: getClockOffset() }, player.lastDirection, player.mounted === true || player.isGhost === true)
+          ? keptWalkDating.date(player.moveSamples ??= [], sx, sy, sampleTime(sentAt), performance.now(), { renderAt: lastRenderTime(), headroom: renderHeadroom(), offset: getClockOffset() }, player.lastDirection, atMountSpeed(player))
           : sampleTime(sentAt);
         // (the point is the drawn spot while the draw is past a kept walk's first echoes: it waits there, never steps back)
         const drawnPoint = playerId == cachedPlayerId ? keptWalkDating.point(sx, sy) : { x: sx, y: sy, held: false, until: 0 };
@@ -6060,7 +6276,7 @@ window.addEventListener('beforeunload', () => {
   flushInventorySlots();
 });
 
-export { sendRequest, cachedPlayerId, getIsLoaded, getMovementAllowed, getHandoffGap, getWalkAtSwitch, handoffPace, itemsByName, showNotification };
+export { sendRequest, cachedPlayerId, getIsLoaded, getMovementAllowed, getHandoffGap, getWalkAtSwitch, getGapReports, gapWalkStarted, noteGapFrame, finishGapWalk, gapFrameMs, handoffPace, itemsByName, showNotification };
 (window as any).itemsByName = itemsByName;
 
 

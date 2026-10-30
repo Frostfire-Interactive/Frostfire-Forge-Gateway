@@ -220,6 +220,8 @@ declare interface SpriteSheetTemplate {
 declare interface AnimationLayer {
   type: 'mount' | 'body' | 'head' | 'armor_helmet' | 'armor_shoulderguards' | 'armor_neck' | 'armor_hands' | 'armor_chest' | 'armor_feet' | 'armor_legs' | 'armor_weapon';
   spriteSheet: Nullable<SpriteSheetTemplate>;
+  /** The sheet the server named for this layer; a worn item's template carries a shared base name (layersheets.ts). */
+  sheetName?: Nullable<string>;
   frames: AnimationFrame[];
   currentFrame: number;
   lastFrameTime: number;

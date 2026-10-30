@@ -1,6 +1,6 @@
 import { expect, test, mock } from "bun:test";
 import { sampleTime, pushSample, pushPredicted, pushEcho, getLateness, interpolationDelay, renderTime, lastRenderTime, renderHeadroom, getClockOffset, positionAt, seedSamples, needsPositionSample, resetMovementClock, resetClockEpoch, setServerTickRate } from "../webserver/public/js/core/movementsmoothing";
-import { advanceSelf, gapDirection, applyEase, startEase, gapSampleTime, gapStepMs, stepWalkMs, planHandoffDone, hasAnchor, HandoffSettle, HandoffPace, planPaceArm, HANDOFF_PACE_RAMP_PER_MS, HANDOFF_PACE_LEAD_PX, HANDOFF_PACE_WINDOW_MS, HANDOFF_PACE_STALL_MS, HANDOFF_PACE_WAIT_MS, KeptWalkDating, keptWalkShift, HANDOFF_SNAP_PX, HANDOFF_KEEP_PX, HANDOFF_KEEP_WALK_PX, HANDOFF_KEEP_LEAD_MS, SETTLE_MS, KEPT_SHIFT_MAX_MS, KEPT_HEADROOM_SLACK_MS, KEPT_LEAD_SHIFT_MAX_MS, KEPT_CATCHUP_SPEED, KEPT_CATCHUP_LEAD_MAX_MS, keptWalkCover, clearHeld, HOLD_MAX_MS, releaseHeld, madeUpPoint, HANDOFF_CATCH_UP_MAX_MS } from "../webserver/public/js/core/handoffwalk";
+import { advanceSelf, gapDirection, applyEase, startEase, gapSampleTime, gapStepMs, stepWalkMs, planHandoffDone, hasAnchor, HandoffSettle, HandoffPace, planPaceArm, planStopPace, HANDOFF_PACE_RAMP_PER_MS, HANDOFF_PACE_LEAD_PX, HANDOFF_PACE_WINDOW_MS, HANDOFF_PACE_STALL_MS, HANDOFF_PACE_WAIT_MS, KeptWalkDating, keptWalkShift, HANDOFF_SNAP_PX, HANDOFF_KEEP_PX, HANDOFF_KEEP_WALK_PX, HANDOFF_KEEP_LEAD_MS, SETTLE_MS, KEPT_SHIFT_MAX_MS, KEPT_HEADROOM_SLACK_MS, KEPT_LEAD_SHIFT_MAX_MS, KEPT_CATCHUP_SPEED, KEPT_CATCHUP_LEAD_MAX_MS, keptWalkCover, clearHeld, HOLD_MAX_MS, releaseHeld, madeUpPoint, HANDOFF_CATCH_UP_MAX_MS, atMountSpeed } from "../webserver/public/js/core/handoffwalk";
 
 // The walk across a node border, driven through the real smoothing and handoff-walk code (no DOM): the player walks
 // right at 180 px/s, the old node's last echo comes `lastEchoAgo` ms before the SWITCH, HANDOFF_DONE comes
@@ -166,6 +166,25 @@ test("pushEcho replaces predicted steps newer than the echo and never drops it f
   expect(pushEcho(samples, 90, 0, 5050)).toBe(false);
 });
 
+test("pushPredicted keeps the newest server sample however long the gap: the oldest predicted one goes instead", () => {
+  setServerTickRate(60);
+  const samples = seedSamples(100, 0, 5000);
+  pushSample(samples, 103, 0, 5016);
+  // A gap walk begun at HANDOFF_BEGIN runs 300 ms: 43 frames at 144 Hz, far more than the list holds.
+  for (let k = 1; k <= 43; k++) pushPredicted(samples, 103 + k * 1.25, 0, 5016 + k * 6.94);
+  expect(hasAnchor(samples)).toBe(true);
+  expect(samples[0]).toEqual({ t: 5016, x: 103, y: 0 });
+  // The list is no longer than before, and the newest predicted samples are the ones kept, in order.
+  expect(samples.length).toBe(16);
+  expect(samples[samples.length - 1].x).toBeCloseTo(103 + 43 * 1.25);
+  for (let i = 2; i < samples.length; i++) expect(samples[i].t).toBeGreaterThan(samples[i - 1].t);
+  // A teleport-sized predicted step still starts the list over: no anchor is kept across a snap.
+  pushPredicted(samples, 103 + 43 * 1.25 + 200, 0, 5400);
+  expect(samples.length).toBe(1);
+  expect(hasAnchor(samples)).toBe(false);
+  setServerTickRate(30);
+});
+
 // The settle fallback of a kept walk, with a fake clock for the timer.
 function fakeTimers() {
   const pending = new Map<number, { fn: () => void; at: number }>();
@@ -281,7 +300,7 @@ test("madeUpPoint moves HANDOFF_DONE's point on along the walk by the catch-up, 
 
 test("socket.ts weighs the kept walk at HANDOFF_DONE against the point the catch-up moves on to", async () => {
   const src = (await Bun.file(new URL("../webserver/public/js/core/socket.ts", import.meta.url)).text()).split(String.fromCharCode(13)).join("");
-  expect(src).toContain("const target = madeUpPoint({ x, y }, doneWalk(data?.walk), data?.catchUpMs, self.mounted === true);");
+  expect(src).toContain("const target = madeUpPoint({ x, y }, doneWalk(data?.walk), data?.catchUpMs, atMountSpeed(self));");
   expect(src).toContain("planHandoffDone(predicting, moving, self, target, hasAnchor(self.moveSamples)) === \"keep\"");
 });
 
@@ -515,7 +534,7 @@ function keysFor(direction: string): Set<string> {
 // the new node's first echo is a point the predicted samples already passed, dated later. `fix` dates the echoes with
 // KeptWalkDating (armed at a kept DONE); without it they are dated as they come and the draw stands at the newest
 // predicted sample until they pass it. `held` false is a crossing standing still: no gap walk, the reseed path.
-function keepCross(o: { dir: string; ago: number; done: number; phase: number; startFrame: number; fix: boolean; held?: boolean; hz?: number; jitter?: number; ahead?: number; byDrawn?: boolean; frameHz?: number; gaps?: number[]; stall?: { from: number; until: number }; echoes?: number; oldGap?: boolean; oldPlan?: boolean; pace?: boolean; stick?: boolean; keyUp?: number; release?: number; mounted?: boolean; turn?: { after: number; dir: string; keyBefore: number }; endMs?: number }) {
+function keepCross(o: { dir: string; ago: number; done: number; phase: number; startFrame: number; fix: boolean; held?: boolean; hz?: number; jitter?: number; ahead?: number; byDrawn?: boolean; frameHz?: number; gaps?: number[]; stall?: { from: number; until: number }; echoes?: number; oldGap?: boolean; oldPlan?: boolean; pace?: boolean; stick?: boolean; keyUp?: number; release?: number; mounted?: boolean; turn?: { after: number; dir: string; keyBefore: number }; endMs?: number; walkedOn?: boolean; lastLate?: number; dropLate?: boolean; echoAhead?: number }) {
   const held = o.held !== false;
   const frameMs = 1000 / (o.frameHz ?? 144);
   resetMovementClock();
@@ -535,6 +554,8 @@ function keepCross(o: { dir: string; ago: number; done: number; phase: number; s
   const reference: { t: number; x: number; y: number }[] = []; // the echoes dated as they come: where the server says the player is
   const events: { t: number; fn: () => void }[] = [];
   const echo = (p: { x: number; y: number }, arrive: number, skew: number, fresh: boolean, direction?: string) => events.push({ t: arrive, fn: () => {
+    // `dropLate`: an old node's echo that comes after HANDOFF_BEGIN is dropped (socket.ts MOVEXY): the gap walk already made it up.
+    if (o.dropLate && gap && !fresh) return;
     const raw = sampleTime(arrive - LAT - skew, arrive);
     const t = o.fix && fresh ? dating.date(player.moveSamples, p.x, p.y, raw, arrive, { renderAt: lastRenderTime(), headroom: renderHeadroom(), offset: getClockOffset() }, player.lastDirection, o.mounted === true) : raw;
     const pt = o.fix && fresh ? dating.point(p.x, p.y) : p;
@@ -549,7 +570,9 @@ function keepCross(o: { dir: string; ago: number; done: number; phase: number; s
   const lastK = held ? K : K - 20;
   for (let k = 0; k <= lastK; k++) {
     const sent = lastArrive - (K - k) * TICK;
-    echo(at0(k), sent + late(k), late(k), false);
+    // `lastLate`: the last echo comes that long after the gap starts (a datagram behind HANDOFF_BEGIN on the stream).
+    if (k === lastK && o.lastLate !== undefined) echo(at0(k), S + o.lastLate, S + o.lastLate - sent, false);
+    else echo(at0(k), sent + late(k), late(k), false);
   }
   const D = S + o.done;
   // The new node's point: where the server stood the player through the gap, `ahead` steps past the last echo the client
@@ -589,7 +612,8 @@ function keepCross(o: { dir: string; ago: number; done: number; phase: number; s
   // The new node resumes the walk from the handoff point; its first step comes `phase` ms after DONE.
   // `gaps`: the send gaps of the first echoes after DONE (the live burst: the 2nd and 3rd echoes 4-6 ms apart), then the tick.
   let sendAt = D + o.phase;
-  let cur = at0(K + ahead);
+  // `echoAhead`: the steps the first echo makes up, counted when it is sent (the point's `ahead` is counted at DONE).
+  let cur = at0(K + (held ? o.echoAhead ?? ahead : 0));
   for (let k = 1; held && k < (o.echoes ?? 60); k++) {
     if (k > 1) sendAt += o.gaps?.[k - 2] ?? TICK;
     // `stall`: the echoes sent from `from` to `until` ms after DONE arrive together at `until` (a hiccup on the link).
@@ -610,7 +634,7 @@ function keepCross(o: { dir: string; ago: number; done: number; phase: number; s
   let released = false;
   for (let now = o.startFrame; now < (o.endMs ?? 2000); now += frameMs) {
     while (ei < events.length && events[ei].t <= now) events[ei++].fn();
-    if (gap) advanceSelf(player, held ? o.dir : "", o.oldGap ? frameMs : gapStepMs(frameMs, player.handoffWalk !== undefined, now, player.moveSamples[player.moveSamples.length - 1], getLateness()), null);
+    if (gap) advanceSelf(player, held ? o.dir : "", o.oldGap ? frameMs : gapStepMs(frameMs, player.handoffWalk !== undefined, now, player.moveSamples[player.moveSamples.length - 1], getLateness(), o.walkedOn === true), null);
     const samples = player.moveSamples;
     const last = samples[samples.length - 1];
     const at = renderTime(now);
@@ -727,6 +751,129 @@ function afterDone(r: ReturnType<typeof keepCross>, done: number) {
   for (let i = 1; i < w.length; i++) if (w[i].step < 0.05 && w[i - 1].step < 0.05) stalls++;
   return { stalls, min: Math.min(...w.map((x) => x.step)), max: Math.max(...w.map((x) => x.step)) };
 }
+
+// ---- The walk begun at HANDOFF_BEGIN
+//
+// The old node stops stepping the player at the drain, then takes the lock, releases, saves and only then sends the
+// SWITCH. Live on the test stack (node-3 to node-2): drained +35, saved +143, SWITCH at 193 ms. `S` in keepCross is the
+// start of the gap walk: the SWITCH before HANDOFF_BEGIN (the last echo `ago` = the whole drain and save before it), the
+// BEGIN now (the last echo a tick or less before it, DONE the drain, save and switch after it).
+
+/**
+ * The steps the new node makes up past the old node's last one (arrival.ts, round(idle / tick) - 1 on top of the first),
+ * as `point` and `echoAhead` of keepCross: DONE's catchUpMs is counted when DONE is sent, the first echo's when the MOVEXY
+ * runs right after it (`phase` later).
+ */
+function engineAhead(o: { done: number; phase: number; ago: number; hz?: number }): { ahead: number; echoAhead: number } {
+  const tick = 1000 / (o.hz ?? 60);
+  const steps = (ms: number) => Math.max(0, Math.round((ms + o.ago + 1) / tick) - 1);
+  return { ahead: steps(o.done), echoAhead: steps(o.done + o.phase) };
+}
+
+/** The longest the draw stands (two frames or more under 0.05 px apart) between `from` ms of the gap start and `to`, in ms. */
+function longestStand(r: ReturnType<typeof keepCross>, from: number, to: number): number {
+  const w = r.all.filter((x) => x.rel >= from && x.rel <= to);
+  let longest = 0, start: number | null = null;
+  for (let i = 1; i < w.length; i++) {
+    if (Math.abs(w[i].step) < 0.05) {
+      start ??= w[i - 1].rel;
+      longest = Math.max(longest, w[i].rel - start);
+    } else start = null;
+  }
+  return longest;
+}
+
+/** The slowest and fastest frame, in steady frames, between `from` ms of the gap start and `to`. */
+function frameRange(r: ReturnType<typeof keepCross>, from: number, to: number): { min: number; max: number } {
+  const w = r.all.filter((x) => x.rel >= from && x.rel <= to);
+  return { min: Math.min(...w.map((x) => x.step)) / STEADY_144, max: Math.max(...w.map((x) => x.step)) / STEADY_144 };
+}
+
+test("the blip: a gap walk started at the SWITCH, 150 ms after the last echo, stands the draw and reseeds at DONE", () => {
+  for (const dir of KEEP_DIRS) for (const phase of KEEP_PHASES) for (const startFrame of KEEP_STARTS) {
+    const run = { dir, ago: 150, done: 20, phase, startFrame, fix: true };
+    const r = keepCross({ ...run, ...engineAhead(run) });
+    const label = `dir=${dir} phase=${phase.toFixed(1)} start=${startFrame}`;
+    // The draw reaches the last echo a playback delay after it came and stands there until the SWITCH.
+    expect({ label, stood: longestStand(r, -200, 0) >= 80 }).toEqual({ label, stood: true });
+    // The head starts from the last echo at the SWITCH: 150 ms of walk behind the node's point.
+    expect({ label, plan: r.plan }).toEqual({ label, plan: "reseed" });
+  }
+});
+
+test("the walk begun at HANDOFF_BEGIN: a drain, save and switch of 60 to 300 ms after it is kept, with no stand and every frame within 0.6-1.4 x steady", () => {
+  for (const jitter of [0, 4, 8]) for (const ago of [2, 9, 16]) for (const done of [60, 120, 200, 300]) for (const dir of KEEP_DIRS) for (const phase of KEEP_PHASES) for (const startFrame of KEEP_STARTS) {
+    const run = { dir, ago, done, phase, startFrame, fix: true, jitter, walkedOn: true };
+    const r = keepCross({ ...run, ...engineAhead(run), endMs: 1000 + done + 600 });
+    const label = `jitter=${jitter} ago=${ago} done=+${done} dir=${dir} phase=${phase.toFixed(1)} start=${startFrame}`;
+    expect({ label, plan: r.plan }).toEqual({ label, plan: "keep" });
+    expect({ label, stand: longestStand(r, -100, done + 300) }).toEqual({ label, stand: 0 });
+    const range = frameRange(r, -100, done + 300);
+    expect({ label, ok: range.min >= 0.6 && range.max <= 1.4, range }).toEqual({ label, ok: true, range });
+  }
+});
+
+// The old node's last step went out as a datagram before HANDOFF_BEGIN, which is on the stream: it can come after it.
+test("the old node's echo that comes after HANDOFF_BEGIN is dropped: kept, no stand, every frame within 0.6-1.4 x steady", () => {
+  for (const lastLate of [1, 4, 8, 12, 20, 30, 45]) for (const done of [60, 200]) for (const dir of KEEP_DIRS) for (const phase of KEEP_PHASES) for (const startFrame of KEEP_STARTS) {
+    const run = { dir, ago: 0, done, phase, startFrame, fix: true, walkedOn: true, lastLate, dropLate: true };
+    // The walk starts from the echo before it, a tick earlier; the node's point counts from the late one.
+    const r = keepCross({ ...run, ...engineAhead({ ...run, ago: 2 }), endMs: 1000 + done + 600 });
+    const label = `late=${lastLate} done=+${done} dir=${dir} phase=${phase.toFixed(1)} start=${startFrame}`;
+    expect({ label, plan: r.plan }).toEqual({ label, plan: "keep" });
+    expect({ label, stand: longestStand(r, -100, done + 300) }).toEqual({ label, stand: 0 });
+    const range = frameRange(r, -100, done + 300);
+    expect({ label, ok: range.min >= 0.6 && range.max <= 1.4, range }).toEqual({ label, ok: true, range });
+  }
+});
+
+test("socket.ts starts the gap walk at HANDOFF_BEGIN, goes on with it at the SWITCH, ends it at HANDOFF_STAY and drops the old node's echoes meanwhile", async () => {
+  const src = (await Bun.file(new URL("../webserver/public/js/core/socket.ts", import.meta.url)).text()).split(String.fromCharCode(13)).join("");
+  const body = (head: string) => {
+    const at = src.indexOf(head);
+    expect(at).toBeGreaterThan(-1);
+    return src.slice(at, src.indexOf("\n}\n", at));
+  };
+  expect(src).toMatch(/case "HANDOFF_BEGIN": \{[^}]*beginHandoffGap\(data\);/);
+  expect(src).toMatch(/case "HANDOFF_STAY": \{[^}]*stayAfterHandoffBegin\(data\);/);
+  // The walk begins as the SWITCH began it (the direction walked now, a fresh echo), and moves wait for the next node.
+  const begin = body("function beginHandoffGap(data: any) {");
+  expect(begin).toContain("if (switchInProgress || isReconnecting) return;");
+  expect(begin).toContain("cancelKeptWalk();");
+  expect(begin).toContain("startHandoffGap(true, data?.report === true, data?.gapUpdates === true);");
+  expect(begin).toContain("handoffBegun = true;");
+  expect(begin).toContain("movementAllowed = false;");
+  const start = body("function startHandoffGap(resume: boolean, report: boolean, updates: boolean) {");
+  expect(start).toContain("walkDirectionAtSwitch = walkAtSwitch(pressedKeys, getStickDirection(), own?.lastServerUpdate, performance.now());");
+  expect(start).toContain("own.handoffWalk = undefined;");
+  // A new gap's report starts empty, its updates are numbered from AUTH's again, and none is waited for.
+  expect(start).toContain("gapReports = report;\n  gapUpdates = report && updates;\n  gapLog.reset();\n  gapSeq = 0;\n  gapSentHeld = null;");
+  expect(start).toContain("gapDoneWait = null;\n  ownEchoesFrom = 0;");
+  // At the SWITCH a begun walk keeps its start, its direction and its walked time.
+  const sw = body("async function switchNode(data: any) {");
+  expect(sw).toContain("if (handoffBegun) handoffGap = handoffGap && data?.resume === true;\n    else startHandoffGap(data?.resume === true, data?.report === true, data?.gapUpdates === true);\n    handoffBegun = false;");
+  expect(body("function endHandoffGap() {")).toContain("handoffBegun = false;");
+  // Kept by the old node: the node's point is taken, the walked difference eased out, and moves are sent again.
+  const stay = body("function stayAfterHandoffBegin(at: any) {");
+  expect(stay).toContain("if (!handoffBegun || switchInProgress) return;");
+  expect(stay).toContain("self.moveSamples = seedSamples(x, y, performance.now());");
+  expect(stay).toContain("if (predicting && shown) startEase(self, shown, { x, y }, performance.now());");
+  expect(stay).toContain("movementAllowed = true;");
+  // The local player's echo is dropped while begun, before it is dated or pushed.
+  const move = body('case "MOVEXY": {');
+  const drop = move.indexOf("if (playerId == cachedPlayerId && handoffBegun) break;");
+  expect(drop).toBeGreaterThan(-1);
+  expect(drop).toBeLessThan(move.indexOf("keptWalkDating.date("));
+});
+
+test("taken as it comes, an echo 30 ms after HANDOFF_BEGIN sets the walked head back: crossings reseed", () => {
+  let reseeds = 0;
+  for (const dir of KEEP_DIRS) for (const phase of KEEP_PHASES) for (const startFrame of KEEP_STARTS) {
+    const run = { dir, ago: 0, done: 60, phase, startFrame, fix: true, walkedOn: true, lastLate: 30 };
+    if (keepCross({ ...run, ...engineAhead({ ...run, ago: 2 }), endMs: 1660 }).plan === "reseed") reseeds++;
+  }
+  expect(reseeds).toBeGreaterThan(0);
+});
 
 // Every tick rate a node may run at for this walk (60, 30, 20 Hz: 3, 6, 9 px a tick) and arrival spread 0, 4 or 8 ms,
 // the new node's first step from a few ms to one tick after DONE. One assertion for every case: each check (no two
@@ -1374,7 +1521,7 @@ test("a hold that times out by heldUntil with a 3-8 px overshoot: no back-step f
 
 test("renderer.ts takes the position of a timed-out held spot through releaseHeld", async () => {
   const src = (await Bun.file(new URL("../webserver/public/js/core/renderer.ts", import.meta.url)).text()).split(String.fromCharCode(13)).join("");
-  expect(src).toContain("releaseHeld(samples, player.position.x, player.position.y, at, player.mounted === true);");
+  expect(src).toContain("releaseHeld(samples, player.position.x, player.position.y, at, atMountSpeed(player));");
 });
 
 // Fix round 2: a warp onto a timed-out held spot is not an overshoot to ease (the eased date would be seconds ahead and
@@ -1467,14 +1614,65 @@ test("gapStepMs walks all the time since the echo when the walk at the switch is
 
 test("renderer.ts dates the gap walk's steps by their walking time and walks the first one from the last echo", async () => {
   const src = (await Bun.file(new URL("../webserver/public/js/core/renderer.ts", import.meta.url)).text()).split(String.fromCharCode(13)).join("");
-  expect(src).toContain("gapSampleTime(now, last.t, getLateness(), stepWalkMs(last, player.position.x, player.position.y, player.mounted === true))");
-  expect(src).toContain("const walkedOn = direction !== \"\" && direction === getWalkAtSwitch();");
-  expect(src).toContain("gapStepMs(deltaTime * 1000, currentPlayer.handoffWalk !== undefined, now, walked?.[walked.length - 1], getLateness(), walkedOn)");
+  expect(src).toContain("gapSampleTime(now, last.t, getLateness(), stepWalkMs(last, player.position.x, player.position.y, atMountSpeed(player)))");
+  expect(src).toContain("const walkedOn = direction !== \"\" && (reports || direction === getWalkAtSwitch());");
+  expect(src).toContain("const started = currentPlayer.handoffWalk !== undefined || (reports && gapWalkStarted());");
+  expect(src).toContain("gapStepMs(deltaTime * 1000, started, now, newest, getLateness(), walkedOn)");
+  // Each frame goes into the report from the time the first step is measured from.
+  expect(src).toContain("noteGapFrame(direction, direction ? walkMs : 0, now, newest && !newest.predicted ? newest.t + Math.max(0, getLateness()) : null);");
 });
 
 test("socket.ts dates a ghost's echoes at the mounted speed, as the engine steps a ghost", async () => {
   const src = (await Bun.file(new URL("../webserver/public/js/core/socket.ts", import.meta.url)).text()).split(String.fromCharCode(13)).join("");
-  expect(src).toContain("player.lastDirection, player.mounted === true || player.isGhost === true)");
+  expect(src).toContain("player.lastDirection, atMountSpeed(player))");
+});
+
+// The live mounted crossing: the player mounted with Q, the client's `mounted` stayed false (only the spawn set it), so
+// the gap walked at foot speed (0.75 of the mount's) and the pace after DONE was capped at 1.11 of foot speed (0.83 of
+// the mount's) while the node stepped at the mount's speed: the drawn player fell behind until it stopped or snapped.
+test("atMountSpeed: the engine steps a mounted player and a ghost at the mounted speed", () => {
+  expect(atMountSpeed({ mounted: true })).toBe(true);
+  expect(atMountSpeed({ isGhost: true })).toBe(true);
+  expect(atMountSpeed({ mounted: true, isGhost: true })).toBe(true);
+  expect(atMountSpeed({ mounted: false, isGhost: false })).toBe(false);
+  expect(atMountSpeed({})).toBe(false);
+  expect(atMountSpeed(null)).toBe(false);
+  expect(atMountSpeed(undefined)).toBe(false);
+});
+
+test("advanceSelf and planHandoffDone walk a ghost at the mounted speed", () => {
+  const ghost: any = { position: { x: 1000, y: 500 }, isGhost: true };
+  const mounted: any = { position: { x: 1000, y: 500 }, mounted: true };
+  const foot: any = { position: { x: 1000, y: 500 } };
+  for (const p of [ghost, mounted, foot]) advanceSelf(p, "right", 100, null);
+  expect(ghost.handoffWalk.x).toBeCloseTo(1000 + 18 * 1.35, 6);
+  expect(ghost.handoffWalk.x).toBe(mounted.handoffWalk.x);
+  expect(foot.handoffWalk.x).toBeCloseTo(1018, 6);
+  // A node point the foot walk reaches later than HANDOFF_KEEP_LEAD_MS, the mounted walk sooner.
+  const lead = 0.18 * HANDOFF_KEEP_LEAD_MS * 1.2;
+  const server = { x: 1000 + lead, y: 500 };
+  expect(planHandoffDone(true, true, { position: { x: 1000, y: 500 }, lastDirection: "right" }, server)).toBe("reseed");
+  expect(planHandoffDone(true, true, { position: { x: 1000, y: 500 }, lastDirection: "right", isGhost: true }, server)).toBe("keep");
+});
+
+test("socket.ts takes the mounted state from the mount sheet of each pose, where the engine names it", async () => {
+  const src = (await Bun.file(new URL("../webserver/public/js/core/socket.ts", import.meta.url)).text()).split(String.fromCharCode(13)).join("");
+  const at = src.indexOf("case \"SPRITE_SHEET_ANIMATION\": {");
+  const handler = src.slice(at, src.indexOf("case \"BATCH_SPRITE_SHEET_ANIMATION\": {", at));
+  // Set before the sheets load (they await): the next frame walks at the speed the node now steps.
+  const set = handler.indexOf("player.mounted = !!data.mountSprite;");
+  expect(set).toBeGreaterThan(0);
+  expect(set).toBeLessThan(handler.indexOf("await import('./layeredAnimation.js')"));
+  // A pose that comes before the player does is kept with its mounted state and applied with it.
+  expect(handler).toContain("mounted: !!data.mountSprite,");
+  expect(src).toContain("if (typeof anim.mounted === \"boolean\") player.mounted = anim.mounted;");
+});
+
+test("the handoff walk reads the mounted speed through atMountSpeed everywhere", async () => {
+  const renderer = (await Bun.file(new URL("../webserver/public/js/core/renderer.ts", import.meta.url)).text()).split(String.fromCharCode(13)).join("");
+  const socket = (await Bun.file(new URL("../webserver/public/js/core/socket.ts", import.meta.url)).text()).split(String.fromCharCode(13)).join("");
+  for (const src of [renderer, socket]) expect(src).not.toMatch(/(player|self)\.mounted === true/);
+  expect(renderer).toContain("handoffPace.stepFor(eased, now, pressedKeys, getStickDirection(), atMountSpeed(player),");
 });
 
 // M-1 of the burst review: after a floored pair the lateness the floor added only ever shrinks.
@@ -2102,6 +2300,38 @@ test("planPaceArm: armed only for a crossing the client walked and the player st
   expect(planPaceArm(true, true, null)).toBeNull();
 });
 
+test("a key let go in the gap: the draw goes on to the node's point at the walking pace and stops there, as a stop away from a border", () => {
+  const shown = { x: 110696.9, y: 93000 };
+  expect(planStopPace(true, false, shown)).toEqual(shown);
+  expect(planStopPace(true, false, shown)).not.toBe(shown);
+  expect(planStopPace(true, true, shown)).toBeNull();
+  expect(planStopPace(false, false, shown)).toBeNull();
+  expect(planStopPace(true, false, null)).toBeNull();
+  // The node's point 5.1 px ahead of the draw (the walked head, a playback delay ahead): 60 Hz frames of 3 px, the walk's.
+  const frame = 1000 / 60;
+  for (const [dx, dy] of [[1, 0], [-1, 0], [1, 1], [0, -1]]) {
+    const pace = new HandoffPace();
+    const point = { x: shown.x + dx * 5.1, y: shown.y + dy * 5.1 };
+    pace.step(point, 1000, "", false);
+    pace.arm(1000, shown);
+    pace.release();
+    const drawn: { x: number; y: number }[] = [];
+    for (let now = 1000 + frame; now < 1200; now += frame) drawn.push(pace.step(point, now, "", false));
+    const steps = drawn.map((p, i) => Math.max(Math.abs(p.x - (i ? drawn[i - 1] : shown).x), Math.abs(p.y - (i ? drawn[i - 1] : shown).y)));
+    // Two frames at the walking pace, the rest of a step, then on the point: never faster than the walk, never back.
+    expect(steps.slice(0, 2).map((s) => +s.toFixed(2))).toEqual([3, 2.1]);
+    expect(Math.max(...steps)).toBeLessThanOrEqual(3 + 1e-9);
+    expect(drawn.slice(2).every((p) => p.x === point.x && p.y === point.y)).toBe(true);
+    expect(pace.active).toBe(false);
+  }
+  // A key pressed again at once is not walked ahead of the node (released: nothing is governed), the draw follows its point.
+  const pace = new HandoffPace();
+  pace.step(shown, 1000, "", false);
+  pace.arm(1000, shown);
+  pace.release();
+  expect(pace.step(shown, 1000 + frame, "right", false)).toEqual(shown);
+});
+
 // The wiring through keepCross (the frame loop of the renderer: pace.stepFor with the keys or the stick, mounted, the arming of planPaceArm
 // at DONE, release()), for 3 s after DONE: the node walks on, the player holds the key (keys and stick, straight and diagonal, mounted), or
 // is released at 1.2 s (a second switch).
@@ -2127,8 +2357,11 @@ test("renderer.ts and socket.ts call HandoffPace as the tests above drive it (ba
   const read = async (name: string) => (await Bun.file(new URL(`../webserver/public/js/core/${name}`, import.meta.url)).text()).split(String.fromCharCode(13)).join("");
   const renderer = await read("renderer.ts");
   const socket = await read("socket.ts");
-  expect(renderer).toContain("player.id === cachedPlayerId ? handoffPace.stepFor(eased, now, pressedKeys, getStickDirection(), player.mounted === true, (x, y) => blockedAt(window.mapData, x, y)) : eased");
-  expect(socket).toContain("const paceFrom = planPaceArm(predicting, moving, shown);\n        if (paceFrom) handoffPace.arm(performance.now(), paceFrom);");
+  expect(renderer).toContain("player.id === cachedPlayerId ? handoffPace.stepFor(eased, now, pressedKeys, getStickDirection(), atMountSpeed(player), (x, y) => blockedAt(window.mapData, x, y)) : eased");
+  expect(socket).toContain("const paceFrom = planPaceArm(predicting, moving, shown);\n    if (paceFrom) handoffPace.arm(performance.now(), paceFrom);");
+  expect(socket).toContain("const stopFrom = planStopPace(predicting, moving, shown);\n    if (stopFrom) {\n      handoffPace.arm(performance.now(), stopFrom);\n      handoffPace.release();\n    }");
+  // The stop is not eased as well (the ease would be the pace's target and crawl the last px).
+  expect(socket).toContain("if (!keep && predicting && shown && !stopFrom) startEase(self, shown, { x, y }, performance.now());");
   expect(socket).toMatch(/function cancelKeptWalk\(\) \{\n  keptWalkDating\.cancel\(\);\n  handoffPace\.release\(\);/);
   // The arming comes after the keep/reseed branches (the reseed's cancelKeptWalk releases it).
   expect(socket.indexOf("handoffPace.arm(")).toBeGreaterThan(socket.indexOf("self.moveSamples = seedSamples(x, y, performance.now());"));

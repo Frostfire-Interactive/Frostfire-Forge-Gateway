@@ -18,7 +18,7 @@ export const MOUNT_SPEED_MULTIPLIER = 1.35;
 export const HANDOFF_SNAP_PX = TELEPORT_PX;
 /** How fast the error eases out: it falls to a third in this long. */
 export const EASE_TIME_CONSTANT_MS = 120;
-/** The prediction stops this long after the SWITCH: a node that has not answered by then is not worth walking toward. */
+/** The prediction stops this long after it started (HANDOFF_BEGIN or the SWITCH): a node that has not answered by then is not worth walking toward. */
 export const MAX_PREDICT_MS = 3000;
 /** The player's box, as the engine's movement handler tests it. */
 const PLAYER_WIDTH = 24;
@@ -106,10 +106,16 @@ export function walkStep(
   return { x: from.x, y: from.y };
 }
 
+/** Whether the engine steps the player at the mounted speed: mounted, or a ghost. */
+export function atMountSpeed(player: { mounted?: boolean; isGhost?: boolean } | null | undefined): boolean {
+  return player?.mounted === true || player?.isGhost === true;
+}
+
 /** The player record fields the walk reads and writes. */
 interface WalkPlayer {
   position: { x: number; y: number };
   mounted?: boolean;
+  isGhost?: boolean;
   lastDirection?: string;
   /** The float position the prediction carries between frames (position is the rounded one). */
   handoffWalk?: { x: number; y: number };
@@ -125,7 +131,7 @@ export function advanceSelf(player: WalkPlayer, direction: string, dtMs: number,
   const from = carried && Math.abs(carried.x - player.position.x) <= 1 && Math.abs(carried.y - player.position.y) <= 1
     ? carried
     : { x: player.position.x, y: player.position.y };
-  const to = walkStep(from, direction, dtMs, player.mounted === true, (x, y) => blockedAt(map, x, y));
+  const to = walkStep(from, direction, dtMs, atMountSpeed(player), (x, y) => blockedAt(map, x, y));
   player.handoffWalk = to;
   const x = Math.round(to.x);
   const y = Math.round(to.y);
@@ -193,6 +199,8 @@ const MIN_FIRST_STEP_MS = 25;
  * a tick or more before the switch, and the new node makes all of that time up (its catch-up counts from the old node's
  * last step): the step walks all of it, up to the most it makes up (HANDOFF_CATCH_UP_MAX_MS). Cut to two frames it fell
  * 1.5-2 px short, drawn at 0.75 times the walk for 3 frames; cut to one frame after a drain of 60 ms or more, 9 px short.
+ * A node that walks the gap the client reports (GapLog) takes the first step as it was walked: any direction held then is
+ * `walkedOn`, and `started` is set by the first frame, held or not, so a key pressed after standing walks from its frame on.
  */
 export function gapStepMs(frameMs: number, started: boolean, now: number, newest: { t: number; predicted?: boolean } | undefined, lateness: number, walkedOn = false): number {
   if (started || !newest || newest.predicted) return frameMs;
@@ -200,6 +208,113 @@ export function gapStepMs(frameMs: number, started: boolean, now: number, newest
   if (!(since > 0 && since <= (walkedOn ? HANDOFF_CATCH_UP_MAX_MS : MAX_FIRST_STEP_MS))) return frameMs;
   // Else at most two frames (or MIN_FIRST_STEP_MS): a key let go and pressed again within 60 ms of the echo has not walked all that time.
   return walkedOn ? since : Math.min(since, Math.max(2 * frameMs, MIN_FIRST_STEP_MS));
+}
+
+/** The most stretches a gap report holds (the engine's MAX_GAP_SEGMENTS): a gap with more is not reported. */
+export const MAX_GAP_SEGMENTS = 16;
+/** The most HANDOFF_GAP reports after AUTH's one gap sends (the engine's MAX_GAP_UPDATES). */
+export const MAX_GAP_UPDATES = 32;
+/**
+ * The longest the gap walk goes on after HANDOFF_DONE for the answer to a newer report (HANDOFF_GAP_DONE): the node
+ * answers each, within a round trip. Without one by then the player is placed as HANDOFF_DONE (or the last answer) said.
+ */
+export const GAP_DONE_WAIT_MS = 1000;
+
+/** A stretch of the gap walk: the direction walked ("" where the player stood), for `ms`. */
+export interface GapSegment {
+  walk: string;
+  ms: number;
+}
+
+/** The report sent with AUTH to the new node: the stretches that ended, in order, and the direction held now ("" for none). */
+export interface GapReport {
+  segments: GapSegment[];
+  held: string;
+}
+
+/**
+ * The gap walk as the client draws it, from the old node's last echo on, for the report the new node walks it by
+ * (socket.ts sendLogin). The new node takes the player from the point of that echo and made up the whole gap the way
+ * they walked into it: a key let go or turned in the gap put its point up to 36 px from the drawn one, and its first
+ * echo snapped the draw there. Walked as reported, its point is where the draw is, to a tick's step.
+ */
+export class GapLog {
+  private segments: GapSegment[] = [];
+  private at: number | null = null;
+  private held = "";
+  private full = false;
+
+  reset(): void {
+    this.segments = [];
+    this.at = null;
+    this.held = "";
+    this.full = false;
+  }
+
+  /** A frame was noted since the reset: the gap walk's first step is behind. */
+  get started(): boolean {
+    return this.at !== null;
+  }
+
+  /**
+   * One frame of the gap walk at `now`: it walked `direction` for `walkMs` ("" or 0: it stood). The first frame counts
+   * from `from`, the last echo's time on this clock (the time gapStepMs measures from; null when not known), no further
+   * back than the most the node makes up. A frame walked longer than the time it took (the first step) moves the end on.
+   */
+  frame(direction: string, walkMs: number, now: number, from: number | null): void {
+    const walked = direction ? Math.max(0, walkMs) : 0;
+    const start = this.at ?? (from !== null && Number.isFinite(from) ? Math.max(from, now - HANDOFF_CATCH_UP_MAX_MS) : now - walked);
+    const span = Math.max(walked, now - start);
+    this.add("", span - walked);
+    this.add(direction, walked);
+    this.at = start + span;
+    this.held = direction;
+  }
+
+  /**
+   * The report: the stretches that ended (the last one, still walked or stood, goes on at the node), each to the whole ms
+   * of the running total. Null with nothing noted or more stretches than MAX_GAP_SEGMENTS.
+   */
+  report(): GapReport | null {
+    if (this.at === null || this.full) return null;
+    const ended = this.segments[this.segments.length - 1]?.walk === this.held ? this.segments.slice(0, -1) : this.segments;
+    const segments: GapSegment[] = [];
+    let total = 0;
+    for (const s of ended) {
+      const ms = Math.round(total + s.ms) - Math.round(total);
+      total += s.ms;
+      if (ms > 0) segments.push({ walk: s.walk, ms });
+    }
+    return { segments, held: this.held };
+  }
+
+  /**
+   * The walk going on and the ms it walks on to the end of its tick (`tickMs`, the node's), null when it stands or ends on
+   * one. The node steps a stretch in the whole ticks nearest its length (the engine's gapPlanOf): ended mid-tick, its
+   * point was up to half a step from the drawn one, and the draw went on or back to it after HANDOFF_DONE.
+   */
+  stepLeft(tickMs: number): { walk: string; ms: number } | null {
+    const last = this.segments[this.segments.length - 1];
+    if (!this.held || last?.walk !== this.held || !(tickMs > 0)) return null;
+    const ms = Math.ceil(last.ms / tickMs - 1e-6) * tickMs - last.ms;
+    return ms > 1e-3 ? { walk: this.held, ms } : null;
+  }
+
+  /** The walk going on walked `ms` more (stepLeft), at once: the next frame counts from its end. */
+  finish(ms: number): void {
+    const last = this.segments[this.segments.length - 1];
+    if (this.at === null || !this.held || last?.walk !== this.held || !(ms > 0)) return;
+    last.ms += ms;
+    this.at += ms;
+  }
+
+  private add(walk: string, ms: number): void {
+    if (!(ms >= 0.5)) return;
+    const last = this.segments[this.segments.length - 1];
+    if (last?.walk === walk) last.ms += ms;
+    else if (this.segments.length < MAX_GAP_SEGMENTS) this.segments.push({ walk, ms });
+    else this.full = true;
+  }
 }
 
 /**
@@ -210,6 +325,20 @@ export function gapStepMs(frameMs: number, started: boolean, now: number, newest
  */
 export function stepWalkMs(from: { x: number; y: number }, x: number, y: number, mounted: boolean): number {
   return Math.max(Math.abs(x - from.x), Math.abs(y - from.y)) / ((WALK_SPEED_PX_S * (mounted ? MOUNT_SPEED_MULTIPLIER : 1)) / 1000);
+}
+
+/**
+ * HANDOFF_BEGIN's point (`at`: where the old node stopped stepping the player, rounded) as the echo of its last step,
+ * dated a step's walk after the newest echo. That step's datagram can come after the stream's BEGIN (it is then dropped)
+ * or not at all: the gap walk went on from the step before, a step behind where the new node walks the gap from. Null
+ * when the newest echo is at the point, there is none (or it is predicted), the point is not given, or it is a jump.
+ */
+export function beginPoint(newest: { x: number; y: number; t: number; predicted?: boolean } | undefined, at: any, mounted: boolean): { x: number; y: number; t: number } | null {
+  const x = Math.round(Number(at?.x));
+  const y = Math.round(Number(at?.y));
+  if (!newest || newest.predicted || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+  if ((x === newest.x && y === newest.y) || Math.hypot(x - newest.x, y - newest.y) > TELEPORT_PX) return null;
+  return { x, y, t: newest.t + stepWalkMs(newest, x, y, mounted) };
 }
 
 /**
@@ -264,7 +393,7 @@ export function hasAnchor(samples: ReadonlyArray<{ predicted?: boolean }> | unde
 export function planHandoffDone(
   predicting: boolean,
   moving: boolean,
-  player: { position: { x: number; y: number }; lastDirection?: string; mounted?: boolean } | null | undefined,
+  player: { position: { x: number; y: number }; lastDirection?: string; mounted?: boolean; isGhost?: boolean } | null | undefined,
   server: { x: number; y: number },
   anchored = true,
 ): "keep" | "reseed" {
@@ -272,7 +401,7 @@ export function planHandoffDone(
   if (!predicting || !moving || !anchored || !head || !Number.isFinite(head.x) || !Number.isFinite(head.y)) return "reseed";
   if (Math.hypot(head.x - server.x, head.y - server.y) > keepPx()) return "reseed";
   const unit = UNITS[player?.lastDirection ?? ""];
-  const walk = (WALK_SPEED_PX_S * (player?.mounted === true ? MOUNT_SPEED_MULTIPLIER : 1)) / 1000;
+  const walk = (WALK_SPEED_PX_S * (atMountSpeed(player) ? MOUNT_SPEED_MULTIPLIER : 1)) / 1000;
   // No direction: ahead or behind is not known, so the distance is taken as the lead (one axis's walking time).
   if (!unit) return Math.hypot(server.x - head.x, server.y - head.y) / walk > HANDOFF_KEEP_LEAD_MS ? "reseed" : "keep";
   // How long the walk takes to reach the node's point when that point is ahead of the head (on a diagonal both axes
@@ -774,6 +903,16 @@ const PACE_MAX_FRAME_MS = 100;
  */
 export function planPaceArm(predicting: boolean, moving: boolean, shown: { x: number; y: number } | null | undefined): { x: number; y: number } | null {
   return predicting && moving && shown ? { x: shown.x, y: shown.y } : null;
+}
+
+/**
+ * What HANDOFF_DONE does with the draw of a key let go in the gap (the client walked the player, who no longer moves): the
+ * position the draw goes on from to the node's point at the walking pace (HandoffPace, released at once: nothing is held, it
+ * takes the node's draw), as a stop away from a border ends. The draw is a playback delay behind the walked head, about 5 px:
+ * eased (startEase) those took the ease's time constant, a crawl of 300 ms after the stop. Else null.
+ */
+export function planStopPace(predicting: boolean, moving: boolean, shown: { x: number; y: number } | null | undefined): { x: number; y: number } | null {
+  return predicting && !moving && shown ? { x: shown.x, y: shown.y } : null;
 }
 
 /**

@@ -201,9 +201,18 @@ export function pushSample(samples: MoveSample[], x: number, y: number, t: numbe
  * echo of the new node; pushEcho then replaces it.
  */
 export function pushPredicted(samples: MoveSample[], x: number, y: number, t: number): boolean {
+  // The newest server sample is the anchor a kept walk is measured from (handoffwalk.ts hasAnchor, walkReach). A gap walk
+  // from HANDOFF_BEGIN runs longer than the list holds: the oldest predicted sample goes instead of it.
+  let anchor: MoveSample | null = null;
+  for (let i = samples.length - 1; i >= 0 && !anchor; i--) if (!samples[i].predicted) anchor = samples[i];
   if (!pushSample(samples, x, y, t)) return false;
   const last = samples[samples.length - 1];
   if (last) last.predicted = true;
+  // Trimmed out (a snap starts the list over with the one sample, and keeps none).
+  if (anchor && samples.length > 1 && !samples.includes(anchor)) {
+    samples.unshift(anchor);
+    if (samples.length > MAX_SAMPLES) samples.splice(1, samples.length - MAX_SAMPLES);
+  }
   return true;
 }
 

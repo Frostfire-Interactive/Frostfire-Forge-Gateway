@@ -6,6 +6,7 @@ import {
   preloadSpriteSheetImage,
   validateSpriteSheetTemplate
 } from './spritesheetParser.js';
+import { nameLayerSheets } from './layersheets.ts';
 
 const spriteSheetCache: SpriteSheetCache = {};
 
@@ -302,20 +303,27 @@ export async function initializeLayeredAnimation(
     ? await wornLayer('armor_weapon', resolvedArmorWeapon, initialAnimation, 9, isMounted)
     : null;
 
+  const layers = {
+    mount: mountLayer as AnimationLayer,
+    body: bodyLayer as AnimationLayer,
+    head: headLayer as AnimationLayer,
+    armor_helmet: armorHelmetLayer as AnimationLayer,
+    armor_shoulderguards: armorShoulderguardsLayer as AnimationLayer,
+    armor_neck: armorNeckLayer as AnimationLayer,
+    armor_hands: armorHandsLayer as AnimationLayer,
+    armor_chest: armorChestLayer as AnimationLayer,
+    armor_feet: armorFeetLayer as AnimationLayer,
+    armor_legs: armorLegsLayer as AnimationLayer,
+    armor_weapon: armorWeaponLayer as AnimationLayer,
+  };
+  // A worn item's template carries a base sheet's name; each layer keeps the sheet it was asked for (layersheets.ts).
+  nameLayerSheets(layers, {
+    mountSprite, bodySprite, headSprite, armorHelmetSprite, armorShoulderguardsSprite, armorNeckSprite,
+    armorHandsSprite, armorChestSprite, armorFeetSprite, armorLegsSprite, armorWeaponSprite,
+  });
+
   return {
-    layers: {
-      mount: mountLayer as AnimationLayer,
-      body: bodyLayer as AnimationLayer,
-      head: headLayer as AnimationLayer,
-      armor_helmet: armorHelmetLayer as AnimationLayer,
-      armor_shoulderguards: armorShoulderguardsLayer as AnimationLayer,
-      armor_neck: armorNeckLayer as AnimationLayer,
-      armor_hands: armorHandsLayer as AnimationLayer,
-      armor_chest: armorChestLayer as AnimationLayer,
-      armor_feet: armorFeetLayer as AnimationLayer,
-      armor_legs: armorLegsLayer as AnimationLayer,
-      armor_weapon: armorWeaponLayer as AnimationLayer,
-    },
+    layers,
     currentAnimationName: initialAnimation,
     _animAppliedAt: performance.now(),
     syncFrames: true
