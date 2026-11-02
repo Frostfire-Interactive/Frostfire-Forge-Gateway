@@ -4890,6 +4890,113 @@ input[type=range]:disabled {
   mix-blend-mode: screen;
 }
 
+/* A cutscene's bars, screen effects and text (cutscene.ts) and the director's guides (cutsceneeditor.ts): over the world
+   and all that lights it, under the interface. */
+#cutscene-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  display: block;
+  pointer-events: none;
+  z-index: 54;
+}
+
+#cutscene-skip {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 55;
+  padding: 6px 16px;
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#cutscene-skip[hidden] {
+  display: none;
+}
+
+/* While the cutscene editor is open: takes the mouse from the game, to drag the free camera and the scene's marks. */
+#cutscene-director {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  cursor: grab;
+}
+
+#cutscene-director.over-mark {
+  cursor: move;
+}
+
+#cutscene-director[data-mode="pick"] {
+  cursor: crosshair;
+}
+
+#cutscene-director-hint {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  color: #fff;
+  font-size: 14px;
+  white-space: nowrap;
+  background: rgba(0, 0, 0, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+#cutscene-capture-start {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 70;
+  padding: 12px 24px;
+  border: 1px solid #ffffff;
+  border-radius: 6px;
+  background: #d9363e;
+  color: #ffffff;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+#cutscene-director-hint:empty {
+  display: none;
+}
+
+/* A scene with the interface hidden. The ambience layers carry the class too but are part of the picture. */
+body.cutscene-no-hud .ui:not(#ambience-overlay):not(#ambience-cool-overlay):not(#sun-flare):not(#loading-screen),
+body.cutscene-no-hud #virtual-joystick-wrapper,
+body.cutscene-no-hud #virtual-mount-button,
+body.cutscene-no-hud #radial-menu-btn,
+body.cutscene-no-hud #mobile-chat-peek {
+  visibility: hidden !important;
+}
+
+/* While a recording is made the world is drawn at the size and shape of its file (cutsceneframe.ts), and shrunk here to
+   fit the window, with bars on two sides when the shapes differ. Inline sizes are the file's, so these need to win. */
+body.cutscene-framed #game,
+body.cutscene-framed #ghost-layer,
+body.cutscene-framed #game-above,
+body.cutscene-framed #debug-layer,
+body.cutscene-framed #light-dodge,
+body.cutscene-framed #light-overlay,
+body.cutscene-framed #cutscene-layer {
+  width: 100vw !important;
+  height: 100vh !important;
+  object-fit: contain;
+}
+
 /* Light falling on the scene round emissive tiles: a colour-dodge gain over the darkened scene (same z-index as the
    ambience overlay and after it in the page, so it brightens what the ambience darkened), so lit tiles show their own
    texture instead of a coloured haze. */

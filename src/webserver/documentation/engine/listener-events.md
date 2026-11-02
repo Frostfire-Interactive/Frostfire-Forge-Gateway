@@ -164,6 +164,9 @@ Every gameplay hook the engine emits. The `Area` column is there for the filter 
 | Quests | `onQuestAbandoned` | `{ username, questId }` | A quest was abandoned |
 | Gathering | `onGatherCompleted` | `{ player, item, quantity }` | A gather succeeded: the items are in the player's bags |
 | Collectables | `onCollectableAdded` | `{ username, type, item }` | Something was added to a player's collectables (a mount), once it is written |
+| Cutscenes | `onCutsceneStarted` | `{ player, cutscene }` | A scene was sent to a player |
+| Cutscenes | `onCutsceneEnded` | `{ player, cutscene, skipped }` | A scene is over for a player: it ran its course, they skipped it, or it was stopped |
+| Cutscenes | `onCutsceneMark` | `{ player, cutscene, name, t }` | A player's scene reached a mark. `t` is the mark's time in seconds |
 
 ### Declared but never emitted
 

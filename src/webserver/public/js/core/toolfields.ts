@@ -149,6 +149,9 @@ export interface PickerOptions {
   fallback?: IconName;
 }
 
+/** The most entries a picker draws at once. */
+const PICKER_MAX = 300;
+
 /** Coin denominations, as the currency system uses them: 100 copper per silver, 100 silver per gold. */
 export const COPPER_PER_SILVER = 100;
 export const COPPER_PER_GOLD = 100 * COPPER_PER_SILVER;
@@ -209,6 +212,12 @@ export function nameList(value: unknown): string[] {
     if (name && !names.some((n) => n.toLowerCase() === name.toLowerCase())) names.push(name);
   }
   return names;
+}
+
+/** Listings under an `animations` folder are animations, not sprite sheets a character can wear. */
+export function inAnimationsFolder(option: AssetOption): boolean {
+  const inFolder = (path: unknown) => typeof path === "string" && /(^|[\\/])animations[\\/]/i.test(path);
+  return inFolder(option.value) || inFolder(option.image);
 }
 
 /** Sprite sheets the asset server reported for a slot, plus whatever the entry already uses. */
@@ -504,7 +513,12 @@ export class FieldRenderer {
       matches = options.filter((o) => !query || o.label.toLowerCase().includes(query));
       if (matches.length === 0) return none("search", "Nothing matches that search", "Check the spelling, or search for less of the name.");
       shown.textContent = matches.length === options.length ? `${num(options.length)} to pick from` : `${num(matches.length)} of ${num(options.length)}`;
-      for (const option of matches) {
+      // A long list is cut down, the selected entry always in it: nobody scrolls that far, and every tile is a node.
+      const painted = matches.slice(0, PICKER_MAX);
+      const held = current === null ? undefined : matches.slice(PICKER_MAX).find((o) => String(o.value) === current);
+      if (held) painted.unshift(held);
+      if (matches.length > painted.length) shown.textContent = `${num(painted.length)} of ${num(matches.length)}: type to narrow it down`;
+      for (const option of painted) {
         const tile = el("button", "tl-asset" + (current !== null && String(option.value) === current ? " is-selected" : ""));
         tile.type = "button";
         tile.title = option.label;

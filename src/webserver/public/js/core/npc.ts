@@ -246,7 +246,7 @@ async function reinitNpcSprite(npc: any) {
   try {
     if (npc.sprite_type === 'animated' && layers) {
       const anim = await initializeLayeredAnimation(
-        null,
+        layers.mount || null,
         layers.body || null,
         layers.head || null,
         layers.helmet || null,
@@ -802,7 +802,8 @@ function createNPC(data: any) {
 
   cache.npcs.push(npc);
 
-  reinitNpcSprite(npc);
+  // (a cutscene waits for its actors' sprites: cutscene.ts)
+  (npc as any).spriteReady = reinitNpcSprite(npc);
 
   (async function () {
     try {
@@ -814,6 +815,8 @@ function createNPC(data: any) {
       console.error("Error initializing NPC:", e);
     }
   }).call(npc);
+
+  return npc as any;
 }
 
 function deleteNPC(npc: any) {

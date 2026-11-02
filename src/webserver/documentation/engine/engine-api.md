@@ -23,6 +23,7 @@ declare interface EngineAPI {
   onPacket(interceptor: (type: string, data: any, wt: any, player: any) => boolean): void;
   addHttpRoute(method: string, route: string, handler: (req: Request) => Promise<Response>): void;
   teleportPlayer(playerObj: any, mapName: string, x: number, y: number): Promise<void>;
+  playCutscene(playerObj: any, name: string): Promise<boolean>;
   registerSpell(spell: SpellData): Promise<void>;
 }
 ```
@@ -38,6 +39,7 @@ Both types are global. A plugin does not import them.
 | `onWarpCollision(interceptor)` | `void` | Decide what happens when a player walks into a warp |
 | `addHttpRoute(method, route, handler)` | `void` | Add a route to the game server's HTTP API |
 | `teleportPlayer(playerObj, mapName, x, y)` | `Promise<void>` | Move an online player to a map position |
+| `playCutscene(playerObj, name)` | `Promise<boolean>` | Play a saved cutscene to an online player |
 | `registerSpell(spell)` | `Promise<void>` | Add a spell to the asset cache |
 
 ## Objects you are handed
@@ -340,6 +342,21 @@ It returns without doing anything when the player object has no connection.
 :::note It does not store the location
 The built-in warp and the admin commands call `player.setLocation` before the transition, which writes the new map and position for the account. `teleportPlayer` only runs the transition. The player's position is written by the usual saves, for example at logout.
 :::
+
+## playCutscene
+
+```ts title="Signature"
+playCutscene(playerObj: any, name: string): Promise<boolean>
+```
+
+Plays a scene made in the [Cutscene Editor](#/tools/cutscene-editor) to an online player. The player has to be on the scene's map.
+
+| Parameter | Meaning |
+|-----------|---------|
+| `playerObj` | The live player object from the player cache |
+| `name` | The scene's name |
+
+It answers `true` when the scene began. To follow it, listen for `onCutsceneStarted`, `onCutsceneEnded` and `onCutsceneMark`: see [Listener Events](#/engine/listener-events).
 
 ## registerSpell
 

@@ -33,6 +33,8 @@ Arguments are split on spaces, so an item called Rat Tail must be written as `"R
 
 A command the server does not know answers `Invalid command`. A command the player may not use answers `You don't have permission to use this command`.
 
+In a [cluster](#/engine/cluster/admin-tools) a username reaches a player on any node, and a command for them runs on the node that holds them. An id is the connection id of a player on your own node.
+
 ### Naming a player
 
 Most commands take `<username | id>`. A value that is not a number is matched against the usernames of online players, ignoring case. A number is read as the connection id of an online player (the session id the server gave that connection). Some commands then fall back to the database, so they also work on offline players. The tables below say which.
@@ -73,6 +75,8 @@ Most commands take `<username | id>`. A value that is not a number is matched ag
 | `/npceditor` | `/ne` | `tools.npc_editor` or `tools.*` | Opens the NPC editor |
 | `/itemeditor` | `/ie` | admin role, `tools.item_editor`, `tools.*` or `server.*` | Opens the item editor |
 | `/mounteditor` | `/me` | admin role, `tools.mount_editor`, `tools.*`, `server.admin` or `server.*` | Opens the mount editor |
+| `/cutsceneeditor` | `/cse` | admin role, `tools.cutscene_editor`, `tools.*`, `server.admin` or `server.*` | Opens the cutscene editor |
+| `/cutscene <play \| stop \| list \| reset> ...` | none | admin role, `tools.cutscene_editor`, `tools.*`, `server.admin` or `server.*` | Plays, stops, lists and resets cutscenes |
 | `/spelleditor` | `/se` | admin role, `tools.spell_editor`, `tools.*`, `server.admin` or `server.*` | Opens the spell editor |
 | `/weathereditor` | `/we` | admin role, `tools.weather_editor`, `tools.*`, `server.admin` or `server.*` | Opens the weather editor |
 | `/classeditor` | `/cle` | admin role, `tools.class_editor`, `tools.*`, `server.admin` or `server.*` | Opens the class editor |
@@ -196,7 +200,7 @@ The admin role is separate from permissions. It gates the control panel, stealth
 /respawn [username | id]
 ```
 
-All three act on yourself when no player is named.
+All three act on yourself when no player is named. `/kill` and `/respawn` leave a player [held in a cutscene](#/tools/cutscene-editor) alone: the answer names the `/cutscene stop` that ends the scene first.
 
 | Command | Target | Behaviour |
 |---------|--------|-----------|
@@ -250,6 +254,8 @@ The player's home is left as it is, and so are their buffs and debuffs. Their ga
 `/summon` moves an online player to your position, across maps if needed, and puts them on your layer when it has room. Summoning an admin also needs `admin.summonadmins` (or `admin.*`), otherwise the answer is `You cannot summon other admins`.
 
 `/goto` moves you to an online player and onto their layer. `/teleport` is the same command. Both check `admin.summon`, there is no separate permission for them.
+
+A player [held in a cutscene](#/tools/cutscene-editor) stays where they are: `/summon` is refused for them, and `/goto` while you are held yourself. The answer names the `/cutscene stop` that ends the scene first.
 
 ```text title="Example"
 /summon alice
@@ -325,13 +331,15 @@ Starts a 15 minute countdown. Every player is notified once a minute, then once 
 
 Running `/restart` while a countdown is active cancels it and tells everyone the restart was aborted.
 
+In a [cluster](#/engine/cluster/admin-tools) the countdown, and its cancellation, reach every node of the region.
+
 ### /shutdown
 
 ```text title="Syntax"
 /shutdown
 ```
 
-Warns every player, waits 5 seconds, closes every connection, waits for the database queue to drain and exits. A second `/shutdown` while one is in progress answers `The server is already shutting down`.
+Warns every player, waits 5 seconds, closes every connection, waits for the database queue to drain and exits. A second `/shutdown` while one is in progress answers `The server is already shutting down`. In a [cluster](#/engine/cluster/admin-tools) every node of the region stops.
 
 ### /whitelist
 
@@ -342,7 +350,7 @@ Warns every player, waits 5 seconds, closes every connection, waits for the data
 /whitelist remove <username>
 ```
 
-`on` and `off` switch the realm whitelist at runtime. `add` and `remove` only work while it is on, and neither accepts your own username. See [Realm Whitelist](#/engine/realm-whitelist) for what the switch does.
+`on` and `off` switch the realm whitelist at runtime. `add` and `remove` only work while it is on, and neither accepts your own username. In a [cluster](#/engine/cluster/admin-tools) both reach every node of the region. See [Realm Whitelist](#/engine/realm-whitelist) for what the switch does.
 
 ### /subscription
 
@@ -366,7 +374,7 @@ Warns every player, waits 5 seconds, closes every connection, waits for the data
 /warp <map>
 ```
 
-Moves you to a map by name, without the `.json` extension. You land on the map's spawn point, or in its centre when it has none. Naming a second argument is refused: `Warping another player is not supported. Usage: /warp <map>`. Use `/summon` to move someone else.
+Moves you to a map by name, without the `.json` extension. You land on the map's spawn point, or in its centre when it has none. Naming a second argument is refused: `Warping another player is not supported. Usage: /warp <map>`. Use `/summon` to move someone else. While you are held in a cutscene, `/cutscene stop` ends it first.
 
 ```text title="Example"
 /warp overworld
@@ -462,6 +470,7 @@ These commands only tell the client to open a window. Each editor checks permiss
 | `/npceditor` | `/ne` | `tools.npc_editor` or `tools.*` | [NPC editor](#/tools/npc-editor) |
 | `/itemeditor` | `/ie` | Admin role, `tools.item_editor`, `tools.*` or `server.*` | [Item editor](#/tools/item-editor) |
 | `/mounteditor` | `/me` | Admin role, `tools.mount_editor`, `tools.*`, `server.admin` or `server.*` | [Mount editor](#/tools/mount-editor) |
+| `/cutsceneeditor` | `/cse` | Admin role, `tools.cutscene_editor`, `tools.*`, `server.admin` or `server.*` | [Cutscene editor](#/tools/cutscene-editor) |
 | `/spelleditor` | `/se` | Admin role, `tools.spell_editor`, `tools.*`, `server.admin` or `server.*` | [Spell editor](#/tools/spell-editor) |
 | `/weathereditor` | `/we` | Admin role, `tools.weather_editor`, `tools.*`, `server.admin` or `server.*` | [Weather editor](#/tools/weather-editor) |
 | `/classeditor` | `/cle` | Admin role, `tools.class_editor`, `tools.*`, `server.admin` or `server.*` | [Class editor](#/tools/class-editor) |

@@ -56,31 +56,52 @@ self.addEventListener('fetch', (event: FetchEvent) => {
 
 // Cache-first: serve from Cache Storage when present, otherwise fetch and store.
 async function handleCacheStrategy(request: Request): Promise<Response> {
+  const cached = await fromCache(request);
+  if (cached) return cached;
+
+  let response: Response;
   try {
-    const cached = await caches.match(request);
-    if (cached) return cached;
-
-    const response = await fetch(request);
-
-    // Cache real assets only. NOT the "missing" fallback: Cache Storage has no
-    // TTL, so a cached fallback would mask a real asset added later until the
-    // whole cache is bumped. The asset server sends the fallback with a short
-    // max-age, so the browser's HTTP cache handles placeholder de-duplication
-    // and self-expires.
-    if (
-      response.status === 200 &&
-      !response.headers.get('X-Asset-Fallback')
-    ) {
-      const cache = await caches.open(ASSET_CACHE);
-      await cache.put(request, response.clone());
-      await evictIfOverBudget(cache);
-    }
-
-    return response;
+    response = await fetch(request);
   } catch {
-    const cached = await caches.match(request);
-    if (cached) return cached;
+    const stored = await fromCache(request);
+    if (stored) return stored;
     return new Response('Offline - asset not cached', { status: 503 });
+  }
+
+  // Cache real assets only. NOT the "missing" fallback: Cache Storage has no
+  // TTL, so a cached fallback would mask a real asset added later until the
+  // whole cache is bumped. The asset server sends the fallback with a short
+  // max-age, so the browser's HTTP cache handles placeholder de-duplication
+  // and self-expires.
+  if (
+    response.status === 200 &&
+    !response.headers.get('X-Asset-Fallback')
+  ) {
+    await store(request, response.clone());
+  }
+
+  return response;
+}
+
+// Cache Storage can fail on its own (out of quota, a damaged profile). This
+// worker only speeds assets up, so a failure is a miss and the network answers:
+// without that, every sprite and icon comes back "offline" and the world never
+// loads, though the asset server is fine.
+async function fromCache(request: Request): Promise<Response | undefined> {
+  try {
+    return await caches.match(request);
+  } catch {
+    return undefined;
+  }
+}
+
+async function store(request: Request, response: Response): Promise<void> {
+  try {
+    const cache = await caches.open(ASSET_CACHE);
+    await cache.put(request, response);
+    await evictIfOverBudget(cache);
+  } catch {
+    // Storing is best-effort: the asset is fetched again next time.
   }
 }
 

@@ -103,9 +103,11 @@ The panel refreshes itself regularly.
 The server takes a reading every 15 seconds. It keeps the last hour at that resolution, the last 24 hours at one reading a minute, and the last 100 actions. All of it starts again when the server restarts.
 :::
 
+In a cluster the panel covers every node of the realm: players and memory are added up, lag is the worst node's, and uptime is the oldest node's. Recent activity lists what admins did on any node. An action on a player reaches them on whichever node holds them, and the answer comes from that node.
+
 ## Players
 
-A table of everyone online, with columns Player, Level, Map, Status and Online for. Click a column to sort.
+A table of everyone online, with columns Player, Level, Map, Status and Online for. In a cluster it lists every node's players, with a Node column. Click a column to sort.
 
 - The search field filters by name or map. Typing two or more characters also searches every account, so offline players appear, tagged Offline.
 - The Show filter switches between All, Admins and Guests. A second filter limits the table to one map.
@@ -170,6 +172,7 @@ The reported player is never told about a report, and the list refreshes on its 
 
 | Card | Contents |
 | --- | --- |
+| Nodes | Shown in a cluster. Each node with its players, creatures awake, lag, memory and time running. A node tagged Not answering is shown from its last load report. |
 | Status | State, time running, start time, players online with the peak, memory in use and server lag |
 | Creatures | How many creatures exist, are awake and are in combat, the number of maps with creatures, and how long a typical, a slow and the slowest round of moving them takes |
 | Whitelist | The on and off switch, and a username field with "Add to whitelist" and "Remove from whitelist" |
@@ -182,12 +185,13 @@ Things to know:
 - **Whitelist.** While it is on, only the names on it can log in. Players already online stay. Turning it on puts you on the list. The switch lasts until the server restarts: the `WHITELIST` setting decides how the server starts. See [Realm Whitelist](#/engine/realm-whitelist).
 - **Restart.** Players get a 15 minute countdown, then everyone is disconnected and the server stops. Under Docker it is started again at once. Started by hand, it stays down until someone starts it.
 - **Shut down.** Players are warned, and 5 seconds later everyone is disconnected, you included, and the server stops.
+- **In a cluster.** The whitelist, a restart and a shutdown apply to every node of the realm.
 
 ## World
 
 | Card | Contents |
 | --- | --- |
-| Worlds | Every world, the weather it has now with its readings, and how many players are in it. Your own world is marked. |
+| Worlds | Every world, the weather it has now with its readings, and how many players are in it on every node. Your own world is marked. |
 | Weather | The weather over the map you are on now, with its temperature, humidity, wind and how much rain or snow falls, and a control to change it |
 | Reload a map | Reads a map again and sends it to everyone on it |
 | Your character | Warp to another map, plus the Noclip and Stealth switches |

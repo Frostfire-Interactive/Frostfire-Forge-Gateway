@@ -1,0 +1,233 @@
+/* The cutscene editor's popup (cutsceneeditorbridge.ts): what tools.css does not have. The timeline fills the window
+   under its transport, with the inspector beside it; the other tabs are ordinary editor pages. */
+
+/* The timeline takes the whole width of the window, not the width of a form. */
+.cs-wide .tl-work { max-width: none; width: 100%; height: 100%; }
+.cs-wide .tl-work-main { height: 100%; min-height: 0; gap: var(--s-2); }
+.cs-work .cs-below { flex: 1; min-height: 0; display: flex; gap: var(--s-3); }
+
+/* ---------------------------------------------------------------- transport */
+
+.cs-transport { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); }
+.cs-group { display: flex; align-items: center; gap: var(--s-1); }
+.cs-spring { flex: 1; }
+.cs-break { flex-basis: 100%; height: 0; }
+.cs-time { min-width: 76px; font-family: var(--font-mono); font-size: var(--t-md); color: var(--text-strong); text-align: right; font-variant-numeric: tabular-nums; }
+.cs-label { font-size: var(--t-xs); color: var(--text-muted); }
+.cs-length { width: 80px; height: 28px; }
+.cs-view { display: flex; align-items: center; }
+
+/* ----------------------------------------------------------------- timeline */
+
+.cs-timeline {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  overflow: hidden;
+}
+.cs-scroll { flex: 1; min-width: 0; overflow: auto; }
+.cs-rows { position: relative; min-width: 100%; min-height: 100%; }
+
+.cs-row { display: flex; height: 34px; border-bottom: 1px solid var(--border-soft); }
+.cs-row-ruler { position: sticky; top: 0; z-index: 4; height: 26px; background: var(--surface-raised); }
+.cs-row.is-muted .cs-lane { opacity: 0.4; }
+
+/* The head stays at the left of the window as the lanes scroll under it. */
+.cs-head {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  flex: 0 0 188px;
+  box-sizing: border-box;
+  width: 188px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px 0 8px;
+  border-right: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+}
+.cs-head-ruler { z-index: 5; }
+.cs-head-label { flex: 1; min-width: 0; margin-left: 4px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--t-xs); color: var(--text); }
+.cs-head button { width: 22px; height: 22px; padding: 0; }
+
+.cs-ruler { position: relative; flex: 1; cursor: ew-resize; user-select: none; }
+.cs-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  padding: 7px 0 0 4px;
+  border-left: 1px solid var(--border-strong);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.cs-lane { position: relative; flex: 1; min-width: 0; }
+.cs-lane-hint { position: absolute; top: 50%; left: 10px; transform: translateY(-50%); white-space: nowrap; font-size: 11px; color: var(--text-faint); pointer-events: none; }
+
+.cs-item {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  box-sizing: border-box;
+  min-width: 4px;
+  padding: 0 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  color: var(--text-strong);
+  cursor: grab;
+  user-select: none;
+}
+.cs-item-label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; pointer-events: none; }
+.cs-edge { position: absolute; top: 0; bottom: 0; width: 7px; cursor: ew-resize; }
+.cs-edge-start { left: 0; }
+.cs-edge-end { right: 0; }
+
+/* A moment: a diamond on its time, with its words beside it. */
+.cs-key {
+  position: absolute;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  margin: -6px 0 0 -6px;
+  transform: rotate(45deg);
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  cursor: grab;
+}
+.cs-key-label {
+  position: absolute;
+  left: 7px;
+  top: -6px;
+  /* Written across the diamond's own turn. */
+  transform: rotate(-45deg);
+  transform-origin: 0 0;
+  max-width: 180px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.cs-item.is-picked, .cs-key.is-picked { outline: 2px solid var(--text-strong); outline-offset: 0; }
+.cs-item.is-wrong, .cs-key.is-wrong { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 26%, transparent); }
+
+.cs-row[data-kind="camera"] .cs-key { border-radius: 2px; }
+.cs-row[data-kind="text"] .cs-item { border-color: var(--border-strong); background: var(--surface-hover); }
+.cs-row[data-kind="audio"] .cs-item { border-style: dashed; }
+.cs-row[data-kind="world"] .cs-item { border-color: var(--info-text); background: var(--info-soft); }
+.cs-row[data-kind="mark"] .cs-key { border-color: var(--warning); }
+
+.cs-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 1px;
+  background: var(--danger);
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- inspector */
+
+.cs-inspector {
+  flex: 0 0 280px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.cs-inspector .tl-fields { grid-template-columns: minmax(0, 1fr); }
+.cs-inspector-head { display: flex; align-items: center; gap: 2px; }
+.cs-inspector-title { flex: 1; min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--t-sm); color: var(--text-strong); }
+.cs-inspector > .cs-inspector-title { flex: none; }
+.cs-inspector-sub { margin: var(--s-2) 0 0; font-size: var(--t-xs); color: var(--text-muted); }
+.cs-hint { margin: 0; font-size: var(--t-xs); color: var(--text-muted); }
+
+/* What a scene still needs: the next step is the only one with words and a button. */
+.cs-steps { display: flex; flex-direction: column; gap: var(--s-2); margin: 0; padding: 0; list-style: none; }
+.cs-step { display: flex; gap: var(--s-2); }
+.cs-step-mark {
+  flex: 0 0 18px;
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  color: var(--text-strong);
+}
+.cs-step.is-next .cs-step-mark { border-color: var(--accent); }
+.cs-step.is-done .cs-step-mark { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent); }
+.cs-step-words { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: var(--s-1); }
+.cs-step-title { font-size: var(--t-sm); line-height: 18px; color: var(--text-faint); }
+.cs-step.is-next .cs-step-title { color: var(--text-strong); }
+.cs-step.is-done .cs-step-title { color: var(--text-muted); }
+
+.cs-place { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin-top: var(--s-2); }
+.cs-place + .tl-fields { margin-top: var(--s-3); }
+.tl-card-body > .tl-fields + .tl-fields, .tl-subcard-body > .tl-fields + .tl-fields { margin-top: var(--s-4); }
+.cs-stop { display: grid; grid-template-columns: 16px minmax(0, 1fr) minmax(0, 1fr) auto auto; align-items: end; gap: var(--s-1); }
+.cs-stop .cs-label { padding-bottom: 8px; }
+
+.cs-colour { flex: 0 0 34px; width: 34px; height: 34px; padding: 2px; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface); cursor: pointer; }
+
+.cs-capture-state { flex: 1; min-width: 160px; font-size: var(--t-sm); color: var(--text-muted); }
+
+/* -------------------------------------------------------------------- menus */
+
+.cs-menu {
+  position: fixed;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  min-width: 170px;
+  max-height: 70vh;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.cs-menu-line {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--t-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.cs-menu-line:hover:not(:disabled), .cs-menu-line:focus-visible { background: var(--surface-hover); }
+.cs-menu-line:disabled { color: var(--text-faint); cursor: default; }
+.cs-menu-line.is-danger { color: var(--danger); }
+
+@media (max-width: 900px) {
+  .cs-work .cs-below { flex-direction: column; }
+  .cs-inspector { flex: 0 0 44%; }
+}

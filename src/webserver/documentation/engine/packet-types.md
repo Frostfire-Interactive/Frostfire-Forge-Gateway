@@ -184,7 +184,7 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 |--------|-----------|------|---------|
 | `PING` | To server | Connection | Latency probe. Answered with `PONG` |
 | `PONG` | Both | Connection | Answer to `PING`. A `PONG` from the client is echoed back as well |
-| `CONNECTION_COUNT` | To client | Connection | Number of open connections, published to every subscriber |
+| `CONNECTION_COUNT` | To client | Connection | Players online on every node of the realm, published to every subscriber |
 | `RATE_LIMITED` | To client | Connection | The client sent too many packets and is being throttled |
 | `BENCHMARK` | Both | Connection | Echo for load testing. The server adds `returned_timestamp` and sends it back |
 | `DISCONNECT_MALIFORMED` | Unused | Connection | A builder exists (`packetManager.disconnect`) but nothing calls it |
@@ -303,7 +303,7 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `TRADE_CANCEL` | To server | Social | End the trade with nothing exchanged |
 | `TRADE_STATE` | To client | Social | The trade as it stands for this player: `{ partner, mine, theirs, accepted: { mine, theirs }, acceptIn }`. Sent to both after every change |
 | `TRADE_CLOSED` | To client | Social | The trade ended: `{ completed, message }` |
-| `UPDATE_ONLINE_STATUS` | To client | Social | A friend came online or went offline |
+| `UPDATE_ONLINE_STATUS` | To client | Social | A friend, party member or guild member came online or went offline. The client takes a contact's status from this packet alone, never from who it sees |
 | `INVITATION_RESPONSE` | To server | Social | Accept or decline a friend, party or guild invitation |
 | `INVITE_PARTY` | To server | Social | Invite a player to the party |
 | `REMOVE_PARTY` | Unused | Social | In the registry only |
@@ -433,6 +433,21 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `MOUNT_EDITOR_DELETE` | To server | Mount editor | Delete a mount |
 | `MOUNT_EDITOR_RESULT` | To client | Mount editor | Whether a save or delete worked, with every mount |
 | `MOUNT_EDITOR_UPDATED` | To client | Mount editor | Another admin changed the mounts |
+| `TOGGLE_CUTSCENE_EDITOR` | To client | Cutscene editor | Open or close the cutscene editor |
+| `CUTSCENE_EDITOR_LIST` | To server | Cutscene editor | Ask for every scene and the editor's lists |
+| `CUTSCENE_EDITOR_DATA` | To client | Cutscene editor | Every scene, and the NPCs, weather, particles, sounds, quests and maps |
+| `CUTSCENE_EDITOR_SAVE` | To server | Cutscene editor | Add or change a scene |
+| `CUTSCENE_EDITOR_DELETE` | To server | Cutscene editor | Delete a scene |
+| `CUTSCENE_EDITOR_RESULT` | To client | Cutscene editor | Whether a save or delete worked |
+| `CUTSCENE_EDITOR_RESOLVE` | To server | Cutscene editor | Check a scene and fill in how its actors look, for the preview |
+| `CUTSCENE_EDITOR_RESOLVED` | To client | Cutscene editor | The scene, filled in |
+| `CUTSCENE_EDITOR_PLAY` | To server | Cutscene editor | Play a saved scene to the editor's user |
+| `CUTSCENE_EDITOR_GOTO` | To server | Cutscene editor | Go to a place in the world |
+| `CUTSCENE_EDITOR_UPDATED` | To client | Cutscene editor | Another admin changed the scenes |
+| `CUTSCENE_PLAY` | To client | Cutscenes | Play a scene |
+| `CUTSCENE_STOP` | To client | Cutscenes | End the scene being played |
+| `CUTSCENE_STARTED` | To server | Cutscenes | The scene is ready and has begun on the client |
+| `CUTSCENE_END` | To server | Cutscenes | The scene finished on the client, or the player skipped it |
 | `TOGGLE_SPELL_EDITOR` | To client | Spell editor | Open or close the spell editor |
 | `SPELL_EDITOR_LIST` | To server | Spell editor | Ask for the editor's data |
 | `SPELL_EDITOR_DATA` | To client | Spell editor | The editor's data, effect type rules included |

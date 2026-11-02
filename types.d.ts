@@ -322,6 +322,25 @@ declare interface ControlPanelPlayer {
   dead: number;
   /** Seconds since they logged in, or null where that is not known. */
   onlineFor: Nullable<number>;
+  /** The node that holds them. Only in a cluster. */
+  node?: string;
+  /** Their account. Only in what a node tells the others. */
+  userid?: number;
+}
+
+/** One node of a cluster as the control panel lists it. */
+declare interface ControlPanelNode {
+  id: string;
+  /** Players on it. */
+  online: number;
+  /** Seconds since its process started, or null where that is not known. */
+  uptime: Nullable<number>;
+  memoryMb: Nullable<number>;
+  eventLoopLagMs: Nullable<number>;
+  /** Creatures awake on it. */
+  awake: Nullable<number>;
+  /** False when it did not answer in time: the figures are those of its last load report. */
+  answered: boolean;
 }
 
 /**
@@ -373,6 +392,8 @@ declare interface ControlPanelData {
     restartScheduled: boolean;
     whitelist: { enabled: boolean; size: number };
     creatures: Nullable<Record<string, any>>;
+    /** Each node of a cluster. The figures above are then the cluster's: added up, the worst lag, the oldest node's uptime. */
+    nodes?: ControlPanelNode[];
   };
   /** The viewer's map with its weather, and every world. `showing` is the weather a "random" world has settled on. */
   world: {

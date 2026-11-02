@@ -1,7 +1,7 @@
 import Cache from "./cache.js";
 const cache = Cache.getInstance();
 import { cachedPlayerId, setSelfPlayerSpriteLoaded } from "./socket.js";
-import { updateFriendOnlineStatus, updateFriendsList } from "./friends.js";
+import { updateFriendsList } from "./friends.js";
 import { getCameraX, getCameraY, setCameraX, setCameraY, getWeatherType } from "./renderer.js";
 import { createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, updatePartyMemberOnlineStatus, positionText } from "./ui.js";
 import { updateXp } from "./xp.js";
@@ -20,12 +20,11 @@ async function createPlayer(data: any) {
 
   if (data.id === cachedPlayerId) {
     positionText.innerText = `Position: ${Math.round(data.location.x)}, ${Math.round(data.location.y)}`;
+    // Everyone else is told by UPDATE_ONLINE_STATUS: seeing a player says nothing about the ones out of sight.
+    cache.onlinePlayers.add(data.username.toLowerCase());
+    updateGuildMemberOnlineStatus(data.username, true);
+    updatePartyMemberOnlineStatus(data.username, true);
   }
-
-  updateFriendOnlineStatus(data.username, true);
-  cache.onlinePlayers.add(data.username.toLowerCase());
-  updateGuildMemberOnlineStatus(data.username, true);
-  updatePartyMemberOnlineStatus(data.username, true);
 
   let layeredAnimationPromise = null;
 

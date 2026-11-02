@@ -12,6 +12,9 @@ export function getCachedImage(src: string): HTMLImageElement {
   }
 
   const img = new Image();
+  // The asset server is another origin: drawn without this, one picture marks the game's canvas as unreadable, and the
+  // cutscene tool can then neither record it nor save a frame of it.
+  img.crossOrigin = "anonymous";
   img.src = src;
   imageCache.set(src, img);
 
@@ -51,6 +54,7 @@ export async function createCachedImage(src: string): Promise<HTMLImageElement> 
 
       newImg.addEventListener("load", handleLoad);
       newImg.addEventListener("error", handleError);
+      newImg.crossOrigin = "anonymous";
       newImg.src = src;
     });
   }

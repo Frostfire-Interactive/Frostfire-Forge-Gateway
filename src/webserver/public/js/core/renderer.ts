@@ -39,6 +39,8 @@ import { isSelfDead, isReleaseHidden, tickDeathOffer, tickReleaseCinematic, tick
 import { renderLightMap } from './lightmap.js';
 import { applyWorldTransform, worldOffset, viewWidth, viewHeight, userZoom, worldToScreen, worldZoom } from './worldzoom.js';
 import { updateTileSounds } from './tilesounds.js';
+import { tickCutscene, cutsceneCamera, cutsceneHidesPlayer, cutsceneHidesCreatures, cutsceneHidesHud, drawCutsceneLayer } from './cutscene.js';
+import { captureFrame, setFrameDrawer } from './cutscenecapture.js';
 import { chatInput } from "./chat.js";
 import { friendsListSearch } from "./friends.js";
 import { animationManager } from "./animationStateManager.js";
@@ -207,6 +209,27 @@ function updateCamera(currentPlayer: any, deltaTime: number) {
     return;
   }
   editorCameraInitialized = false;
+
+  // A cutscene's camera (cutscene.ts), kept inside the map as the player's is, and at the same zoom's view of it. What
+  // is heard is heard from it, as the scene is seen from it.
+  const shot = cutsceneCamera();
+  if (shot && window.mapData) {
+    const mapWidth = window.mapData.width * window.mapData.tilewidth;
+    const mapHeight = window.mapData.height * window.mapData.tileheight;
+    const halfViewportWidth = viewWidth() / 2;
+    const halfViewportHeight = viewHeight() / 2;
+    cameraX = Math.max(halfViewportWidth, Math.min(mapWidth - halfViewportWidth, shot.x));
+    cameraY = mapHeight < halfViewportHeight * 2 ? mapHeight / 2 : Math.max(halfViewportHeight, Math.min(mapHeight - halfViewportHeight, shot.y));
+    smoothMapX = cameraX;
+    smoothMapY = cameraY;
+
+    updateNpcSounds(cameraX, cameraY);
+    if (weatherType) {
+      updateWeatherCanvas(cameraX, cameraY);
+      weather(weatherType, currentWeatherData);
+    }
+    return;
+  }
 
   if (currentPlayer && window.mapData) {
     const targetX = currentPlayer.renderPosition.x;
@@ -1110,6 +1133,29 @@ function renderGroundAoeZones(ctx: CanvasRenderingContext2D, deltaTime: number) 
   }
 }
 
+// One frame is on its way at a time: a recording also draws frames of its own where the browser has stopped giving
+// any (cutscenecapture.ts), and this one waits there, and a second would have the game drawn twice over from then on.
+let frameAsked = false;
+let animationFrameAt = 0;
+/** This long with no animation frame, and the browser has stopped giving them. */
+const ANIMATION_FRAMES_GONE_MS = 150;
+
+function askFrame() {
+  if (frameAsked) return;
+  frameAsked = true;
+  requestAnimationFrame(() => {
+    frameAsked = false;
+    animationFrameAt = performance.now();
+    animationLoop();
+  });
+}
+
+/** The ground in view has come from the server. */
+function viewLoaded(): boolean {
+  const loaded = window.mapData?.loadedChunks;
+  return !!loaded && getVisibleChunksCached().every(chunk => loaded.has(`${chunk.x}-${chunk.y}`));
+}
+
 function animationLoop() {
   if (!ctx) return;
   globalFrameId++;
@@ -1141,7 +1187,7 @@ function animationLoop() {
     // anything moving. 50 on 60Hz renders at 60; on 144Hz, every 3rd refresh (48).
     const stride = Math.max(1, Math.round(frameDuration / rafInterval));
     if (++rafsSinceRender < stride) {
-      requestAnimationFrame(animationLoop);
+      askFrame();
       return;
     }
   }
@@ -1152,7 +1198,7 @@ function animationLoop() {
   const playersArray = Array.from(cache.players instanceof Map ? cache.players.values() : cache.players);
   const currentPlayer = playersArray.find(player => player.id === cachedPlayerId);
   if (!currentPlayer) {
-    requestAnimationFrame(animationLoop);
+    askFrame();
     return;
   }
 
@@ -1235,6 +1281,7 @@ function animationLoop() {
 
   smoothPlayerRenderPositions(playersArray, now);
 
+  tickCutscene(now);
   updateCamera(currentPlayer, deltaTime * 60);
 
   (window as any).cameraX = cameraX;
@@ -1307,6 +1354,7 @@ function animationLoop() {
   const visiblePlayers = playersArray.filter(p => {
     const inView = isInView(p.position.x, p.position.y);
     if (!inView) return false;
+    if (cutsceneHidesPlayer(p.id === cachedPlayerId)) return false;
     // Own corpse stays visible; everyone else's despawns (no admin bypass).
     if (p.id === cachedPlayerId) {
       // Hidden through the release cinematic until just after the teleport
@@ -1519,10 +1567,7 @@ function animationLoop() {
     for (const npc of visibleNpcs) {
       standing.push({
         feet: spriteOccluder((npc as any).layeredAnimation, (npc as any).staticImage, npc.position.x, npc.position.y, 1)[4],
-        draw: () => {
-          npc.show(scene);
-          npc.dialogue(scene);
-        },
+        draw: () => npc.show(scene),
       });
     }
     for (const p of visiblePlayers) {
@@ -1534,6 +1579,7 @@ function animationLoop() {
       });
     }
     for (const c of stepCreatures(isInView)) {
+      if (cutsceneHidesCreatures()) continue;
       if (c.state === "dead") drawCreature(scene, c, c.id === targetedCreature);
       else standing.push({ feet: creatureFeetY(c), draw: () => drawCreature(scene, c, c.id === targetedCreature) });
     }
@@ -2339,12 +2385,16 @@ function animationLoop() {
     // Chat bubbles stand over everything on the map: the top tile layers (trees, roofs) are on their own canvas over
     // this one (aboveCanvas), already drawn this frame, so the bubbles go there, after them. USER REQUEST 2026-10-17:
     // "ensure player chat text bubbles are always on the top most tile layer + 1". Without that canvas (phones) the
-    // top layers were drawn on this one earlier in the frame, so drawing here is already over them.
+    // top layers were drawn on this one earlier in the frame, so drawing here is already over them. What NPCs say goes
+    // the same way: a line of a cutscene is read through a roof as a player's is.
     const bubbleCtx = aboveCtx ?? ctx;
     if (bubbleCtx !== ctx) {
       bubbleCtx.save();
       bubbleCtx.translate(offsetX, offsetY);
       bubbleCtx.imageSmoothingEnabled = false;
+    }
+    for (const npc of visibleNpcs) {
+      npc.dialogue(bubbleCtx);
     }
     for (const p of visiblePlayers) {
       p.showChat(bubbleCtx, currentPlayer);
@@ -2476,24 +2526,33 @@ function animationLoop() {
     (window as any).__firstFrameRendered = true;
   }
 
-  renderLootInteractionHint(ctx, cameraX, cameraY, canvas.width, canvas.height, (window as any)._lootPickupProgress || 0, cachedPlayerId);
+  // (the key hints go with the rest of the HUD while a scene hides it)
+  if (!cutsceneHidesHud()) {
+    renderLootInteractionHint(ctx, cameraX, cameraY, canvas.width, canvas.height, (window as any)._lootPickupProgress || 0, cachedPlayerId);
 
-  (window as any).renderChestInteractionHint?.(ctx, cameraX, cameraY, canvas.width, canvas.height, (window as any).chestInteractionProgress || 0, cachedPlayerId);
-  // E loots a corpse beside the player before anything else, so then only the corpse has the E badge.
-  const corpseNear = renderCorpseLootHint(ctx);
-  const talkTo = corpseNear ? null : getNearestNpcId();
-  (window as any).renderMailboxHint?.(ctx, corpseNear || (talkTo !== null && canInteractWith(talkTo)));
-  // and over the gathering node E would gather, when E does nothing else there
-  renderGatherHint(ctx, corpseNear || (talkTo !== null && canInteractWith(talkTo)));
+    (window as any).renderChestInteractionHint?.(ctx, cameraX, cameraY, canvas.width, canvas.height, (window as any).chestInteractionProgress || 0, cachedPlayerId);
+    // E loots a corpse beside the player before anything else, so then only the corpse has the E badge.
+    const corpseNear = renderCorpseLootHint(ctx);
+    const talkTo = corpseNear ? null : getNearestNpcId();
+    (window as any).renderMailboxHint?.(ctx, corpseNear || (talkTo !== null && canInteractWith(talkTo)));
+    // and over the gathering node E would gather, when E does nothing else there
+    renderGatherHint(ctx, corpseNear || (talkTo !== null && canInteractWith(talkTo)));
 
-  renderNpcInteractBadge(ctx, cameraX, cameraY, canvas.width, canvas.height, talkTo);
+    renderNpcInteractBadge(ctx, cameraX, cameraY, canvas.width, canvas.height, talkTo);
+  }
 
   // Screen-space editor panel (resets the transform itself).
   renderThreatPanel(ctx);
 
-  requestAnimationFrame(animationLoop);
+  drawCutsceneLayer();
+  captureFrame(viewLoaded);
+
+  askFrame();
 }
 
+setFrameDrawer(() => {
+  if (performance.now() - animationFrameAt > ANIMATION_FRAMES_GONE_MS) animationLoop();
+});
 animationLoop();
 
 function setDirection(dir: string) {
@@ -2531,6 +2590,10 @@ function setWeatherType(type: string | null) {
 function setWeatherData(data: any) {
   currentWeatherData = data;
   updateWeatherSound(weatherType, currentWeatherData);
+}
+
+function getWeatherData() {
+  return currentWeatherData;
 }
 
 // USER REPORT 2026-10-16 ("Weather effects like wind and sounds stay around even when the weather has changed"): the
@@ -2572,6 +2635,7 @@ export {
   setWeatherType,
   getWeatherType,
   setWeatherData,
+  getWeatherData,
   initializeCamera,
   resetCameraInitialized,
   setPendingRequest,

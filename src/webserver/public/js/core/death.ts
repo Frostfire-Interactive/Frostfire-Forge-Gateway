@@ -2,6 +2,7 @@ import { sendRequest, cachedPlayerId } from "./socket.js";
 import Cache from "./cache.js";
 import { SKELETON_TTL_MS, getScreenView, worldToScreenCss } from "./skeletons.js";
 import { worldToScreen } from "./worldzoom.js";
+import { cutsceneHoldsInput } from "./cutscenehold.js";
 
 // Whether this device uses the zoomed-out mobile viewport (mirrors map.ts).
 function isTouchViewport(): boolean {
@@ -36,7 +37,7 @@ export function isSelfMovementLocked(): boolean {
 }
 
 export function isSelfActionLocked(): boolean {
-  return selfDead || selfGhost;
+  return selfDead || selfGhost || cutsceneHoldsInput();
 }
 
 function syncSelfPlayerFlags(): void {

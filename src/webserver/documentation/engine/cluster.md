@@ -122,6 +122,37 @@ Because both sides hold the other as a mirror, ordinary play works over a border
 
 Writes to one player's rows are serialised across the cluster by a lock per player in Redis (`src/cluster/playerlock.ts`), and a save only changes a row while the node holds the player's owner epoch.
 
+### Who is online
+
+Every node reads the others' load reports from Redis every two seconds (`src/cluster/census.ts`), so the online count a player sees covers the whole region and costs no messages between nodes. A new number goes out once it has held for four seconds: a player crossing a border leaves one node at once and the other node's report a moment later, and the total did not change.
+
+A control panel needs names as well as a count. While one is open its node asks the others over the bus for their players and figures, at most once a second however many panels are open. A node that does not answer within half a second is shown from its load report.
+
+Friends, party members and guild members learn of each other from the player, not from who they can see (`src/socket/contacts.ts`):
+
+| Event | What happens |
+|-------|--------------|
+| Login | The player greets each contact on the node that holds them. Each contact is told the player is online, and answers with their own status. |
+| Joining a party or guild, or becoming friends | The same greeting, with the new contacts |
+| Logout | Every contact is told the player is offline, unless the player is online on another node |
+| Stealth | Turning it on tells every contact the player is offline. Turning it off greets them. |
+| Crossing a border | Nothing is sent: the player is still online |
+| A handoff whose client never arrives | Every contact is told the player is offline once the directory entry is released |
+| A node dies | Each surviving node tells its players about their contacts who were on it |
+
+### Admin tools
+
+An admin on any node works on the whole region:
+
+| Tool | How it works |
+|------|--------------|
+| `/respawn`, `/kill`, `/cooldowns`, `/give` | The node that holds the player runs the command and answers the admin by name (`src/socket/handlers/commands.ts`) |
+| `/admin`, `/permission` | The admin's node writes the account or the permissions, and the player's node updates its live copy |
+| Control panel | The panel runs the same commands. A command that ends on another node gives the panel that node's answer as its reply |
+| Player editor | The player's node reads and changes the player, after checking the admin's stored permissions itself (`askPlayer` in `src/cluster/deliver.ts`). The admin's node adds the pick lists. A player no node holds is edited as an offline account. |
+| `/whitelist` | The list belongs to the region. A switch or a change to the list goes to every node over the bus, and a node that starts later takes the same state (`src/services/whitelist.ts`). |
+| `/restart`, `/shutdown` | The order goes to every node over the bus, so the region counts down and stops together. A node that starts during a countdown joins it (`src/socket/serverorders.ts`). |
+
 ## Crossing a border
 
 The player keeps walking. The client is told which node is next, opens a session there ahead of time, and switches to it when the old node has handed the player over.

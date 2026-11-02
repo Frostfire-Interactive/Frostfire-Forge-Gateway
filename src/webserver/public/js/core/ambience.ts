@@ -51,8 +51,21 @@ timeOverrideCheckbox.addEventListener("change", () => {
   updateAmbience();
 });
 
+// The hour a cutscene holds the world at (cutscene.ts), null when it holds none: over the slider and the server's clock,
+// and on a map with no day and night too.
+let scriptedHour: number | null = null;
+function setScriptedHour(hour: number | null) {
+  if (hour === scriptedHour) return;
+  scriptedHour = hour;
+  updateAmbience();
+}
+
 // Get effective time-of-day - slider overrides server time if touched
 function getEffectiveTime(): { hours: number; minutes: number } {
+  if (scriptedHour !== null) {
+    const hour = scriptedHour % 24, h = Math.floor(hour);
+    return { hours: h, minutes: Math.min(59, Math.floor((hour - h) * 60 + 0.5)) };
+  }
   if (overrideHour !== null && timeOverrideCheckbox.checked) {
     const h = Math.floor(overrideHour);
     const m = Math.floor((overrideHour - h) * 60 + 0.5);
@@ -195,6 +208,16 @@ function dayWindow(hour24: number): number {
   return 1;
 }
 
+// The colours the overlays below were last given, for a recording to paint them on a canvas (cutscenecapture.ts): a
+// canvas cannot take a CSS gradient, and how strong each one is can be read from the page, transitions included.
+const paint: {
+  fill: string[];
+  warm: string;
+  cool: [string, string];
+  flare: { sunX: number; sunY: number; angle: number; color: string; opacity: number } | null;
+} = { fill: ["#000000"], warm: "#000000", cool: ["#2a2ab0", "#3a2088"], flare: null };
+function getAmbiencePaint() { return paint; }
+
 function hideSunFlare() {
   sunFlare.style.opacity = "0";
 }
@@ -234,13 +257,14 @@ function updateSunFlare(hour24: number, stormy: boolean) {
   sunFlare.style.setProperty("--rays-angle", `${angleDeg.toFixed(1)}deg`);
   sunFlare.style.setProperty("--rays-color", rayColor);
   sunFlare.style.setProperty("--rays-opacity", rayOpacity.toFixed(3));
+  paint.flare = { sunX: Math.round(sunX), sunY: Math.round(sunY), angle: Number(angleDeg.toFixed(1)), color: rayColor, opacity: rayOpacity };
 }
 
 function updateAmbience() {
   const effective = getEffectiveTime();
   const effectiveHasTime = (overrideHour !== null && timeOverrideCheckbox.checked) || timeOfDay;
 
-  if (!effectiveHasTime || !hasWeather) {
+  if (scriptedHour === null && (!effectiveHasTime || !hasWeather)) {
     ambience.style.opacity = "0";
     ambience.style.setProperty("--ambience-warm-opacity", "0");
     ambienceCool.style.opacity = "0";
@@ -256,6 +280,8 @@ function updateAmbience() {
     ambience.style.setProperty("--ambience-warm-opacity", "0");
     ambienceCool.style.background = "radial-gradient(ellipse 120% 100% at 50% 40%, #1a1a60 0%, #120c30 100%)";
     ambienceCool.style.opacity = "0.06";
+    paint.fill = ["#05060d"];
+    paint.cool = ["#1a1a60", "#120c30"];
     hideSunFlare();
     nightFactor = 1; // full night: the light map lets lanterns, torches and windows glow
     setAmbientLevel(["#05060d"], darknessOpacity);
@@ -267,6 +293,7 @@ function updateAmbience() {
     ambience.style.opacity = stormOpacity.toFixed(2);
     ambience.style.setProperty("--ambience-warm-opacity", "0");
     ambienceCool.style.opacity = "0";
+    paint.fill = ["#2a3045"];
     hideSunFlare();
     nightFactor = 0.5;
     setAmbientLevel(["#2a3045"], stormOpacity);
@@ -313,6 +340,9 @@ function updateAmbience() {
   const coolOpacity = nightFactor * 0.15;
   ambienceCool.style.background = "radial-gradient(ellipse 120% 100% at 50% 40%, #2a2ab0 0%, #3a2088 100%)";
   ambienceCool.style.opacity = coolOpacity.toFixed(2);
+  paint.fill = [top, bottom];
+  paint.warm = warm;
+  paint.cool = ["#2a2ab0", "#3a2088"];
 
   updateSunFlare(hour24, false);
 }
@@ -321,6 +351,8 @@ function setHasWeather(weather: boolean) {
   hasWeather = weather;
   updateAmbience();
 }
+
+function getHasWeather(): boolean { return hasWeather; }
 
 function setStormAmbience(active: boolean, strength?: unknown) {
   stormActive = active;
@@ -335,6 +367,7 @@ function setDarknessAmbience(active: boolean, strength?: unknown) {
 }
 
 window.addEventListener("resize", () => updateAmbience());
+window.addEventListener("viewframe", () => updateAmbience());
 
 let timelapseRaf: number | null = null;
 let timelapseLastTick = 0;
@@ -400,4 +433,4 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-export { updateTime, getServerTime, getEffectiveTime, setHasWeather, setStormAmbience, setDarknessAmbience, isDarkness, getNightFactor, getAmbientLevel };
+export { updateTime, getServerTime, getEffectiveTime, setHasWeather, getHasWeather, setScriptedHour, setStormAmbience, setDarknessAmbience, isDarkness, getNightFactor, getAmbientLevel, getAmbiencePaint };

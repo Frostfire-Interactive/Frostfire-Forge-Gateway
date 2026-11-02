@@ -8,6 +8,7 @@ import "./renderer.js";
 const cache = Cache.getInstance();
 import { chatInput, pauseMenu, optionsMenu, fpsSlider, musicSlider, effectsSlider, ambienceSlider, weatherSlider, mutedCheckbox, autoLootCheckbox, canvas, ctx, friendsList } from "./ui.js";
 import { showItemTooltip, hideItemTooltip } from "./tooltip.js";
+import { frameSize } from "./cutsceneframe.js";
 import { getUserHasInteracted, setUserHasInteracted, setControllerConnected, getLastSentDirection, setLastSentDirection, setStickDirection,
     getLastTypingPacket, setLastTypingPacket, getContextMenuKeyTriggered, setContextMenuKeyTriggered, blacklistedKeys, movementKeys,
     pressedKeys,
@@ -493,8 +494,9 @@ function resizeGameCanvas() {
   const dpr = isTouchDevice ? Math.min(rawDpr, 2) : rawDpr;
 
   const bodyStyle = getComputedStyle(document.body);
-  const displayWidth = parseFloat(bodyStyle.width) || window.innerWidth;
-  const displayHeight = parseFloat(bodyStyle.height) || window.innerHeight;
+  const frame = frameSize();
+  const displayWidth = frame?.w ?? (parseFloat(bodyStyle.width) || window.innerWidth);
+  const displayHeight = frame?.h ?? (parseFloat(bodyStyle.height) || window.innerHeight);
 
   const targetWidth = Math.round(displayWidth * dpr);
   const targetHeight = Math.round(displayHeight * dpr);
@@ -546,6 +548,7 @@ function handleViewportResize() {
 
 window.addEventListener("resize", handleViewportResize);
 window.visualViewport?.addEventListener("resize", handleViewportResize);
+window.addEventListener("viewframe", resizeGameCanvas);
 
 // Scroll never changes the canvas size, so only refresh lightweight metrics.
 // Touching canvas.width here would blank the canvas on every iOS scroll tick.

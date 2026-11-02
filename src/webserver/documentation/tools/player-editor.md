@@ -52,6 +52,8 @@ With an empty search the side pane lists the players online. Type a name to sear
 
 The state in the top bar reads "Up to date" or "Unapplied changes" accordingly. After every change the server answers with the player as they now stand, and the window redraws from that.
 
+In a [cluster](#/engine/cluster/admin-tools) the node that holds the player reads and changes them, whichever node you are on, and checks your stored permissions itself. If that node cannot be reached, nothing is changed and the editor says so. If it does not answer in time, the editor asks you to reload before trying again, because the change may have gone through.
+
 :::warning A dead player is partly locked
 While the player is dead, their location and stats cannot be changed. Revive them first, for example from the [Control Panel](#/tools/control-panel).
 :::

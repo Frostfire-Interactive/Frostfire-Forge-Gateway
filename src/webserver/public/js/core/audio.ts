@@ -1,4 +1,4 @@
-import { ambienceSlider, effectsSlider, mutedCheckbox, weatherSlider } from "./ui.js";
+import { ambienceSlider, effectsSlider, musicSlider, mutedCheckbox, weatherSlider } from "./ui.js";
 
 /**
  * Sound effects. A sound is an audio file of the asset server (its assets/audio folder), asked for by name with or
@@ -33,6 +33,40 @@ function unlock() {
 unlock();
 // the events that count as a user's gesture (touchstart and pointerdown of a touch do not, touchend does)
 for (const type of ["pointerdown", "pointerup", "mousedown", "click", "keydown", "touchend"]) window.addEventListener(type, unlock, { capture: true, passive: true });
+
+/**
+ * Where sound goes. Everything of the world goes into `worldBus`, whose level a cutscene can lower under its own sounds;
+ * that and a cutscene's sounds go into `masterBus`, the one place all the game's sound passes through, which a
+ * recording taps (cutscenecapture.ts).
+ */
+let masterBus: GainNode | null = null, worldBus: GainNode | null = null;
+function master(ctx: AudioContext): GainNode {
+  if (!masterBus) {
+    masterBus = ctx.createGain();
+    masterBus.connect(ctx.destination);
+  }
+  return masterBus;
+}
+function world(ctx: AudioContext): GainNode {
+  if (!worldBus) {
+    worldBus = ctx.createGain();
+    worldBus.connect(master(ctx));
+  }
+  return worldBus;
+}
+
+/** The level of the world's own sounds, 0..1, glided to so it is not a jump. */
+export function setWorldVolume(level: number): void {
+  if (audio) world(audio).gain.setTargetAtTime(Math.min(1, Math.max(0, level)), audio.currentTime, 0.15);
+}
+
+/** All the game's sound, as a stream to record; null when there is no audio. `close` ends the tap. */
+export function tapSound(): { stream: MediaStream; close: () => void } | null {
+  if (!audio) return null;
+  const tap = audio.createMediaStreamDestination(), bus = master(audio);
+  bus.connect(tap);
+  return { stream: tap.stream, close: () => bus.disconnect(tap) };
+}
 
 /** A slider (0-100) as a gain, 0..1: nothing when muted; squared, so the lower half of the slider is not all "loud". */
 function sliderVolume(slider: HTMLInputElement | null | undefined): number {
@@ -174,9 +208,39 @@ export function playEffect(name: string, opts: { volume?: number; rate?: number;
   source.buffer = sound.buffer;
   source.playbackRate.value = opts.rate ?? 1;
   level.gain.value = gain * sound.boost;
-  source.connect(level).connect(ctx.destination);
+  source.connect(level).connect(world(ctx));
   source.start();
   return true;
+}
+
+/** A sound a cutscene plays: faded by asking for a new level each frame, stopped when the scene is done with it. */
+export interface ClipHandle { setLevel(level: number): void; stop(): void }
+/** A recording takes a scene's sounds at their full level, whatever the player's sliders are set to. */
+let clipsAtFullLevel = false;
+export function setClipsAtFullLevel(full: boolean): void { clipsAtFullLevel = full; }
+
+/**
+ * Starts one of a cutscene's sounds `offset` seconds into its file, past the world's level and under the Music or
+ * Effects slider. Null when it cannot start yet (not loaded, or the browser has not allowed sound): it is asked again.
+ */
+export function playClip(name: string, opts: { bus: "music" | "effects"; level: number; rate: number; loop: boolean; offset: number }): ClipHandle | null {
+  const ctx = audio, sound = sounds.get(name.trim().toLowerCase());
+  if (!ctx || ctx.state !== "running" || !sound || sound instanceof Promise) return null;
+  const slider = () => (clipsAtFullLevel ? 1 : sliderVolume(opts.bus === "music" ? musicSlider : effectsSlider));
+  const source = ctx.createBufferSource(), level = ctx.createGain();
+  source.buffer = opts.loop ? loopedBuffer(ctx, sound) : sound.buffer;
+  source.loop = opts.loop;
+  source.playbackRate.value = opts.rate;
+  level.gain.value = opts.level * slider() * sound.boost;
+  source.connect(level).connect(master(ctx));
+  source.start(0, opts.offset);
+  return {
+    setLevel: (next) => level.gain.setTargetAtTime(next * slider() * sound.boost, ctx.currentTime, 0.02),
+    stop: () => {
+      level.gain.setTargetAtTime(0, ctx.currentTime, 0.02);
+      source.stop(ctx.currentTime + 0.1);
+    },
+  };
 }
 
 /**
@@ -225,7 +289,7 @@ export function setWeatherSound(name: string, level: number, opts: { even?: bool
     if (want <= 0) return;
     const gain = ctx.createGain();
     gain.gain.value = 0;
-    gain.connect(ctx.destination);
+    gain.connect(world(ctx));
     loops.set(key, loop = { source: null, gain, target: 0, silentSince: ctx.currentTime, rate: 1 });
   }
   const sound = sounds.get(soundKey);
@@ -332,7 +396,7 @@ export function setSoundAt(key: string, name: string, level: number, at: { x: nu
     panner.rolloffFactor = 0;
     const direct = ctx.createGain(), panned = ctx.createGain();
     panned.gain.value = 0;
-    gain.connect(ctx.destination);
+    gain.connect(world(ctx));
     direct.connect(gain);
     panner.connect(panned).connect(gain);
     spots.set(key, spot = { name: soundKey, source: null, gain, panner, direct, panned, target: 0, silentSince: ctx.currentTime });

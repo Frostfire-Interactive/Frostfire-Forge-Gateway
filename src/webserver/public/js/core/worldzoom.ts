@@ -12,6 +12,7 @@
 //
 // Only zooming in: the server sends what is round the player for a screen at zoom 1, and the chunks loaded, the
 // culling and the light map are all worked out for that view. A closer view is inside all of them.
+import { frameSize } from "./cutsceneframe.js";
 
 /** The closest the world comes: three times its normal size, or the nearest pixel-perfect level under that. */
 const MAX_ZOOM = 3;
@@ -68,8 +69,15 @@ let wheelRest = 0;
 /** The screen density the levels were last worked out for: another screen (a window moved) has levels of its own. */
 let levelsFor = canvasDpr();
 
-/** The player's zoom as shown now (1 in the tile editor). */
+/** The zoom a cutscene's camera holds the view at (cutscene.ts), null when it has none. */
+let cinematic: number | null = null;
+export function setCinematicZoom(zoom: number | null): void {
+  cinematic = zoom;
+}
+
+/** The player's zoom as shown now (1 in the tile editor), or a cutscene's. */
 export function userZoom(): number {
+  if (cinematic !== null) return cinematic;
   return editing() ? 1 : shown;
 }
 
@@ -131,7 +139,8 @@ export function worldOffset(camX: number, camY: number): { x: number; y: number 
  * screen = middle + zoom x (world + offset - middle): the zoom is about the middle of the screen, where the camera is.
  */
 export function applyWorldTransform(ctx: CanvasRenderingContext2D, now = performance.now()): void {
-  if (canvasDpr() !== levelsFor) {
+  // (a recording's frame has a density of its own, which is no new screen: the player's zoom is theirs to come back to)
+  if (!frameSize() && canvasDpr() !== levelsFor) {
     levelsFor = canvasDpr();
     target = nearestLevel(target);
   }

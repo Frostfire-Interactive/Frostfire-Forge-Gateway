@@ -58,7 +58,7 @@ type Report = {
   created_at: number; status: "open" | "resolved"; resolved_by: string | null; resolved_at: number | null; resolution: string | null;
 };
 type Range = "hour" | "six" | "day";
-type SortKey = "username" | "level" | "map" | "status" | "onlineFor";
+type SortKey = "username" | "level" | "map" | "node" | "status" | "onlineFor";
 type LootTable = { id: number; name: string; items: ControlPanelLootRow[] };
 type ItemSearch = { query: string; paint: (result: any) => void };
 type Account = { username: string; userid: number; online: boolean };
@@ -176,6 +176,7 @@ class ControlPanel {
   private denied = false;
   /** The server has stopped answering. */
   private lost = false;
+  private loadFailed = false;
   private lastAnswerAt = Date.now();
   /** The first full answer has arrived: what this admin may do is known. */
   private ready = false;
@@ -285,6 +286,7 @@ class ControlPanel {
   private onData(data: ControlPanelData): void {
     const redraw = !this.data || !!data.can || this.lost;
     this.data = data;
+    this.loadFailed = false;
     this.heard();
     if (data.can) {
       this.can = data.can;
@@ -352,9 +354,10 @@ class ControlPanel {
       this.renderPage();
       return;
     }
-    // A list that was refused carries no request id.
+    // A list or a refresh that was refused carries no request id. A refresh is sent every few seconds: said once, until one works.
     if (msg.requestId == null) {
-      if (!msg.ok && msg.action === "query") toast((msg.errors || []).join(" ") || "The server refused that.", "error");
+      if (!msg.ok && (msg.action === "query" || (msg.action === "load" && !this.loadFailed))) toast((msg.errors || []).join(" ") || "The server refused that.", "error");
+      if (!msg.ok && msg.action === "load") this.loadFailed = true;
       return;
     }
     // The answer to something else: a request that was delivered twice is answered twice.
@@ -1308,6 +1311,7 @@ class ControlPanel {
     const head = el("thead");
     const headRow = el("tr");
     const columnsOf: Array<[SortKey, string, string]> = [["username", "Player", ""], ["level", "Level", "tl-num"], ["map", "Map", ""], ["status", "Status", ""], ["onlineFor", "Online for", "tl-num cp-col-time"]];
+    if (this.data!.status.nodes) columnsOf.splice(3, 0, ["node", "Node", ""]);
     for (const [key, label, className] of columnsOf) {
       const th = el("th", className);
       th.scope = "col";
@@ -1364,7 +1368,7 @@ class ControlPanel {
       && (!this.filter.map || p.map === this.filter.map));
     const { key, down } = this.sort;
     const value = (p: ControlPanelPlayer): string | number =>
-      key === "status" ? -this.statusRank(p) : key === "onlineFor" ? (p.onlineFor ?? -1) : p[key];
+      key === "status" ? -this.statusRank(p) : key === "onlineFor" ? (p.onlineFor ?? -1) : key === "node" ? (p.node ?? "") : p[key];
     rows.sort((a, b) => {
       const [x, y] = [value(a), value(b)];
       const order = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y));
@@ -1404,6 +1408,7 @@ class ControlPanel {
       name.append(avatar(p.username), el("span", "cp-player-name", shown(p.username)));
       cell(row, "tl-num", num(p.level));
       cell(row, "", p.map);
+      if (this.data!.status.nodes) cell(row, "", p.node ?? "");
       cell(row).appendChild(this.playerTags(p, p.username === viewer.username));
       cell(row, "tl-num cp-col-time", p.onlineFor === null ? "Unknown" : duration(p.onlineFor)).dataset.time = p.username;
       body.appendChild(row);
@@ -1415,7 +1420,7 @@ class ControlPanel {
     const note = (text: string, className = "tl-table-note") => {
       const row = el("tr", className);
       const td = el("td", "", text);
-      td.colSpan = 5;
+      td.colSpan = this.data!.status.nodes ? 6 : 5;
       row.appendChild(td);
       body.appendChild(row);
       return td;
@@ -1930,11 +1935,50 @@ class ControlPanel {
 
   // ------------------------------------------------------------------ server
 
+  /** The servers of a cluster, each as it stands. */
+  private renderNodes(grid: HTMLElement): void {
+    const card = this.card(grid, "Nodes", "Each server of the cluster and how it is doing right now.");
+    card.root.classList.add("tl-span-12");
+    const table = el("table", "tl-table");
+    const head = el("thead");
+    const headRow = el("tr");
+    for (const [label, className] of [["Node", ""], ["Players", "tl-num"], ["Creatures awake", "tl-num"], ["Lag", "tl-num"], ["Memory", "tl-num"], ["Running for", "tl-num"]]) {
+      const th = el("th", className, label);
+      th.scope = "col";
+      headRow.appendChild(th);
+    }
+    head.appendChild(headRow);
+    const body = el("tbody");
+    table.append(head, body);
+    const scroll = el("div", "tl-table-scroll");
+    scroll.appendChild(table);
+    card.body.appendChild(scroll);
+    const known = (value: number | null, show: (known: number) => string) => (value === null ? "Unknown" : show(value));
+    this.follow(() => {
+      body.replaceChildren();
+      for (const node of this.data!.status.nodes ?? []) {
+        const row = el("tr");
+        const name = row.appendChild(el("td", "", node.id));
+        if (!node.answered) name.append(" ", tag("Not answering", "danger"));
+        row.append(
+          el("td", "tl-num", num(node.online)),
+          el("td", "tl-num", known(node.awake, num)),
+          el("td", "tl-num", known(node.eventLoopLagMs, (lag) => `${num(lag)} ms`)),
+          el("td", "tl-num", known(node.memoryMb, memory)),
+          el("td", "tl-num", known(node.uptime, duration)),
+        );
+        body.appendChild(row);
+      }
+    });
+  }
+
   private renderServer(root: HTMLElement): void {
     const grid = el("div", "tl-grid");
     root.appendChild(grid);
 
-    const status = this.card(grid, "Status", "How the server process is doing right now.");
+    if (this.data!.status.nodes) this.renderNodes(grid);
+
+    const status = this.card(grid, "Status", this.data!.status.nodes ? "How the whole cluster is doing right now." : "How the server process is doing right now.");
     status.root.classList.add("tl-span-6");
     const statusFacts = el("dl", "tl-facts tl-facts-grid");
     status.body.appendChild(statusFacts);

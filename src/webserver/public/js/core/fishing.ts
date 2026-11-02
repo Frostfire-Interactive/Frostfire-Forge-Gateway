@@ -115,6 +115,7 @@ function imageOf(url: string | null | undefined): HTMLImageElement | null {
   let img = images.get(url);
   if (!img) {
     img = new Image();
+    img.crossOrigin = "anonymous";
     img.src = url;
     images.set(url, img);
   }

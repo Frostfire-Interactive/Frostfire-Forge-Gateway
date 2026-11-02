@@ -41,7 +41,7 @@ A refused player receives `LOGIN_FAILED` and the connection is closed with the r
 
 ### 1. Give the realm an id
 
-The list belongs to a realm, identified by `SERVER_ID`. Set it explicitly: when it is unset the whitelist uses the realm name `default`.
+The list belongs to a realm, identified by `SERVER_ID`. Set it explicitly: when it is unset the whitelist uses the realm name `default`. In a [cluster](#/engine/cluster/admin-tools) the list belongs to the region, and every node of the region uses its `REGION_ID` instead.
 
 ```env title=".env.production"
 SERVER_ID=server-1
@@ -131,6 +131,7 @@ Things to know:
 |-----------|--------|
 | Players already online | Stay connected. Only new logins are checked. |
 | Lifetime | Until the server stops. On the next start, `WHITELIST` decides again. |
+| In a cluster | The switch and the list reach every node of the region. A node that starts while another is running takes the region's state. `WHITELIST` decides again when the whole region has stopped. |
 | Database failure while turning on | The whitelist stays off and the answer says the list could not be read |
 | Already in the wanted state | Answers `Whitelist is already on` (or `off`) and does nothing |
 | Two switches at once | They run one after the other, never interleaved |

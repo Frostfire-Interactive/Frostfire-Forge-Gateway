@@ -277,6 +277,7 @@ export function preloadLootIcon(url: string): void {
   if (!lootImageCache) lootImageCache = new Map();
   if (lootImageCache.has(url)) return;
   const img = new Image();
+  img.crossOrigin = "anonymous";
   img.src = url;
   lootImageCache.set(url, img);
 }

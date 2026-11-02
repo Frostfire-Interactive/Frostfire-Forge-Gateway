@@ -5,6 +5,8 @@ import pako from "../libs/pako.js";
 import packet from "./packetencoder.ts";
 import Cache from "./cache.ts";
 import { updateTime, setHasWeather, setStormAmbience, setDarknessAmbience } from "./ambience.ts";
+import { startCutscene, stopCutscene, holdWeather, repeatCutsceneState } from "./cutscene.js";
+import { cutsceneHoldsInput } from "./cutscenehold.js";
 import { inHandoffWindow as inWindow, skipSameWeather, weatherKey } from "./handoffkeep.ts";
 import { keepGapPose } from "./gappose.ts";
 import { setWeatherType, setWeatherData, getWeatherType, setDirection } from "./renderer.ts";
@@ -1126,7 +1128,8 @@ function holdWorldForHandoffSweep() {
   cancelHandoffSweep();
   handoffHeld = {
     players: new Set(cache.players),
-    npcs: new Set((cache.npcs ?? []).map((n: any) => n.id)),
+    // A scene's actors and props are this client's own: no node sends them again.
+    npcs: new Set((cache.npcs ?? []).filter((n: any) => !String(n.id).startsWith("cs-")).map((n: any) => n.id)),
     gather: heldGatherNodes(),
     seenPlayers: new Set(),
     seenNpcs: new Set(),
@@ -1904,9 +1907,6 @@ async function handleLoadPlayersPacket(data: any) {
       if (!existingByUsername && !existingInPending) {
         await createPlayer(player);
       } else if (existingByUsername) {
-        cache.onlinePlayers.add(player.username.toLowerCase());
-        updateGuildMemberOnlineStatus(player.username, true);
-        updatePartyMemberOnlineStatus(player.username, true);
         // Update stealth state for existing players (fixes admin unstealth visibility issue)
         existingByUsername.isStealth = player.isStealth;
       }
@@ -2318,6 +2318,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       // The node that took the player over repeats the weather the client shows: nothing to apply or redraw.
       if (skipSameWeather(appliedWeatherKey, data, inHandoffWindow())) break;
       appliedWeatherKey = weatherKey(data);
+      if (holdWeather(data)) break;
       setHasWeather(true);
       setWeatherType(data.weather);
       setStormAmbience(data.weather === "thunderstorm", data.weatherData?.ambience);
@@ -2328,6 +2329,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     case "CHANGE_WEATHER": {
       if (!data || !data.weather) return;
       appliedWeatherKey = weatherKey(data);
+      if (holdWeather(data)) break;
       const weatherEl = document.getElementById('weather') as HTMLCanvasElement;
       // The same weather with new values (a save in the weather editor, a new reading of the real weather) is
       // taken as it comes; only a change of weather fades out and in.
@@ -2809,8 +2811,12 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       break;
     }
     case "UPDATE_ONLINE_STATUS": {
+      // The only word on whether a contact is online: one out of sight, on another map or on another node may well be.
+      if (data.online) cache.onlinePlayers.add(data.username.toLowerCase());
+      else cache.onlinePlayers.delete(data.username.toLowerCase());
       updateFriendOnlineStatus(data.username, data.online);
       updatePartyMemberOnlineStatus(data.username, data.online);
+      updateGuildMemberOnlineStatus(data.username, data.online);
       break;
     }
     case "UPDATE_PARTY": {
@@ -3231,9 +3237,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         if (data.id === cachedPlayerId) lastHandoffDoneAt = null;
         await createPlayer(data);
       } else if (existingByUsername) {
-        cache.onlinePlayers.add(data.username.toLowerCase());
-        updateGuildMemberOnlineStatus(data.username, true);
-        updatePartyMemberOnlineStatus(data.username, true);
         // Update existing player instead of recreating to avoid duplicates
         const selfSpawn = data.id === cachedPlayerId
           ? planSelfSpawn({
@@ -3400,6 +3403,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       lastHandoffDoneAt = performance.now();
       lastHandoffDoneMap = typeof data?.map === "string" ? data.map : null;
       lastHandoffDoneStamp = performance.now();
+      repeatCutsceneState();
       if (handoffMarks) {
         handoffMarks.handoff_done = performance.now();
         // A player who stands has no position to wait for: the line is printed anyway.
@@ -3446,11 +3450,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     case "DISCONNECT_PLAYER": {
       if (!data || !data.id || !data.username) return;
 
-      cache.onlinePlayers.delete(data.username.toLowerCase());
-      updateGuildMemberOnlineStatus(data.username, false);
-      updatePartyMemberOnlineStatus(data.username, false);
-      updateFriendOnlineStatus(data.username, false);
-
       const player = Array.from(cache.players).find(
         (player) => player.id === data.id
       );
@@ -3467,10 +3466,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         (player) => player.id === data.id
       );
       if (player) {
-        cache.onlinePlayers.delete(player.username.toLowerCase());
-        updateGuildMemberOnlineStatus(player.username, false);
-        updatePartyMemberOnlineStatus(player.username, false);
-        updateFriendOnlineStatus(player.username, false);
         cache.players.delete(player);
       }
 
@@ -3487,10 +3482,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           (p) => p.id === despawnData.id
         );
         if (player) {
-          cache.onlinePlayers.delete(player.username.toLowerCase());
-          updateGuildMemberOnlineStatus(player.username, false);
-          updatePartyMemberOnlineStatus(player.username, false);
-          updateFriendOnlineStatus(player.username, false);
           cache.players.delete(player);
         }
       });
@@ -3573,6 +3564,34 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     }
     case "MOUNT_EDITOR_UPDATED": {
       import("./mounteditor.js").then((m) => m.default.onUpdated(data));
+      break;
+    }
+    case "TOGGLE_CUTSCENE_EDITOR": {
+      import("./cutsceneeditor.js").then((m) => m.default.toggle());
+      break;
+    }
+    case "CUTSCENE_EDITOR_DATA": {
+      import("./cutsceneeditor.js").then((m) => m.default.onData(data));
+      break;
+    }
+    case "CUTSCENE_EDITOR_RESULT": {
+      import("./cutsceneeditor.js").then((m) => m.default.onResult(data));
+      break;
+    }
+    case "CUTSCENE_EDITOR_RESOLVED": {
+      import("./cutsceneeditor.js").then((m) => m.default.onResolved(data));
+      break;
+    }
+    case "CUTSCENE_EDITOR_UPDATED": {
+      import("./cutsceneeditor.js").then((m) => m.default.onUpdated(data));
+      break;
+    }
+    case "CUTSCENE_PLAY": {
+      startCutscene(data);
+      break;
+    }
+    case "CUTSCENE_STOP": {
+      stopCutscene(data);
       break;
     }
     case "TOGGLE_SPELL_EDITOR": {
@@ -4043,6 +4062,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           handoffResume = false;
           resetClockEpoch();
           resetWorldForLogin();
+          repeatCutsceneState();
         }
         // a different map: the world map view (worldmap.ts) closes and loads the new map's image next time
         import("./worldmap.js").then((m) => m.closeWorldMap());
@@ -6166,7 +6186,7 @@ function getIsLoaded() {
 }
 
 function getMovementAllowed() {
-  return movementAllowed;
+  return movementAllowed && !cutsceneHoldsInput();
 }
 
 async function isLoaded() {

@@ -10,7 +10,7 @@
 // whenever it changes, and a save or a delete is known to have gone through
 // when the list that comes back shows it.
 import { EditorShell, type ListRow } from "./tooleditor.js";
-import { FieldRenderer, coinWords, orderFields, sheetOptions, type AssetOption, type Field } from "./toolfields.js";
+import { FieldRenderer, coinWords, inAnimationsFolder, orderFields, sheetOptions, type AssetOption, type Field } from "./toolfields.js";
 import { button, card, confirmDialog, count, el, empty, iconButton, listed, tag, thumb, toast, tooltip } from "./toolkit.js";
 import { manyField, type Choice } from "./questnpcparts.js";
 import { Completer, GOSSIP_RULES, SCRIPT_RULES, type CompleterRules } from "./npceditorcomplete.js";
@@ -56,12 +56,6 @@ const SETTLE_MS = 2500;
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const dialogOpen = (): boolean => !!document.querySelector("dialog[open]");
-
-/** Listings under an `animations` folder are animations, not sprite sheets an NPC can wear. */
-function inAnimationsFolder(option: AssetOption): boolean {
-  const inFolder = (path: unknown) => typeof path === "string" && /(^|[\\/])animations[\\/]/i.test(path);
-  return inFolder(option.value) || inFolder(option.image);
-}
 
 /** What is edited that is not one plain value of the NPC. */
 interface Edit {

@@ -24,6 +24,7 @@ Frostfire Forge ships its content tools inside the game client. An admin logs in
 | [Creature Editor](#/tools/creature-editor) | `/ce` or `/creatureeditor` | `/creature-editor` | Admin role, `tools.creature_editor`, `tools.*` or `server.*` |
 | [Item Editor](#/tools/item-editor) | `/ie` or `/itemeditor` | `/item-editor` | Admin role, `tools.item_editor`, `tools.*` or `server.*` |
 | [Mount Editor](#/tools/mount-editor) | `/me` or `/mounteditor` | `/mount-editor` | Admin role, `tools.mount_editor`, `tools.*`, `server.admin` or `server.*` |
+| [Cutscene Editor](#/tools/cutscene-editor) | `/cse` or `/cutsceneeditor` | `/cutscene-editor` | Admin role, `tools.cutscene_editor`, `tools.*`, `server.admin` or `server.*` |
 | [Loot Editor](#/tools/loot-editor) | `/le` or `/looteditor` | `/loot-editor` | `admin.loot` or `admin.*` |
 | [Particle Editor](#/tools/particle-editor) | `/pe` or `/particleeditor` | `/particle-editor` | `tools.particle_editor` or `tools.*` |
 | [Animator](#/tools/animator) | None | `/animator` | None |

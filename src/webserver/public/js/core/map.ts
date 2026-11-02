@@ -6,6 +6,7 @@ import { setMap } from "./glmap/index.js";
 import { setMap as setMapMobile } from "./glmap-mobile/index.js";
 import { MOBILE_RENDERER } from "./renderpath.js";
 import { applyWorldTransform } from "./worldzoom.js";
+import { frameSize } from "./cutsceneframe.js";
 
 const PLAYER_Z_INDEX = config?.PLAYER_Z_INDEX;
 declare global {
@@ -353,8 +354,9 @@ export default async function loadMap(metadata: any): Promise<boolean> {
     const dpr = isTouchDevice ? Math.min(rawDpr, 2) : rawDpr;
 
     const bodyStyle = getComputedStyle(document.body);
-    const displayWidth = parseFloat(bodyStyle.width) || window.innerWidth;
-    const displayHeight = parseFloat(bodyStyle.height) || window.innerHeight;
+    const frame = frameSize();
+    const displayWidth = frame?.w ?? (parseFloat(bodyStyle.width) || window.innerWidth);
+    const displayHeight = frame?.h ?? (parseFloat(bodyStyle.height) || window.innerHeight);
 
     canvas.width = displayWidth * dpr;
     canvas.height = displayHeight * dpr;

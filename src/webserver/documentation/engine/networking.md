@@ -424,10 +424,12 @@ topicBus.publishBestEffort(
   "CONNECTION_COUNT",
   packet.encode(JSON.stringify({
     type: "CONNECTION_COUNT",
-    data: connections.size,
+    data: onlineCount(),
   }))
 );
 ```
+
+`onlineCount()` is the connections on this server plus, in a cluster, the players the other nodes report. In a cluster it is published once a new number has held for four seconds, and a player who just connected is told it directly.
 
 The built in topics are `CONNECTION_COUNT` (sent no more often than a short interval), `BROADCAST` (used by `events.Broadcast`) and `DISCONNECT_PLAYER`. Most game traffic does not use topics: it is sent to the players in a player's area of interest, described in [AOI and layers](#/engine/aoi-and-layers).
 

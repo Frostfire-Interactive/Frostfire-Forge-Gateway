@@ -47,6 +47,7 @@ resizeWeatherCanvas();
 
 window.addEventListener("resize", resizeWeatherCanvas);
 window.visualViewport?.addEventListener("resize", resizeWeatherCanvas);
+window.addEventListener("viewframe", resizeWeatherCanvas);
 
 let cameraOffsetX = 0;
 let cameraOffsetY = 0;

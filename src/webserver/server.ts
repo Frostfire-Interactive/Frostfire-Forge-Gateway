@@ -69,6 +69,7 @@ import npceditor_html from "./public/npceditor.html";
 import creatureeditor_html from "./public/creatureeditor.html";
 import itemeditor_html from "./public/itemeditor.html";
 import mounteditor_html from "./public/mounteditor.html";
+import cutsceneeditor_html from "./public/cutsceneeditor.html";
 import spelleditor_html from "./public/spelleditor.html";
 import weathereditor_html from "./public/weathereditor.html";
 import classeditor_html from "./public/classeditor.html";
@@ -340,6 +341,7 @@ const routes = {
   "/creature-editor": creatureeditor_html,
   "/item-editor": itemeditor_html,
   "/mount-editor": mounteditor_html,
+  "/cutscene-editor": cutsceneeditor_html,
   "/spell-editor": spelleditor_html,
   "/weather-editor": weathereditor_html,
   "/class-editor": classeditor_html,
@@ -644,6 +646,7 @@ Bun.serve({
       "/creature-editor": routes["/creature-editor"],
       "/item-editor": routes["/item-editor"],
       "/mount-editor": routes["/mount-editor"],
+      "/cutscene-editor": routes["/cutscene-editor"],
       "/spell-editor": routes["/spell-editor"],
       "/weather-editor": routes["/weather-editor"],
       "/class-editor": routes["/class-editor"],

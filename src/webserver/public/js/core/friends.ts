@@ -42,22 +42,17 @@ function updateFriendsList(data: any) {
 }
 
 function updateFriendOnlineStatus(friendName: string, isOnline: boolean) {
-  setTimeout(() => {
-    const list = Array.from(friendsList.querySelectorAll('.friend-name')) as HTMLElement[];
-    if (!list.length) {
-      return;
-    }
-    list.forEach((item: HTMLElement) => {
-      const name = item.innerText.toLowerCase();
-      if (name === friendName.toLowerCase()) {
-        const statusElement = item.nextElementSibling as HTMLElement;
-        if (statusElement) {
-          statusElement.classList.toggle("online", isOnline);
-          statusElement.classList.toggle("offline", !isOnline);
-        }
+  const list = Array.from(friendsList.querySelectorAll('.friend-name')) as HTMLElement[];
+  list.forEach((item: HTMLElement) => {
+    const name = item.innerText.toLowerCase();
+    if (name === friendName.toLowerCase()) {
+      const statusElement = item.nextElementSibling as HTMLElement;
+      if (statusElement) {
+        statusElement.classList.toggle("online", isOnline);
+        statusElement.classList.toggle("offline", !isOnline);
       }
-    });
-    }, 2000);
+    }
+  });
 }
 
 /**

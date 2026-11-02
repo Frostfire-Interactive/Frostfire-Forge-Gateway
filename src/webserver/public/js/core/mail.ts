@@ -97,6 +97,7 @@ export function setMailboxes(data: { map: string; mailboxes: Mailbox[]; iconUrl?
   if (data.iconUrl && picture?.dataset.url !== data.iconUrl) {
     picture = new Image();
     picture.dataset.url = data.iconUrl;
+    picture.crossOrigin = "anonymous";
     picture.src = data.iconUrl;
   }
   boxes = { map: mapName(data.map), list: data.mailboxes, picture };
