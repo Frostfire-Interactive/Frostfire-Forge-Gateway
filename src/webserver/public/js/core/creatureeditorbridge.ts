@@ -145,6 +145,16 @@ const where = (x: unknown, y: unknown): string => `${num(Number(x) || 0)}, ${num
 /** The words of the game written for reading, stored as they were: "rare_elite" is listed as "Rare elite". */
 const choices = (values: string[], said: Record<string, string> = {}) => (): Option[] => values.map((value) => ({ value, label: said[value] ?? words(value) }));
 
+/**
+ * A body or head listed with a template is that animation template, not a look:
+ * creatures are drawn on their own base templates. Worn sheets do carry a
+ * template, and what the creature already uses stays listed.
+ */
+function pickableSheets<T extends { name: string; template?: boolean }>(sheets: T[], slot: string, current: string): T[] {
+  if (slot !== "body" && slot !== "head") return sheets;
+  return sheets.filter((sheet) => !sheet.template || sheet.name === current);
+}
+
 class CreatureEditorBridge {
   private data: any = { templates: [], abilities: [], spawns: [], patrolPaths: [], linkGroups: [], pools: [], spells: [], lootTables: [], maps: [], triggers: [], targetModes: [], spriteSheets: {}, icons: [] };
   /** The server's first answer has arrived. */
@@ -207,7 +217,11 @@ class CreatureEditorBridge {
   private fields = new FieldRenderer({
     rerender: () => this.renderForm(),
     // Only sprite sheet fields come here: every other picker says what it offers itself.
-    assetOptions: (field, value) => sheetOptions(this.data.spriteSheets, field.slot || "other", String(value ?? "")),
+    assetOptions: (field, value) => {
+      const slot = field.slot || "other";
+      const current = String(value ?? "");
+      return sheetOptions({ [slot]: pickableSheets(this.data.spriteSheets?.[slot] ?? [], slot, current) }, slot, current);
+    },
     flags: CREATURE_FLAGS,
   });
 
@@ -565,6 +579,7 @@ class CreatureEditorBridge {
       { key: "ranged", label: "Keeps its distance", type: "switch", wide: true, hint: "Stops at range instead of closing in." },
       { key: "move_speed_walk", label: "Walk speed", type: "number", step: 0.1, unit: "yd/s", hint: "Used when idle, wandering or patrolling." },
       { key: "move_speed_run", label: "Run speed", type: "number", step: 0.1, unit: "yd/s", hint: "Used when chasing or fleeing." },
+      { key: "can_move", label: "Can move", type: "switch", wide: true, hint: "Off means it stays where it spawned, even in a fight." },
       { key: "leash_override", label: "Leash range", type: "number", unit: "yards", placeholder: "60", hint: "How far it chases from where the fight started before resetting. Empty means the usual 60." },
       { key: "aggro_radius_override", label: "Aggro radius", type: "number", unit: "yards", placeholder: "20", hint: "Empty means the usual 20. It grows or shrinks 1 yard per level of difference to the player." },
       { key: "assist_radius", label: "Assist radius", type: "number", unit: "yards", hint: "Idle allies this close join in when it is pulled." },
@@ -657,7 +672,7 @@ class CreatureEditorBridge {
       case "pools":
         return { id: 0, max_active: 1, rare_chance_pct: 0, rare_template_id: 0 };
       default:
-        return { id: 0, name: "New Creature", subname: "", level_min: 1, level_max: 1, rank: "normal", creature_type: "beast", stance: "aggressive", health_base: 50, health_per_level: 10, armor: 0, damage_min: 1, damage_max: 3, attack_speed_ms: 2000, ranged: false, move_speed_walk: 2.5, move_speed_run: 7, aggro_radius_override: null, assist_radius: 10, call_for_help_radius: 15, flee_at_hp_pct: 0, flee_duration_ms: 4000, leash_override: null, regen_ooc: true, xp_mult: 1, loot_table_id: 0, gold_min: 0, gold_max: 0, sprite_type: "none", sprite: "", sprite_head: "", sprite_helmet: "", sprite_shoulderguards: "", sprite_neck: "", sprite_hands: "", sprite_chest: "", sprite_feet: "", sprite_legs: "", sprite_weapon: "", scale: 1, flags: 0 };
+        return { id: 0, name: "New Creature", subname: "", level_min: 1, level_max: 1, rank: "normal", creature_type: "beast", stance: "aggressive", health_base: 50, health_per_level: 10, armor: 0, damage_min: 1, damage_max: 3, attack_speed_ms: 2000, ranged: false, move_speed_walk: 2.5, move_speed_run: 7, can_move: true, aggro_radius_override: null, assist_radius: 10, call_for_help_radius: 15, flee_at_hp_pct: 0, flee_duration_ms: 4000, leash_override: null, regen_ooc: true, xp_mult: 1, loot_table_id: 0, gold_min: 0, gold_max: 0, sprite_type: "none", sprite: "", sprite_head: "", sprite_helmet: "", sprite_shoulderguards: "", sprite_neck: "", sprite_hands: "", sprite_chest: "", sprite_feet: "", sprite_legs: "", sprite_weapon: "", scale: 1, flags: 0 };
     }
   }
 
@@ -924,7 +939,7 @@ class CreatureEditorBridge {
       // The two levels stay side by side whether the card is two fields wide or three.
       { title: "Identity", fields: take(["name", "subname", "rank", "creature_type", "level_min", "level_max"]) },
       { title: "Combat", fields: take(["stance", "health_base", "health_per_level", "armor", "ranged"]) },
-      { title: "Movement", fields: take(["move_speed_walk", "move_speed_run", "leash_override"]) },
+      { title: "Movement", fields: take(["move_speed_walk", "move_speed_run", "leash_override", "can_move"]) },
       { title: "Awareness", lead: "How it notices players and gets help", fields: take(["aggro_radius_override", "assist_radius", "call_for_help_radius"]) },
       { title: "Fleeing and recovery", fields: take(["flee_at_hp_pct", "flee_duration_ms", "regen_ooc"]) },
       { title: "Exceptions", lead: "Where it does not behave as creatures usually do", fields: take(["flags"]) },

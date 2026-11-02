@@ -73,6 +73,7 @@ A creature has five tabs: General, Appearance, Rewards, Abilities and Spawns. Th
 | Walk speed | yd/s | Used when idle, wandering or patrolling |
 | Run speed | yd/s | Used when chasing or fleeing |
 | Leash range | yards | How far it chases from where the fight started before resetting. Empty means the usual 60. |
+| Can move | switch | On by default. Off means it stays where it spawned, even in a fight: it never wanders, patrols, chases or flees. A player who stays past its leash range for 5 seconds drops out of the fight. |
 
 **Awareness**
 
