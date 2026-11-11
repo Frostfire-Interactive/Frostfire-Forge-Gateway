@@ -56,7 +56,7 @@ Rules the `CHAT` handler enforces:
 | Corpses | Cannot talk |
 | Ghosts | A ghost who is not an admin speaks in generated spirit speech, not the text typed |
 | Stealthed admins | Only other admins see the message |
-| Translation | A reader whose language differs from the sender's gets a translated copy |
+| Translation | A reader whose language differs from the sender's gets a translated copy, see [Chat Translation](#/engine/chat-translation) |
 
 ```ts title="src/socket/receiver.ts"
 const MAX_CHAT_LENGTH = 500;

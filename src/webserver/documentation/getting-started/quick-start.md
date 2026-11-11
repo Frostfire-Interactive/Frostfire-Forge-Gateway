@@ -10,17 +10,20 @@ Check the [Requirements](#/getting-started/requirements) first: you need Bun, My
 
 ## 1. Get the code
 
-Clone the three repositories next to each other and install their dependencies.
+Clone the three repositories next to each other and install their dependencies. The engine brings the Language Service as a submodule, whose model files are stored with [Git LFS](https://git-lfs.com), so run `git lfs install` once first.
 
 ```bash title="Clone and install"
-git clone https://github.com/Lillious-Networks/Frostfire-Forge-Assets.git
-git clone https://github.com/Lillious-Networks/Frostfire-Forge-Gateway.git
-git clone https://github.com/Lillious-Networks/Frostfire-Forge.git
+git lfs install
+git clone https://github.com/Frostfire-Interactive/Frostfire-Forge-Assets.git
+git clone https://github.com/Frostfire-Interactive/Frostfire-Forge-Gateway.git
+git clone --recurse-submodules https://github.com/Frostfire-Interactive/Frostfire-Forge.git
 
 cd Frostfire-Forge-Assets && bun install && cd ..
 cd Frostfire-Forge-Gateway && bun install && cd ..
 cd Frostfire-Forge && bun install && cd ..
 ```
+
+Chat translation also needs Python 3 and a one time environment inside the engine's `src/language-service` folder. Without it everything else works and chat is sent untranslated. See [Chat Translation setup](#/engine/chat-translation/setup).
 
 ## 2. Choose three shared secrets
 

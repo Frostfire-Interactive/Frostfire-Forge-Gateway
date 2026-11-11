@@ -14,6 +14,7 @@ All three servers run on [Bun](https://bun.sh). There is no Node.js fallback and
 | --- | --- |
 | Bun | 1.4 or newer. The engine's WebTransport package (`@lillious-networks/webtransport-bun`) declares `bun >= 1.4.0`. |
 | Docker images | Every Dockerfile in the three repositories builds on `oven/bun:canary-slim`. |
+| Python and Git LFS | Python 3 and [Git LFS](https://git-lfs.com) for the engine's chat translation when you run from source. The Docker images include it. See [Chat Translation](#/engine/chat-translation/setup). |
 
 ```bash title="Check or update Bun"
 bun --version

@@ -890,7 +890,7 @@ async function connectThroughGateway(): Promise<WebTransport | undefined> {
 
 let isReconnecting = false;
 let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 5;
+const MAX_RECONNECT_ATTEMPTS = 30;
 
 async function initializeSocket() {
 

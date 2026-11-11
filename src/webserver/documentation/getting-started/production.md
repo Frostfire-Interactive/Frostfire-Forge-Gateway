@@ -224,6 +224,8 @@ bun setup-production
 
 `bun setup-production` generates the config files in `src/config` and then creates every game table, including `accounts`, with `.env.production`.
 
+For chat translation, the engine needs its Language Service submodule (cloned with Git LFS) and the translator's Python environment. See [Chat Translation setup](#/engine/chat-translation/setup). The Docker images already include both.
+
 Now run the gateway setup a second time so the two-factor columns are added to the new `accounts` table. The script is safe to repeat:
 
 ```bash title="In Frostfire-Forge-Gateway"

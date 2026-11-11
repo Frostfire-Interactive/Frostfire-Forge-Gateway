@@ -199,12 +199,7 @@ See [Weather](#/engine/weather).
 
 ### Chat translation
 
-| Name | Default | Purpose |
-|------|---------|---------|
-| `TRANSLATION_SERVICE` | `google_translate` | `google_translate` or `openai` |
-| `GOOGLE_TRANSLATE_API_KEY` | none | Key for Google Translate. Startup warns when it is missing. |
-| `OPENAI_API_KEY` | none | Key for the OpenAI client, used when the service is `openai` |
-| `OPENAI_MODEL` | `gpt-4.1-nano-2025-04-14` | Model used for translation |
+Chat translation has no variables. It runs offline on the server through the Language Service, see [Chat Translation](#/engine/chat-translation).
 
 ### Logging and diagnostics
 
