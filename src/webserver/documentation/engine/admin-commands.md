@@ -386,7 +386,7 @@ Moves you to a map by name, without the `.json` extension. You land on the map's
 /reloadmap <map>
 ```
 
-Reads the map again and sends a fresh `LOAD_MAP` to every player on it.
+Reads the map again, with its particle and placed NPCs, and every player on it on this server loads it again where they stand. They are sent the new chunks and the NPCs, weather and creatures around them again.
 
 ### /weather
 

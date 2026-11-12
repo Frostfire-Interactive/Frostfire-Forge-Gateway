@@ -150,7 +150,7 @@ Details are on the [Networking](#/engine/networking) page.
 | `ASSET_SERVER_URL` | none | Asset server address for map and world sync. Without it, map sync at startup is skipped, and other requests fall back to `http://localhost:8000` or `http://localhost:8081`. |
 | `ASSET_SERVER_INTERNAL_URL` | none | Used instead of `ASSET_SERVER_URL` for server to server requests when set |
 | `ASSET_SERVER_AUTH_KEY` | `GATEWAY_AUTH_KEY` | Sent with every asset server request |
-| `WORLD_SYNC_INTERVAL` | `10` | Seconds between checks for worlds changed on the asset server. `0` turns the check off. See [Changes made outside the game](#/engine/world-maps/changes-made-outside-the-game). |
+| `WORLD_SYNC_INTERVAL` | `10` | Seconds between checks for maps and worlds changed on the asset server. `0` turns the check off. See [Changes made outside the game](#/engine/world-maps/changes-made-outside-the-game). |
 
 ### Security
 

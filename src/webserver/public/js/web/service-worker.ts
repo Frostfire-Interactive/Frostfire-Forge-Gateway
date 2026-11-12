@@ -6,10 +6,19 @@
 
 declare const self: ServiceWorkerGlobalScope;
 
-// v3: drops the tileset entries v2 kept forever (activate deletes every other cache name).
-const ASSET_CACHE = 'asset-cache-v3';
+// v4: drops the entries v3 took with no way to tell them apart from a newer
+// copy (activate deletes every other cache name).
+const ASSET_CACHE = 'asset-cache-v4';
+// The asset version each asset server had when its entries were last checked,
+// one entry per origin. Its own cache, so eviction never drops it.
+const VERSION_CACHE = 'asset-cache-v4-versions';
 
-// Asset-server GET endpoints whose responses are safe to cache indefinitely.
+// How long a version check holds before the next request checks again.
+const VERSION_CHECK_MS = 60_000;
+
+// Asset-server GET endpoints whose responses are kept cache-first. They are
+// kept until the asset server's /asset-version changes (a restart with new
+// sprites, icons or sprite sheets), then fetched again.
 // Matched by exact pathname so e.g. "/sprite" doesn't also swallow
 // "/sprite-sheet-image".
 // "/tileset" is NOT here: tileset images get edited in place under the same
@@ -38,7 +47,7 @@ self.addEventListener('activate', (event: ExtendableEvent) => {
     (async () => {
       const names = await caches.keys();
       await Promise.all(
-        names.map((name) => (name === ASSET_CACHE ? undefined : caches.delete(name))),
+        names.map((name) => (name === ASSET_CACHE || name === VERSION_CACHE ? undefined : caches.delete(name))),
       );
       await self.clients.claim();
     })(),
@@ -56,12 +65,16 @@ self.addEventListener('fetch', (event: FetchEvent) => {
 
 // Cache-first: serve from Cache Storage when present, otherwise fetch and store.
 async function handleCacheStrategy(request: Request): Promise<Response> {
+  await checkVersion(new URL(request.url).origin);
+
   const cached = await fromCache(request);
   if (cached) return cached;
 
   let response: Response;
   try {
-    response = await fetch(request);
+    // no-cache: the browser's HTTP cache revalidates its copy (a 304 when it
+    // is current) instead of handing back one it kept for a year.
+    response = await fetch(request, { cache: 'no-cache' });
   } catch {
     const stored = await fromCache(request);
     if (stored) return stored;
@@ -81,6 +94,43 @@ async function handleCacheStrategy(request: Request): Promise<Response> {
   }
 
   return response;
+}
+
+// The last version check per asset server origin, shared by the requests made
+// while it runs. A worker the browser stopped and started again checks anew.
+const versionChecks = new Map<string, { at: number; done: Promise<void> }>();
+
+function checkVersion(origin: string): Promise<void> {
+  const last = versionChecks.get(origin);
+  if (last && Date.now() - last.at < VERSION_CHECK_MS) return last.done;
+  const done = dropIfVersionChanged(origin);
+  versionChecks.set(origin, { at: Date.now(), done });
+  return done;
+}
+
+// Asks the asset server for its asset version and, when it differs from the
+// one its entries were taken at, drops every entry from that asset server. An
+// asset server that does not answer leaves the cache as it is.
+async function dropIfVersionChanged(origin: string): Promise<void> {
+  try {
+    const response = await fetch(`${origin}/asset-version`, { cache: 'no-store', redirect: 'error' });
+    if (!response.ok) return;
+    const version = String((await response.json())?.version ?? '');
+    if (!version) return;
+
+    const versions = await caches.open(VERSION_CACHE);
+    const key = `${origin}/asset-version`;
+    const known = await versions.match(key);
+    if (known && (await known.text()) === version) return;
+
+    const cache = await caches.open(ASSET_CACHE);
+    for (const request of await cache.keys()) {
+      if (new URL(request.url).origin === origin) await cache.delete(request);
+    }
+    await versions.put(key, new Response(version));
+  } catch {
+    // Best-effort: the cache is kept and checked again later.
+  }
 }
 
 // Cache Storage can fail on its own (out of quota, a damaged profile). This

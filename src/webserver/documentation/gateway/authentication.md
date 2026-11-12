@@ -188,7 +188,7 @@ All routes are served by the webserver behind the reverse proxy. "Token" in the 
 | GET | `/map-editor`, `/control-panel` and the other tool routes | None | Tool windows. See [Tools Overview](#/tools/overview). |
 | GET | `/docs` | None | This documentation. `404` when `DOCS_ENABLED=false`. |
 | GET | `/gateway` | None | Redirects (`302`) to `/dashboard` on the gateway server port. See [Dashboard](#/gateway/dashboard). |
-| GET | `/service-worker.js` | None | Service worker that caches sprites and assets |
+| GET | `/service-worker.js` | None | Service worker that keeps sprites, icons and sprite sheets until the asset server's `/asset-version` changes. See [the game's service worker](#/assets/overview/the-games-service-worker). |
 | GET | `/img/...`, `/fonts/...` | None | Images and fonts, cached by the browser |
 
 Any other path redirects to `/` with a `301`.

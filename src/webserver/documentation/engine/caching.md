@@ -41,7 +41,7 @@ Every method returns a promise.
 | `items` | Every item definition |
 | `spells` | Every spell, including spells added by plugins |
 | `mounts` | Every mount |
-| `npcs` | NPCs from the database plus particle NPCs read from maps |
+| `npcs` | NPCs from the database plus particle and placed NPCs read from maps. A map read again replaces its own. |
 | `particles` | Particle definitions |
 | `quests` | Quest definitions |
 | `weather` | Rows of the `weather` table |

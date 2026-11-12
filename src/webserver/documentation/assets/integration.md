@@ -58,10 +58,11 @@ The key travels in the request body. Over plain HTTP on a public network it can 
 | Method | Path | Parameters | Purpose |
 | --- | --- | --- | --- |
 | GET | `/status` | None | Health check. Returns `{"status":"OK"}`. |
+| GET | `/asset-version` | None | One hash over the sprites, icons and sprite sheets read at startup: `{ "version" }`. The gateway's service worker drops the copies it keeps when it changes. See [How responses are cached](#/assets/overview/the-games-service-worker). |
 | GET | `/tileset` | `name`: file name with extension | One tileset file as JSON: `{ "name", "data" }`, where `data` is the file gzipped and base64 encoded. Revalidated with an `ETag`. |
 | GET | `/map-chunk` | `map`, `x`, `y`, `size` (default 25) | One chunk of a map or world as JSON. Gzipped when the client accepts it. |
 | GET | `/worldmap` | `name`, optional `rx` and `ry` | The baked map image as PNG. With `rx` and `ry`, one full detail region of a world. |
-| GET | `/sprite` | `name`: with or without `.png` | A sprite as PNG. Falls back to the `missing_icon` image. |
+| GET | `/sprite` | `name`: with or without `.png` | A sprite as PNG. Falls back to the `missing_icon` image. Revalidated with an `ETag`, as are `/icon`, `/sprite-sheet-image` and `/sprite-sheet-template`. |
 | GET | `/sprites` | None | Names of all sprites: `{ "sprites": [{ "name" }] }`. |
 | GET | `/icon` | `name`: with or without `.png` | An icon as PNG. Falls back to the `missing_icon` image. |
 | GET | `/icons` | None | Names of all icons: `{ "icons": [{ "name" }] }`. |
@@ -98,7 +99,7 @@ All of these take a JSON body that includes `authKey`.
 
 ## Sync on startup
 
-The engine keeps its own copy of every map so that it can run collision, warps and spawns without asking the asset server during play. It refreshes that copy each time it starts, before it loads any map.
+The engine keeps its own copy of every map so that it can run collision, warps and spawns without asking the asset server during play. It refreshes that copy each time it starts, before it loads any map, and checks it again while it runs.
 
 ### Map sync
 
@@ -129,7 +130,21 @@ The engine keeps its own copy of every map so that it can run collision, warps a
 - The response can be several megabytes and is gzipped.
 - An engine that sends an empty `checksums` object receives every map.
 
-The sync runs twice: once before the maps are loaded, and once more after the engine has registered with the gateway. The second run retries with a growing delay if the asset server does not answer.
+The sync runs before the maps are loaded, once more after the engine has registered with the gateway, and then every `WORLD_SYNC_INTERVAL` seconds (default `10`, `0` turns it off). The run after registering retries with a growing delay if the asset server does not answer.
+
+When a run after startup returns a map, the engine takes it in at once (`checkMapChanges` in `assetloader.ts`):
+
+1. It writes the map to `src/assets/maps` and reads it again: collision, warps, graveyards, shadow layers and the chunk data it sends to clients.
+2. It removes the map's particle and placed NPCs and makes new ones from the new objects layer.
+3. It clears the map's cached chunks, fishing spots and movement data.
+4. A map the engine did not have is added as a new map, and other servers in a cluster are told about it.
+5. Every player on the map on this server loads it again where they stand. The map has a new version, so their clients drop the chunks they kept and fetch the new ones, and they are sent the NPCs, particles, creatures and weather around them again.
+
+The engine remembers the checksum of each map it took in, so a map is not read again until the asset server's copy changes once more.
+
+```text title="Game server log"
+Map overworld.json changed on the asset server: read again
+```
 
 :::warning Start the asset server first
 If the first sync fails, the engine logs a warning and loads whatever maps it already has. On a fresh install it has none, and it cannot start without at least one map.
@@ -293,9 +308,10 @@ curl -X POST http://localhost:8000/map-checksums \
 
 A `200` with a `maps.json` file means the key is accepted. A `401` means it is not.
 
-On the asset server, a successful sync from the engine is logged like this:
+On the asset server, a sync that sends maps to the engine is logged like this:
 
 ```text title="Asset server log"
-[AssetServer] Map sync for server-1: 0 outdated maps
-[AssetServer] World sync for server-1: 2 world(s)
+[AssetServer] Map sync for server-1: 1 outdated maps
 ```
+
+A sync that finds every map up to date, and every `/world-list` request, is logged at debug level only, so the checks the engine makes every few seconds do not fill the log.

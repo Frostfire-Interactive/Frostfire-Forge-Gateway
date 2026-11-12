@@ -85,21 +85,30 @@ The server sets caching headers per asset type, so browsers do not download the 
 | Endpoint | Caching behaviour |
 | --- | --- |
 | `/tileset` | `Cache-Control: no-cache` with an `ETag` (the file's content hash). The browser revalidates on every load and gets a 304 when nothing changed. |
-| `/sprite`, `/icon` | `public, max-age=31536000`. |
+| `/sprite`, `/icon`, `/sprite-sheet-image`, `/sprite-sheet-template` | `no-cache` with an `ETag` (the content hash), as `/tileset`. |
 | The fallback icon | `public, max-age=300`. Sent when a sprite or icon does not exist, with the header `X-Asset-Fallback: missing_icon`. |
-| `/audio` | `public, max-age=31536000, immutable`, with an `ETag` and support for `Range` requests so players can seek. |
+| `/audio` | `no-cache` with an `ETag` (the file's content hash), and support for `Range` requests so players can seek. |
+| `/asset-version` | `no-store`. |
 | `/worldmap` | `public, max-age=0, must-revalidate` with an `ETag`. |
 | `/map-chunk` | Gzipped. Each built chunk is kept in a server side cache, keyed by map, map checksum, chunk position and chunk size. |
 
-:::tip Replacing an image under the same name
-Sprites and icons are cached by browsers for a year. If you replace one without renaming it, players keep the old image until their cache is cleared. Give changed sprites and icons a new file name. Tilesets do not have this problem because they are revalidated.
-:::
+### The game's service worker
+
+The gateway's service worker (`/service-worker.js`) keeps sprites, icons and sprite sheets in the browser's Cache Storage and serves them from there, so a page load does not ask the asset server for each one.
+
+`GET /asset-version` returns one hash over every sprite, icon and sprite sheet the asset server read at startup: `{ "version": "6ca4cff98a8c0783" }`. Before it serves a kept copy, the worker asks for it, at most once a minute. When the hash differs from the one its copies were taken at, it drops every copy it holds from that asset server and fetches each one again as it is used. Those fetches revalidate with the `ETag`, so an image that did not change costs a 304.
+
+Replacing a sprite, icon or sprite sheet under the same name works this way:
+
+1. Replace the file in the assets folder and restart the asset server. It reads the new file and gets a new asset version.
+2. A player's next page load, or the first sprite request a minute after the last check, sees the new version.
+3. The worker drops its copies and fetches the images again. The changed one is new; the others come back as 304s.
 
 ## Maps and checksums
 
 Each `.json` map in the `maps` folder is parsed at startup. Maps saved by Tiled in "infinite" mode are flattened into ordinary fixed size layers on load, so the rest of the system only ever sees flat layers.
 
-The SHA-256 checksum of the map's JSON identifies its version. The engine sends its own checksums to `/map-checksums` when it starts and receives every map that differs. See [Integration](#/assets/integration/sync-on-startup).
+The SHA-256 checksum of the map's JSON identifies its version. The engine sends its own checksums to `/map-checksums` when it starts, and again every few seconds while it runs, and receives every map that differs. See [Integration](#/assets/integration/sync-on-startup).
 
 The client never downloads a whole map. It asks for chunks:
 

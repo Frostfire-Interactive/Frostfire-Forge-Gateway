@@ -144,7 +144,7 @@ While it starts, and before it loads any map, the engine does two things:
 1. **Maps.** It computes a checksum for every map in `src/assets/maps` and sends the list to `POST /map-checksums`. The asset server answers with the full data of every map whose checksum differs, and the engine writes those files to disk. It also removes local maps the asset server does not list.
 2. **Worlds.** It asks `POST /world-list` for the large worlds the asset server has, then fetches each outdated file with `POST /world-file`. Only the manifest and the collision and no-PvP data are copied. The tiles stay on the asset server.
 
-Both calls carry `ASSET_SERVER_AUTH_KEY`. The same map sync runs once more right after the engine registers with the gateway. The full list of endpoints is in [asset server integration](#/assets/integration).
+Both calls carry `ASSET_SERVER_AUTH_KEY`. The same map sync runs once more right after the engine registers with the gateway, and both checks repeat every `WORLD_SYNC_INTERVAL` seconds while it runs. A map or world changed on the asset server is read again, and the players on it load it again where they stand. The full list of endpoints is in [asset server integration](#/assets/integration).
 
 ## From login page to in-game
 

@@ -288,26 +288,24 @@ The comment at the top of `worldmaps.ts` still says worlds are read only. The co
 
 ## Changes made outside the game
 
-A world can also change on the asset server without this game server knowing: a save from the [Tiled extension](#/tools/tiled-worlds), or an editor save on another game server. The engine picks these up without a restart.
+A world can also change on the asset server without this game server knowing: new files the asset server read when it restarted, a save from the [Tiled extension](#/tools/tiled-worlds), or an editor save on another game server. The engine picks these up without a restart.
 
 Every `WORLD_SYNC_INTERVAL` seconds (default `10`, `0` turns it off) the engine calls `checkWorldChanges`:
 
 1. It posts to `/world-list`. A world listed with the same file hashes as at its last sync is up to date. Its local files are not hashed again, so an unchanged world costs one small request.
 2. For a world whose hashes changed, it fetches the changed files as at startup.
 3. It puts the new collision and no-PvP bits in place with `adopt`, so movement and creature pathing use them at once.
-4. It reads the world's warps and graveyards from the new manifest, the same way the loader does, and clears the movement cache.
-5. It gives the world a new map version, so a player who loads the map again gets the new chunks.
+4. It reads the world's warps, graveyards and objects from the new manifest, the same way the loader does, and clears the movement cache.
+5. It reads the world's particle and placed NPCs again from the new objects (`takeInWorldChange` in `assetloader.ts`), in place of the old ones.
+6. It gives the world a new map version, and every player on the world on this server loads it again where they stand (`refreshPlayersOnMap` in `receiver.ts`). The new version makes their clients drop the chunks they kept, so they fetch the new ones, and they are sent the NPCs, particles, creatures and weather around them again.
 
 ```text title="Game server log"
-World overworld changed on the asset server: collision, warps and graveyards updated
+World overworld changed on the asset server: collision, warps, graveyards and objects updated
 ```
 
-Players already on the map are not told: they see the new tiles after they reload the page. An editor save made on this server is not picked up a second time, since its sync already recorded the new hashes.
+An editor save made on this server is not picked up a second time, since its sync already recorded the new hashes.
 
-| Not taken in while running | Why |
-|----------------------------|-----|
-| Particle NPCs | They are made into NPCs once, at startup |
-| A change of the world's size | `adopt` refuses it with `the world changed size`. Restart to load the world. |
+Tiled maps are checked in the same pass, through `/map-checksums`. See [asset server integration](#/assets/integration/map-sync).
 | A world new to this server | It is fetched, and loaded at the next start |
 
 ## Reference
