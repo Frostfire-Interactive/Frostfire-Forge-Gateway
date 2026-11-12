@@ -305,7 +305,7 @@ World overworld changed on the asset server: collision, warps, graveyards and ob
 
 An editor save made on this server is not picked up a second time, since its sync already recorded the new hashes.
 
-Tiled maps are checked in the same pass, through `/map-checksums`. See [asset server integration](#/assets/integration/map-sync).
+Tiled maps are checked in the same pass: the engine asks `/map-changes` for the maps saved since its last answer. See [asset server integration](#/assets/integration/changed-maps-while-running).
 | A world new to this server | It is fetched, and loaded at the next start |
 
 ## Reference

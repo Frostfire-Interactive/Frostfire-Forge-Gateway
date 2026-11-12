@@ -81,6 +81,7 @@ All of these take a JSON body that includes `authKey`.
 | Method | Path | Body fields | Purpose |
 | --- | --- | --- | --- |
 | POST | `/map-checksums` | `checksums`, `serverId` | Map sync. Returns every map whose checksum differs from the one sent. |
+| POST | `/map-changes` | `epoch`, `since`, `serverId` | Returns the maps saved since the place given. Polled by the engine while it runs. |
 | POST | `/world-list` | `serverId` | Lists the worlds with the hashes of their sync files. |
 | POST | `/world-file` | `id`, `file` | Returns one sync file of a world as binary. |
 | POST | `/save-map-chunks` | `mapName`, `chunks`, optional `bounds`, `serverId` | Saves edited chunks of a map or world to disk. |
@@ -120,19 +121,52 @@ The engine keeps its own copy of every map so that it can run collision, warps a
   "outdatedMaps": [
     { "name": "overworld.json", "checksum": "<sha256>", "data": { "width": 100, "height": 100, "layers": [] } }
   ],
-  "maps": ["inside.json", "overworld.json"]
+  "maps": ["inside.json", "overworld.json"],
+  "changes": { "epoch": "<uuid>", "seq": 12 }
 }
 ```
 
 - The asset server compares each of its maps with the checksum the engine sent. A map the engine does not have, or has in a different version, is returned in full.
 - The engine writes each returned map into its `src/assets/maps` folder, then loads its maps from there.
 - `maps` names every map the asset server has. Before it loads its maps, the engine removes a local map that is not in this list.
+- `changes` is the engine's place in the asset server's list of changed maps, described below.
 - The response can be several megabytes and is gzipped.
 - An engine that sends an empty `checksums` object receives every map.
 
-The sync runs before the maps are loaded, once more after the engine has registered with the gateway, and then every `WORLD_SYNC_INTERVAL` seconds (default `10`, `0` turns it off). The run after registering retries with a growing delay if the asset server does not answer.
+The sync runs before the maps are loaded, and once more after the engine has registered with the gateway. The run after registering retries with a growing delay if the asset server does not answer.
 
-When a run after startup returns a map, the engine takes it in at once (`checkMapChanges` in `assetloader.ts`):
+### Changed maps while running
+
+The asset server keeps a list of the maps saved to it since it started (`modules/mapchanges.ts`): each save through `/update-map`, `/save-map-chunks` or `/save-map-properties`, and each map made with `/create-map`. Every save has a number, and a map saved twice is listed once, with the number of its last save. `epoch` names the asset server's run and changes each time it starts.
+
+Every `WORLD_SYNC_INTERVAL` seconds (default `10`, `0` turns it off) the engine sends its place and receives only the maps saved after it (`pollMapChanges` in `assetloader.ts`).
+
+```json title="POST /map-changes, request"
+{
+  "authKey": "change-me",
+  "serverId": "server-1",
+  "epoch": "<uuid>",
+  "since": 12
+}
+```
+
+```json title="Response"
+{
+  "success": true,
+  "epoch": "<uuid>",
+  "seq": 13,
+  "full": false,
+  "maps": [
+    { "name": "overworld.json", "checksum": "<sha256>", "data": { "width": 100, "height": 100, "layers": [] } }
+  ]
+}
+```
+
+- `seq` is the engine's new place.
+- `full` is `true` when the `epoch` sent is not the asset server's current run, or the place is older than the changes the list still holds (it keeps the last 256 maps saved). The engine then runs the map sync above once, and its answer gives the engine its new place. This is how maps changed on disk while the asset server was down reach the engines.
+- An engine without a place, because the asset server it registered with keeps no list, runs the map sync above at every interval instead.
+
+When a map comes back from either call after startup, the engine takes it in at once (`takeInMaps` in `assetloader.ts`). A map whose file on the engine already has the same checksum is skipped, so the engine's own save is not read twice. For every other map:
 
 1. It writes the map to `src/assets/maps` and reads it again: collision, warps, graveyards, shadow layers and the chunk data it sends to clients.
 2. It removes the map's particle and placed NPCs and makes new ones from the new objects layer.
@@ -314,4 +348,4 @@ On the asset server, a sync that sends maps to the engine is logged like this:
 [AssetServer] Map sync for server-1: 1 outdated maps
 ```
 
-A sync that finds every map up to date, and every `/world-list` request, is logged at debug level only, so the checks the engine makes every few seconds do not fill the log.
+A sync that finds every map up to date, and every `/world-list` request, is logged at debug level only; a `/map-changes` request is logged only when it returns maps, so the checks the engine makes every few seconds do not fill the log.
