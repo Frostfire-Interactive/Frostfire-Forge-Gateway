@@ -108,7 +108,7 @@ Replacing a sprite, icon or sprite sheet under the same name works this way:
 
 Each `.json` map in the `maps` folder is parsed at startup. Maps saved by Tiled in "infinite" mode are flattened into ordinary fixed size layers on load, so the rest of the system only ever sees flat layers.
 
-The SHA-256 checksum of the map's JSON identifies its version. The engine sends its own checksums to `/map-checksums` when it starts and receives every map that differs. While it runs, it asks `/map-changes` every few seconds for the maps saved since its last answer, and receives only those. See [Integration](#/assets/integration/sync-on-startup).
+The SHA-256 checksum of the map's JSON identifies its version. The engine sends its own checksums to `/map-checksums` when it starts and receives every map that differs. While it runs, it follows `/map-events` and receives each changed map as it changes, and only those. See [Integration](#/assets/integration/sync-on-startup).
 
 The client never downloads a whole map. It asks for chunks:
 

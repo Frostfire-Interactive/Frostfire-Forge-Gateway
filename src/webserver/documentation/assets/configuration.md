@@ -11,6 +11,7 @@ The asset server is configured entirely through environment variables. `bun deve
 | Name | Default | Purpose |
 | --- | --- | --- |
 | `ASSETS_PATH` | `src/assets` inside the repository | Folder the assets are loaded from. Absolute, or relative to the folder the server is started in. The server exits if the folder does not exist. See [Asset paths](#/assets/asset-paths). |
+| `MAP_SYNC_STATE_FILE` | `.map-sync-state` in the maps folder | File the list of changed maps is kept in between runs, so a restart sends the engines only the maps that differ. Set it when the maps folder cannot be written. See [Changed maps while running](#/assets/integration/changed-maps-while-running). |
 | `ASSET_SERVER_AUTH_KEY` | Falls back to `GATEWAY_AUTH_KEY`, then to a built in placeholder | Shared secret the engine sends with every sync and save request. Must equal the engine's `ASSET_SERVER_AUTH_KEY`. |
 | `GATEWAY_AUTH_KEY` | None | Only used as the auth key when `ASSET_SERVER_AUTH_KEY` is not set. |
 | `WEBSRV_PORT` | `80` | Public HTTP port. With TLS on, this port only redirects to HTTPS. |

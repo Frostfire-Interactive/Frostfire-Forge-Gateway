@@ -81,7 +81,8 @@ All of these take a JSON body that includes `authKey`.
 | Method | Path | Body fields | Purpose |
 | --- | --- | --- | --- |
 | POST | `/map-checksums` | `checksums`, `serverId` | Map sync. Returns every map whose checksum differs from the one sent. |
-| POST | `/map-changes` | `epoch`, `since`, `serverId` | Returns the maps saved since the place given. Polled by the engine while it runs. |
+| POST | `/map-changes` | `epoch`, `since`, `serverId` | Returns the maps changed since the place given. |
+| POST | `/map-events` | `epoch`, `since`, `serverId` | Stream: the maps changed since the place given, then each change as it is made. Followed by the engine while it runs. |
 | POST | `/world-list` | `serverId` | Lists the worlds with the hashes of their sync files. |
 | POST | `/world-file` | `id`, `file` | Returns one sync file of a world as binary. |
 | POST | `/save-map-chunks` | `mapName`, `chunks`, optional `bounds`, `serverId` | Saves edited chunks of a map or world to disk. |
@@ -137,9 +138,19 @@ The sync runs before the maps are loaded, and once more after the engine has reg
 
 ### Changed maps while running
 
-The asset server keeps a list of the maps saved to it since it started (`modules/mapchanges.ts`): each save through `/update-map`, `/save-map-chunks` or `/save-map-properties`, and each map made with `/create-map`. Every save has a number, and a map saved twice is listed once, with the number of its last save. `epoch` names the asset server's run and changes each time it starts.
+The asset server keeps a list of changed maps (`modules/mapchanges.ts`): each save through `/update-map`, `/save-map-chunks` or `/save-map-properties`, each map made with `/create-map`, and, at startup, each map that is new or differs from the last run. Every change has a number, and a map changed twice is listed once, with the number of its last change. `epoch` names the list.
 
-Every `WORLD_SYNC_INTERVAL` seconds (default `10`, `0` turns it off) the engine sends its place and receives only the maps saved after it (`pollMapChanges` in `assetloader.ts`).
+The list keeps its `epoch` and numbers across restarts. The asset server saves them, with the checksum of every map, in `.map-sync-state` in the maps folder (or in the file `MAP_SYNC_STATE_FILE` names) after each change. At startup it compares the maps on disk with that file and lists only the maps that differ. An asset server restarted after an upload so sends the engines only the uploaded maps. Without the file (a first start), it starts a new list with a new `epoch`.
+
+The engine follows the list over one open connection, `POST /map-events` (`followAssetServerMapChanges` in `assetloader.ts`). The request is the same as for `/map-changes` below. The response is a stream with one JSON object per line:
+
+- The first line is the `/map-changes` answer for the place the engine sent.
+- Each later line is a change, as it is made: `{ "epoch", "from", "seq", "maps": [...] }` for a map, or `{ "worlds": true }` when a world was saved or made. The engine then runs the [world check](#/engine/world-maps/changes-made-outside-the-game).
+- An empty line is sent every 5 seconds to keep the connection open.
+
+The engine takes a map change only when its `from` is the engine's place. A change it already has is skipped. A gap, or another `epoch`, makes it connect again with its place, and the first line then fills the gap. When the connection ends or no line arrives for 20 seconds, the engine connects again: after 1 second, then with a delay that doubles up to 30 seconds while the asset server cannot be reached. At each connect it also runs the world check, so changes made while it was away arrive.
+
+The asset server answers `503` until it has read its maps. An asset server without `/map-events` answers `404`: the engine then asks `/map-changes` every `WORLD_SYNC_INTERVAL` seconds instead. `WORLD_SYNC_INTERVAL=0` turns both off.
 
 ```json title="POST /map-changes, request"
 {
@@ -163,8 +174,7 @@ Every `WORLD_SYNC_INTERVAL` seconds (default `10`, `0` turns it off) the engine 
 ```
 
 - `seq` is the engine's new place.
-- `full` is `true` when the `epoch` sent is not the asset server's current run, or the place is older than the changes the list still holds (it keeps the last 256 maps saved). The engine then runs the map sync above once, and its answer gives the engine its new place. This is how maps changed on disk while the asset server was down reach the engines.
-- An engine without a place, because the asset server it registered with keeps no list, runs the map sync above at every interval instead.
+- `full` is `true` when the `epoch` sent is not the list's, or the place is older than the changes the list still holds (it keeps the last 256 maps changed). The engine then runs the map sync above once, and its answer gives the engine its new place.
 
 When a map comes back from either call after startup, the engine takes it in at once (`takeInMaps` in `assetloader.ts`). A map whose file on the engine already has the same checksum is skipped, so the engine's own save is not read twice. For every other map:
 
@@ -348,4 +358,4 @@ On the asset server, a sync that sends maps to the engine is logged like this:
 [AssetServer] Map sync for server-1: 1 outdated maps
 ```
 
-A sync that finds every map up to date, and every `/world-list` request, is logged at debug level only; a `/map-changes` request is logged only when it returns maps, so the checks the engine makes every few seconds do not fill the log.
+A sync that finds every map up to date, and every `/world-list` request, is logged at debug level only; a `/map-changes` or `/map-events` request is logged only when it returns maps.

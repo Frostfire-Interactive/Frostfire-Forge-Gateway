@@ -89,6 +89,8 @@ The panel refreshes itself regularly.
 | Server lag | How late the server's work is running, in milliseconds |
 | Memory in use | Memory of the server process |
 
+When the server's work is held up for a second or more, the game server samples what it runs for the next 30 seconds and writes one warning to its log: how often it was held up and for how long at most, the functions the time went to (`Busiest`), the timers or handlers that started them (`Started by`), and the memory in use. It does this at most once every 15 minutes.
+
 **Who is online** breaks the current players down:
 
 | Card | Shows |

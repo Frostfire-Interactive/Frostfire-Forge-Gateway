@@ -141,6 +141,7 @@ Details are on the [Networking](#/engine/networking) page.
 | `SERVER_DESCRIPTION` | empty | Text shown for the realm |
 | `SERVER_HOST` | `localhost` | Host the gateway uses to reach this server. Also added to a generated certificate. |
 | `PUBLIC_HOST` | `SERVER_HOST` | Host that browsers connect to. Also added to a generated certificate. |
+| `PUBLIC_GAME_PORT` | the game port | WebTransport port that browsers connect to, sent to the gateway and to the other cluster nodes. Set it when a different port forwards to the game port, for example a Docker host port mapped to `3000`. |
 | `WHITELIST` | off | `true` starts the realm with its [whitelist](#/engine/realm-whitelist) on |
 | `PVP` | on | `false` stops every harmful spell one player casts on another. Beneficial spells and spells on creatures still work. Sent to the gateway at registration. |
 | `GATEWAY_URL` | `http://localhost:9999` | Gateway address for registration and heartbeats |
@@ -150,7 +151,7 @@ Details are on the [Networking](#/engine/networking) page.
 | `ASSET_SERVER_URL` | none | Asset server address for map and world sync. Without it, map sync at startup is skipped, and other requests fall back to `http://localhost:8000` or `http://localhost:8081`. |
 | `ASSET_SERVER_INTERNAL_URL` | none | Used instead of `ASSET_SERVER_URL` for server to server requests when set |
 | `ASSET_SERVER_AUTH_KEY` | `GATEWAY_AUTH_KEY` | Sent with every asset server request |
-| `WORLD_SYNC_INTERVAL` | `10` | Seconds between checks for maps and worlds changed on the asset server. `0` turns the check off. See [Changes made outside the game](#/engine/world-maps/changes-made-outside-the-game). |
+| `WORLD_SYNC_INTERVAL` | `10` | `0` turns off taking in maps and worlds changed on the asset server while the engine runs. Any other value: the engine follows the asset server's changes (`/map-events`), and asks every that many seconds only when the asset server has no `/map-events`. See [Changes made outside the game](#/engine/world-maps/changes-made-outside-the-game). |
 
 ### Security
 

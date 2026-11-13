@@ -290,7 +290,7 @@ The comment at the top of `worldmaps.ts` still says worlds are read only. The co
 
 A world can also change on the asset server without this game server knowing: new files the asset server read when it restarted, a save from the [Tiled extension](#/tools/tiled-worlds), or an editor save on another game server. The engine picks these up without a restart.
 
-Every `WORLD_SYNC_INTERVAL` seconds (default `10`, `0` turns it off) the engine calls `checkWorldChanges`:
+The asset server tells the engine when a world is saved or made there, over the connection the engine follows for changed maps (`/map-events`, see [asset server integration](#/assets/integration/changed-maps-while-running)). The engine also checks each time it connects. `WORLD_SYNC_INTERVAL=0` turns it off. Each time, the engine calls `checkWorldChanges`:
 
 1. It posts to `/world-list`. A world listed with the same file hashes as at its last sync is up to date. Its local files are not hashed again, so an unchanged world costs one small request.
 2. For a world whose hashes changed, it fetches the changed files as at startup.
@@ -305,7 +305,7 @@ World overworld changed on the asset server: collision, warps, graveyards and ob
 
 An editor save made on this server is not picked up a second time, since its sync already recorded the new hashes.
 
-Tiled maps are checked in the same pass: the engine asks `/map-changes` for the maps saved since its last answer. See [asset server integration](#/assets/integration/changed-maps-while-running).
+Tiled maps arrive on the same connection: each changed map is sent as it changes. See [asset server integration](#/assets/integration/changed-maps-while-running).
 | A world new to this server | It is fetched, and loaded at the next start |
 
 ## Reference

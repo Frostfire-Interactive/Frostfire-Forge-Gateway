@@ -16,6 +16,7 @@ import { setupItemTooltip, removeItemTooltip, hideItemTooltip, setupSpellTooltip
 import { startPersistentSpellCooldown } from "./ui.js";
 import { sampleTime, pushSample, pushEcho, setServerTickRate, noteBatch, seedSamples, resetClockEpoch, lastRenderTime, renderHeadroom, getClockOffset, getTickMs } from "./movementsmoothing.ts";
 import { renderMessageParts } from "./itemlinks.ts";
+import { keepReconnecting, reconnectDelay } from "./reconnect.ts";
 const cache = Cache.getInstance();
 
 // Pending cooldown/lockout data from CLIENTCONFIG, applied after SPELLS populates the spell cache
@@ -837,7 +838,9 @@ async function connectThroughGateway(): Promise<WebTransport | undefined> {
 
         return await openGameTransport(server);
       } else {
-
+        // A reconnect waits for the realm the player was in (a restarting server may be missing from the list for a
+        // while) instead of forgetting it and joining another.
+        if (reconnectAttempts > 0) return undefined;
         localStorage.removeItem('selectedServerId');
       }
     } catch (error: any) {
@@ -851,6 +854,8 @@ async function connectThroughGateway(): Promise<WebTransport | undefined> {
         error?.message ?? error,
         error?.source ? `source=${error.source}` : "",
       );
+      // The selected server is down: a reconnect tries it again next time, not another realm's server.
+      if (reconnectAttempts > 0) return undefined;
       localStorage.removeItem('selectedServerId');
     }
   }
@@ -890,7 +895,6 @@ async function connectThroughGateway(): Promise<WebTransport | undefined> {
 
 let isReconnecting = false;
 let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 30;
 
 async function initializeSocket() {
 
@@ -920,7 +924,20 @@ async function initializeSocket() {
       throw new Error('Failed to establish WebTransport connection');
     }
 
-    await setupTransport();
+    try {
+      await setupTransport();
+    } catch (error) {
+      // A reconnect attempt that opened a session but did not log in leaves nothing open on the server for the next
+      // one. (On the first connect the session's own close leads to the reconnect, so it is left to close.)
+      if (reconnectAttempts > 0) {
+        try {
+          socket.close();
+        } catch {
+          // Already closed.
+        }
+      }
+      throw error;
+    }
 
     startInventoryFlushInterval();
   } finally {
@@ -1829,16 +1846,18 @@ async function handleSocketClose(info: any) {
 }
 
 async function attemptReconnect(displayCode: number) {
-  for (let attempt = 1; attempt <= MAX_RECONNECT_ATTEMPTS; attempt++) {
+  // A restart or deploy takes minutes: the client keeps trying for a while (reconnect.ts), not for a fixed count.
+  const lostAt = Date.now();
+  for (let attempt = 1; keepReconnecting(lostAt, Date.now()); attempt++) {
     reconnectAttempts = attempt;
 
     showNotification(
-      `Connection lost (${displayCode}). Reconnecting (${attempt}/${MAX_RECONNECT_ATTEMPTS})...`,
+      `Connection lost (${displayCode}). Reconnecting (attempt ${attempt})...`,
       false,
       false
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, reconnectDelay(attempt)));
 
     try {
       (window as any).__suppressLoadingScreen = true;
@@ -1852,7 +1871,7 @@ async function attemptReconnect(displayCode: number) {
   }
 
   showNotification(
-    `Failed to reconnect after ${MAX_RECONNECT_ATTEMPTS} attempts. Please refresh the page.`,
+    `Failed to reconnect. Please refresh the page.`,
     false,
     true
   );
