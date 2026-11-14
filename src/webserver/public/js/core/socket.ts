@@ -17,6 +17,7 @@ import { startPersistentSpellCooldown } from "./ui.js";
 import { sampleTime, pushSample, pushEcho, setServerTickRate, noteBatch, seedSamples, resetClockEpoch, lastRenderTime, renderHeadroom, getClockOffset, getTickMs } from "./movementsmoothing.ts";
 import { renderMessageParts } from "./itemlinks.ts";
 import { keepReconnecting, reconnectDelay } from "./reconnect.ts";
+import { audioSettingsApplied } from "./audio.js";
 const cache = Cache.getInstance();
 
 // Pending cooldown/lockout data from CLIENTCONFIG, applied after SPELLS populates the spell cache
@@ -5367,6 +5368,8 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       document.getElementById(
         "muted-checkbox"
       )!.innerText = `Muted: ${mutedCheckbox.checked}`;
+      // the player's levels and mute switch are on the sliders: sounds may play at them from now on (silent until here)
+      audioSettingsApplied();
       // (a server from before the Auto loot setting sends none: off)
       if (autoLootCheckbox) autoLootCheckbox.checked = config.auto_loot === true;
 

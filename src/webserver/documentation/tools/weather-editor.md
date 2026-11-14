@@ -63,6 +63,7 @@ The client chooses its visuals by the weather's name, not by its numbers. Only t
 | `tornado` | A `thunderstorm` with one or two tornadoes on the map, which pull players in and hurt them. It also blows a sandstorm in desert zones and a blizzard in snow zones. Any thunderstorm also has a rare chance of a tornado. |
 | `sandstorm` | Only where the player stands in a desert zone, clear elsewhere: an orange tint, rolling dust and blowing sand, harsher the higher Wind speed is |
 | `blizzard` | Only where the player stands in a snow zone, clear elsewhere: a cold whiteout, rolling snow and driven flakes, harsher the higher Wind speed is. Flakes fall as much as Precipitation says. |
+| `fog` | A pale haze over the whole map, with soft cloud drifting slowly along the wind, thicker the higher Humidity is (none at 50 or below, full at 100) |
 
 These words can never be used as a name, because `/weather` gives them a meaning of their own: `random`, `none` and `weather_api`.
 

@@ -6,6 +6,7 @@ import {
 import { windStreaks } from "./windstreaks.ts";
 import { drawSandstorm } from "./sandstorm.ts";
 import { drawBlizzard } from "./blizzard.ts";
+import { drawFog } from "./fog.ts";
 import { setWeatherSound, playEffect, loadEffect, soundLength } from "./audio.js";
 import { worldZoom } from "./worldzoom.js";
 
@@ -601,6 +602,13 @@ function weather(type: string, weatherData?: any): void {
   const viewX = cameraOffsetX + (width - viewWidth) / 2, viewY = cameraOffsetY + (height - viewHeight) / 2;
   weatherCtx.save();
   weatherCtx.scale(zoom, zoom);
+
+  // Fog (fog.ts): a pale haze everywhere, as thick as the weather's humidity, drifting with the wind. Drawn whatever
+  // the weather, so it fades out when the weather changes; under the storms and the wind's streaks.
+  drawFog(weatherCtx, {
+    wanted: type === "fog", deltaMs, humidity: weatherData?.humidity, baseWind: Number(baseWindSpeed) || 0, windDirection,
+    cameraX: viewX, cameraY: viewY, width: viewWidth, height: viewHeight,
+  });
 
   // (drawn whatever the weather, so it fades out when the weather changes or the player leaves the desert; the sand
   // takes the place of the wind's white streaks)

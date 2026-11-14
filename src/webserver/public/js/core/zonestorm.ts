@@ -7,7 +7,8 @@
  * From back to front:
  * - the light itself changes: a full-screen tint under the weather canvas, blended over the scene (`tint`);
  * - the air is thick with what blows: an even haze, denser away from the player, so only what is near is seen clearly;
- * - it rolls past in billows: two layers of soft fractal cloud, carried along the wind at different paces;
+ * - it rolls past in billows: two layers of soft cloud, heaped from round puffs, carried along the wind (and down as
+ *   it falls) at different paces;
  * - it blows by in round motes, soft at the edge, in three tones, the nearest the largest and quickest.
  *
  * How harsh it is comes from the wind speed (HARSH_FROM to HARSH_FULL mph, never less than LEAST). Gusts thicken it.
@@ -108,52 +109,63 @@ export function inZone(zones: Zone[] | null | undefined, x: number, y: number): 
 }
 
 /**
- * A soft, tileable cloud: fractal value noise, its brightness turned into how thick the cloud is, coloured by
- * `colour`. Made once; drawn scaled up, so it is small.
+ * A soft, tileable cloud: round puffs of every size heaped on one another, each also drawn across the edges it
+ * crosses, so the picture repeats without a seam; how thick the heap is becomes how thick the cloud is, coloured by
+ * `colour`. Made once per layer; drawn scaled up.
+ *
+ * USER REPORT 2026-11-13 ("blocks of images moving up and down and it's very noticeable. I'm referring to the fog"):
+ * the clouds were value noise on a coarse grid, cut sharp, so each billow kept the grid's square edges, and one small
+ * picture repeated in rows across the screen. Puffs have no grid; each layer has its own picture, a repeat wider than
+ * most screens.
  */
-function makeCloudTexture(size: number, colour: (t: number) => [number, number, number]): HTMLCanvasElement {
+export function makeCloudTexture(size: number, colour: (t: number) => [number, number, number]): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
-  const ctx = canvas.getContext("2d")!;
-  const image = ctx.createImageData(size, size);
-  const octaves = [{ cells: 4, weight: 0.5 }, { cells: 8, weight: 0.26 }, { cells: 16, weight: 0.14 }, { cells: 32, weight: 0.1 }];
-  const grids = octaves.map((o) => Array.from({ length: o.cells * o.cells }, () => Math.random()));
-  const smooth = (t: number) => t * t * (3 - 2 * t);
-  for (let py = 0; py < size; py++) {
-    for (let px = 0; px < size; px++) {
-      let n = 0;
-      octaves.forEach((o, k) => {
-        const fx = (px / size) * o.cells, fy = (py / size) * o.cells;
-        const x0 = Math.floor(fx), y0 = Math.floor(fy), tx = smooth(fx - x0), ty = smooth(fy - y0);
-        const at = (x: number, y: number) => grids[k][((y % o.cells) * o.cells) + (x % o.cells)];
-        const top = at(x0, y0) + (at(x0 + 1, y0) - at(x0, y0)) * tx;
-        const bottom = at(x0, y0 + 1) + (at(x0 + 1, y0 + 1) - at(x0, y0 + 1)) * tx;
-        n += (top + (bottom - top) * ty) * o.weight;
-      });
-      // Thin spots let the scene through; the thick ones are billows.
-      const t = Math.min(1, Math.max(0, (n - 0.38) / 0.3));
-      const i = (py * size + px) * 4;
-      const [r, g, b] = colour(t);
-      image.data[i] = r;
-      image.data[i + 1] = g;
-      image.data[i + 2] = b;
-      image.data[i + 3] = smooth(t) * 255;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  const puff = (radius: number, strength: number) => {
+    const x = Math.random() * size, y = Math.random() * size;
+    for (const dx of [-size, 0, size]) {
+      for (const dy of [-size, 0, size]) {
+        const px = x + dx, py = y + dy;
+        if (px + radius < 0 || px - radius > size || py + radius < 0 || py - radius > size) continue;
+        const fill = ctx.createRadialGradient(px, py, 0, px, py, radius);
+        // (about a bell curve, so no puff has an edge)
+        fill.addColorStop(0, `rgba(255, 255, 255, ${strength})`);
+        fill.addColorStop(0.3, `rgba(255, 255, 255, ${strength * 0.78})`);
+        fill.addColorStop(0.6, `rgba(255, 255, 255, ${strength * 0.32})`);
+        fill.addColorStop(0.85, `rgba(255, 255, 255, ${strength * 0.07})`);
+        fill.addColorStop(1, "rgba(255, 255, 255, 0)");
+        ctx.fillStyle = fill;
+        ctx.fillRect(px - radius, py - radius, radius * 2, radius * 2);
+      }
     }
+  };
+  // a few broad billows, then smaller ones on and between them
+  for (let i = 0; i < 30; i++) puff(size * (0.14 + Math.random() * 0.16), 0.2 + Math.random() * 0.2);
+  for (let i = 0; i < 60; i++) puff(size * (0.07 + Math.random() * 0.06), 0.08 + Math.random() * 0.1);
+
+  const image = ctx.getImageData(0, 0, size, size);
+  const data = image.data;
+  // Thin spots let the scene through, the thick ones are billows: measured on this picture, so every picture is as
+  // cloudy as another (the thinnest fifth clear, only the very thickest full), and eased in from clear.
+  const heap: number[] = [];
+  for (let i = 3; i < data.length; i += 4 * 7) heap.push(data[i]);
+  heap.sort((a, b) => a - b);
+  const clear = heap[Math.floor(heap.length * 0.2)], full = Math.max(clear + 1, heap[Math.floor(heap.length * 0.99)]);
+  for (let i = 0; i < data.length; i += 4) {
+    const t = Math.min(1, Math.max(0, (data[i + 3] - clear) / (full - clear)));
+    const [r, g, b] = colour(t);
+    data[i] = r;
+    data[i + 1] = g;
+    data[i + 2] = b;
+    data[i + 3] = t * t * 255;
   }
-  ctx.putImageData(image, 0, 0);
-  // Softened, so the noise's grid does not show as squares: blurred among copies of itself on every side, then cut
-  // back out, so it still tiles without a seam.
-  const tiled = document.createElement("canvas");
-  tiled.width = tiled.height = size * 3;
-  const tiledCtx = tiled.getContext("2d")!;
-  for (let dy = 0; dy < 3; dy++) for (let dx = 0; dx < 3; dx++) tiledCtx.drawImage(canvas, dx * size, dy * size);
-  const soft = document.createElement("canvas");
-  soft.width = soft.height = size;
-  const softCtx = soft.getContext("2d")!;
-  softCtx.filter = `blur(${Math.round(size / 28)}px)`;
-  if (softCtx.filter === "none") return canvas;
-  softCtx.drawImage(tiled, -size, -size);
-  return soft;
+  // Onto a canvas of its own: the one it was made on is kept in memory to be read (willReadFrequently), and drawn
+  // from there it went to the graphics card again every frame (USER REPORT 2026-11-13: "The game drops to 5fps").
+  const cloud = document.createElement("canvas");
+  cloud.width = cloud.height = size;
+  cloud.getContext("2d")!.putImageData(image, 0, 0);
+  return cloud;
 }
 
 interface Mote {
@@ -175,10 +187,20 @@ export function makeZoneStorm(look: ZoneStormLook): (ctx: CanvasRenderingContext
   const count = isMobileDevice ? Math.round(look.count / 4) : look.count;
   const motes: Mote[] = [];
   let sprites: HTMLCanvasElement[] | null = null;
-  let cloud: HTMLCanvasElement | null = null;
   let tint: HTMLDivElement | null = null;
   let presence = 0, harshness = 0, inside = false, lookedAt = 0, lastDraw = 0;
-  let driftA = 0, driftB = 0, gust = 0, time = 0;
+  let gust = 0;
+  // The billows: layers of cloud blown along the wind, the far one larger and slower. Each its own picture (`size`
+  // px, made when first drawn), drawn `scale` times as large and stretched along the wind; `speed` its share of the
+  // wind's pace and of the fall; `x`, `y` how far it has blown, kept within one repeat.
+  const billows = (isMobileDevice
+    ? [{ size: 160, scale: 4, parallax: 0.9, alpha: 0.45, speed: 0.6 }]
+    : [
+      { size: 256, scale: 4.5, parallax: 0.7, alpha: 0.4, speed: 0.35 },
+      { size: 384, scale: 2.4, parallax: 1, alpha: 0.28, speed: 0.6 },
+    ]).map((layer) => ({ ...layer, cloud: null as HTMLCanvasElement | null, x: 0, y: 0 }));
+  /** How much longer a billow is along the wind than across it. */
+  const STRETCH = 1.35;
   let lastCameraX = NaN, lastCameraY = NaN;
 
   const reset = (m: Mote, width: number, height: number, anywhere: boolean, cos: number, falling: boolean) => {
@@ -256,7 +278,6 @@ export function makeZoneStorm(look: ZoneStormLook): (ctx: CanvasRenderingContext
     }
     lastDraw = now;
     const seconds = Math.min(0.1, f.deltaMs / 1000);
-    time += seconds;
 
     if (f.wanted && now - lookedAt >= LOOK_EVERY) {
       lookedAt = now;
@@ -310,34 +331,27 @@ export function makeZoneStorm(look: ZoneStormLook): (ctx: CanvasRenderingContext
     ctx.fillStyle = edge;
     ctx.fillRect(0, 0, width, height);
 
-    // The billows: two layers of cloud blown along the wind, the far one larger and slower.
-    if (!cloud) cloud = makeCloudTexture(isMobileDevice ? 128 : 192, look.billow);
-    const pattern = ctx.createPattern(cloud, "repeat");
-    if (pattern) {
-      // (kept small: only where they are within a repeat matters)
-      driftA = (driftA + pace * 0.35 * seconds) % (cloud.width * 4.5 * 64);
-      driftB = (driftB + pace * 0.6 * seconds) % (cloud.width * 4.8 * 64);
-      const layers = isMobileDevice
-        ? [{ drift: driftB, scale: 4, parallax: 0.9, alpha: 0.45 }]
-        : [
-          { drift: driftA, scale: 4.5, parallax: 0.7, alpha: 0.4 },
-          { drift: driftB, scale: 2.4, parallax: 1, alpha: 0.28 },
-        ];
-      const wrap = (v: number, period: number) => ((v % period) + period) % period;
-      for (const layer of layers) {
-        // Along the wind, swaying slowly a little above and below it (and sinking as it falls), so the billows change
-        // shape as they pass one another; each place taken within one repeat of the pattern (the same picture there)
-        const period = cloud.width * layer.scale;
-        const sway = Math.sin(time * 0.15 + layer.scale) * 40 + layer.drift * (fall / Math.max(1, pace));
-        const ox = wrap(cos * layer.drift - f.cameraX * layer.parallax, period);
-        const oy = wrap(sway - f.cameraY * layer.parallax, period);
-        pattern.setTransform(new DOMMatrix().translate(ox, oy).scale(layer.scale));
-        ctx.globalAlpha = Math.min(1, layer.alpha * look.billowAlpha * Math.min(1, thick * 1.5));
-        ctx.fillStyle = pattern;
-        ctx.fillRect(0, 0, width, height);
-      }
-      ctx.globalAlpha = 1;
+    // The billows: each layer blown along the wind at its share of the pace, and down at its share of the fall, so the
+    // two pass one another and change shape as they go. Where a layer is moves on by its speed each frame: a gust
+    // hurries it and a lull slows it, never sends it back (USER REPORT 2026-11-13: it was placed by how far it had
+    // blown over the pace now, so each gust slid it back up a little, and it jumped when that distance wrapped).
+    // Each place is taken within one repeat of its picture (the same picture there), so the numbers stay small.
+    const wrap = (v: number, period: number) => ((v % period) + period) % period;
+    for (const layer of billows) {
+      if (!layer.cloud) layer.cloud = makeCloudTexture(layer.size, look.billow);
+      const pattern = ctx.createPattern(layer.cloud, "repeat");
+      if (!pattern) continue;
+      const scaleX = layer.scale * STRETCH, periodX = layer.size * scaleX, periodY = layer.size * layer.scale;
+      layer.x = wrap(layer.x + cos * pace * layer.speed * seconds, periodX);
+      layer.y = wrap(layer.y + fall * layer.speed * seconds, periodY);
+      const ox = wrap(layer.x - f.cameraX * layer.parallax, periodX);
+      const oy = wrap(layer.y - f.cameraY * layer.parallax, periodY);
+      pattern.setTransform(new DOMMatrix().translate(ox, oy).scale(scaleX, layer.scale));
+      ctx.globalAlpha = Math.min(1, layer.alpha * look.billowAlpha * Math.min(1, thick * 1.5));
+      ctx.fillStyle = pattern;
+      ctx.fillRect(0, 0, width, height);
     }
+    ctx.globalAlpha = 1;
 
     // The motes: carried along the wind, swirling as they go.
     while (motes.length < count) {

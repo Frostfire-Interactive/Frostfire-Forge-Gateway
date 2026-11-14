@@ -48,8 +48,9 @@ The setup scripts insert these rows if they are missing:
 | `sandstorm` | 0 | right, 35 | 10 | 100 | 0 |
 | `tornado` | 0.85 | right, 30 | 85 | 68 | 75 |
 | `blizzard` | 0 | right, 35 | 85 | 10 | 80 |
+| `fog` | 0.15 | none, 3 | 95 | 50 | 0 |
 
-The seeded weathers other than `blizzard` are given default rain, wind and thunder sounds when they have none.
+The seeded weathers other than `blizzard` and `fog` are given default rain, wind and thunder sounds when they have none.
 
 The world `overworld` is seeded with the weather `rainy`.
 
@@ -77,6 +78,7 @@ The client picks what to draw by the weather's name. The row's values shape it.
 | `darkness` | A near black scene with no sun and no shadows |
 | `sandstorm` | Blowing dust and an orange tint, only while the player stands in a desert zone of a world map. Its wind speed sets how harsh it is. |
 | `blizzard` | Blowing snow and a cold tint, only while the player stands in a snow zone of a world map. Its wind speed sets how harsh it is. |
+| `fog` | A pale haze over the whole map, with soft cloud drifting slowly along the wind. Its humidity sets how thick it is: none at 50 or below, full at 100. |
 | `clear` or any other name | No rain, snow or darkening. Only its wind. |
 
 The server tells a `tornado` world as `thunderstorm`, with `sandstorm` and `blizzard` set to `true` in `weatherData`, so it also blows a sandstorm in desert zones and a blizzard in snow zones. The desert and snow zones come from a world's manifest (see [World maps](#/engine/world-maps)).
@@ -88,7 +90,7 @@ How the values change the picture:
 - **Wind speed and direction** draw wind streaks across the screen and push rain and snow. A direction of `none` or a speed of 0 draws no streaks.
 - **Ambience** is the opacity of the dark overlay in `thunderstorm` and `darkness`.
 
-The drawing code is part of the game client (`weather.ts`, `ambience.ts`, `windstreaks.ts`, `sandstorm.ts`, `blizzard.ts` and `tornado.ts` in the gateway's `public/js/core`).
+The drawing code is part of the game client (`weather.ts`, `ambience.ts`, `windstreaks.ts`, `sandstorm.ts`, `blizzard.ts`, `fog.ts` and `tornado.ts` in the gateway's `public/js/core`).
 
 ### Packets
 
@@ -175,13 +177,14 @@ How it behaves (`src/systems/weatherapi.ts`):
 
 ### From a reading to a weather
 
-The client only knows the names it can draw, so it is never told `weather_api`. The server translates the reading's condition code and wind into one of five names:
+The client only knows the names it can draw, so it is never told `weather_api`. The server translates the reading's condition code and wind into one of six names:
 
 | OpenWeatherMap condition id | Shown as |
 |-----------------------------|----------|
 | 200 to 299 (thunderstorm) | `thunderstorm` |
 | 300 to 399 (drizzle), 500 to 599 (rain) | `rainy` |
 | 600 to 699 (snow) | `snowy` |
+| 701 (mist), 741 (fog), at any wind | `fog` |
 | Everything else, with a wind of 1 mph or more, or sand and dust (731, 751, 761) | `sandstorm` |
 | Everything else | `clear` |
 

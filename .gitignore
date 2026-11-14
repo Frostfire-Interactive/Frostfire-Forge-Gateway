@@ -16,6 +16,7 @@ src/webserver/config/security.cfg
 
 # Logs
 src/logs/
+/docs/*
 
 # Compiled client-side JavaScript
 src/webserver/public/js/web/*.js

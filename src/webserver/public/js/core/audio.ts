@@ -68,9 +68,18 @@ export function tapSound(): { stream: MediaStream; close: () => void } | null {
   return { stream: tap.stream, close: () => bus.disconnect(tap) };
 }
 
+/**
+ * USER REPORT 2026-11-13 (weather sounds started right after logging in and faded to nothing, with the sound muted):
+ * until the player's saved levels and mute switch are on the sliders (CLIENTCONFIG, socket.ts), they hold the page's
+ * defaults, so every volume is 0 until then. The loops read their level again every frame and start from silence.
+ */
+let settingsApplied = false;
+/** The player's saved audio settings are on the sliders and the mute switch: they set the volumes from now on. */
+export function audioSettingsApplied(): void { settingsApplied = true; }
+
 /** A slider (0-100) as a gain, 0..1: nothing when muted; squared, so the lower half of the slider is not all "loud". */
 function sliderVolume(slider: HTMLInputElement | null | undefined): number {
-  if (mutedCheckbox?.checked) return 0;
+  if (!settingsApplied || mutedCheckbox?.checked) return 0;
   const v = Math.min(100, Math.max(0, Number(slider?.value) || 0)) / 100;
   return v * v;
 }
