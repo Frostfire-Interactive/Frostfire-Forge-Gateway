@@ -4,6 +4,7 @@ import player from "../systems/player";
 import { brandHtmlText } from "../modules/branding";
 import crypto from "crypto";
 import { BlockRoutes, handleBlocks, handleRoute, liveNodesOf } from "./blockroute";
+import { hiddenOf, shownConnections } from "./onlinecount";
 
 const httpPort = parseInt(process.env.GATEWAY_PORT || "9999");
 const httpsPort = parseInt(process.env.GATEWAY_PORTSSL || "9443");
@@ -354,6 +355,7 @@ const serverConfig: any = {
           useSSL: useSSL === true,
           lastHeartbeat: Date.now(),
           activeConnections: existingServer?.activeConnections || 0,
+          hiddenConnections: existingServer?.hiddenConnections || 0,
           maxConnections: maxConnections || 1000,
           whitelisted: whitelisted === true,
           pvp: pvp === true
@@ -386,7 +388,7 @@ const serverConfig: any = {
     if (url.pathname === "/heartbeat" && req.method === "POST") {
       try {
         const body = await req.json();
-        const { id, activeConnections, cpuUsage, ramUsage, authKey, rtt, whitelisted } = body;
+        const { id, activeConnections, hiddenConnections, cpuUsage, ramUsage, authKey, rtt, whitelisted } = body;
 
         if (!isValidAuthKey(authKey)) {
           return new Response(JSON.stringify({ error: "Invalid authentication key" }), {
@@ -399,6 +401,8 @@ const serverConfig: any = {
         if (server) {
           server.lastHeartbeat = Date.now();
           server.activeConnections = activeConnections || 0;
+          // Stealthed players: left out of the realm list's count (older game servers do not send it).
+          server.hiddenConnections = hiddenOf(hiddenConnections);
 
           if (cpuUsage !== undefined) server.cpuUsage = cpuUsage;
           if (ramUsage !== undefined) server.ramUsage = ramUsage;
@@ -633,7 +637,8 @@ const serverConfig: any = {
           wtPort: s.wtPort,
           wtEnabled: s.wtEnabled === true,
           useSSL: s.useSSL,
-          activeConnections: s.activeConnections,
+          // Without stealthed players, who look offline to players; isFull above counts them.
+          activeConnections: shownConnections(s),
           maxConnections: s.maxConnections,
           latency: s.latency || 0,
           whitelisted: s.whitelisted || false,

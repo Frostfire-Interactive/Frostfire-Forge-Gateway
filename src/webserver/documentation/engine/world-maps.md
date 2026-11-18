@@ -56,7 +56,7 @@ The fields the engine reads:
 | `warps`, `graveyards` | Optional, as on a Tiled map |
 | `spawn` | Optional `{ x, y }` in pixels: where new characters start |
 | `sections` | Optional list of rectangles in tiles. See [Underworld sections](#/engine/world-maps/underworld-sections). |
-| `zones` | Optional list of zones, each with a `kind`, a `bbox` and an `outline` in tiles. Zones of kind `desert` and `snow` are sent to the client as `deserts` and `snowfields`: a sandstorm or a blizzard is only drawn inside them. See [Weather](#/engine/weather). |
+| `zones` | Optional list of [zones](#/engine/zones), each with a `name`, an `outline` in tiles and optionally `text`, `music` and `kind`. The map editor writes this list. All zones are sent to the client as `zones`, for the zone text and music. Zones of kind `desert` and `snow` are also sent as `deserts` and `snowfields`: a sandstorm or a blizzard is only drawn inside them. See [Weather](#/engine/weather). |
 | `bitsets.collision.hash`, `bitsets.nopvp.hash` | The hash each bitset file must have |
 
 ### The bitset files
@@ -254,9 +254,9 @@ The client uses the sections so that its world map shows only the cave system th
 
 A world can be edited in the [Map editor](#/tools/map-editor) like any map. Saving needs the `server.admin` or `server.*` permission. Because the engine holds no tiles, the save goes through the asset server:
 
-1. The client sends `SAVE_MAP` with the edited chunks and, optionally, graveyards and warps.
+1. The client sends `SAVE_MAP` with the edited chunks and, optionally, graveyards, warps and zones.
 2. The engine posts the chunks to `/save-map-chunks` on the asset server, which writes them into the world's files and answers with the list of chunks that changed.
-3. If graveyards or warps were sent, the engine posts them to `/save-map-properties` and updates its own `mapProperties` entry and movement cache.
+3. If graveyards, warps or zones were sent, the engine posts them to `/save-map-properties` and updates its own `mapProperties` entry and movement cache. New zones are also sent to every player on the world with `MAP_ZONES` (see [Zones](#/engine/zones/saving)).
 4. The engine calls `refreshWorldMap`, which syncs the changed files and swaps the new collision and no-PvP bits in.
 5. Every other player on the map is sent `UPDATE_CHUNKS` with the changed chunks so their client fetches them again.
 
@@ -303,7 +303,7 @@ The asset server tells the engine when a world is saved or made there, over the 
 World overworld changed on the asset server: collision, warps, graveyards and objects updated
 ```
 
-An editor save made on this server is not picked up a second time, since its sync already recorded the new hashes.
+An editor save is not picked up a second time, so the players on the world keep it on screen and the saver's map editor stays open, on the saving server and in cluster mode on every node. The asset server tells every game server of the save as soon as it has written it, while the save is still fetching the new files. The save marks the world as under way from before it writes anything until it ends (`startMapSave` in `modules/mapsaves.ts`). In cluster mode the saving node marks it on the other nodes too, with the `map-saving` peer news, and each node ends its mark once it has taken in the save from the `world-saved` news. The check leaves a marked world to the save and keeps it for the next check; the save's own refresh of the world clears it. A save that ends without saving (it failed after the asset server wrote it, or a node heard nothing more from the saving node for 60 seconds) has the world taken in by a check right away. Syncs run one after another, so the check and the save never fetch the same files at once. Another world whose new files arrived with the save's sync is taken in by the next check.
 
 Tiled maps arrive on the same connection: each changed map is sent as it changes. See [asset server integration](#/assets/integration/changed-maps-while-running).
 | A world new to this server | It is fetched, and loaded at the next start |

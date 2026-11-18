@@ -295,7 +295,7 @@ The engine then fetches the new bitsets, so collision changes apply without a re
 
 ### Warps and graveyards
 
-`POST /save-map-properties` writes the editor's warps and graveyards into the manifest as the objects of the `Warps` and `Graveyards` layers. Each list sent replaces the whole list. A list that is left out is kept. A bad entry, such as a warp without a target map, rejects the save.
+`POST /save-map-properties` writes the editor's warps and graveyards into the manifest as the objects of the `Warps` and `Graveyards` layers. Each list sent replaces the whole list. A list that is left out is kept. A bad entry, such as a warp without a target map, rejects the save. A `zones` list replaces the manifest's `zones` in the same way; every zone is checked first (see [Zones](#/engine/zones)), and one bad zone rejects the save.
 
 ### Interrupted saves
 

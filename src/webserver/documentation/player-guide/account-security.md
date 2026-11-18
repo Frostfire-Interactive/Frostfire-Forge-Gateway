@@ -13,6 +13,8 @@ There are two ways in:
 - On the home page, select **Manage profile**.
 - In the game, press **Esc** and select **Manage Profile**. It opens in a new tab.
 
+Guest accounts have no profile. The game menu has no **Manage Profile** button for a guest, and the profile page shows "Guest accounts have no profile. Create an account to have one."
+
 The top of the page shows your **Username**, your **Email** and your **Last Login**. Your email is hidden. Select the reveal button next to it and enter your password to see it.
 
 :::note

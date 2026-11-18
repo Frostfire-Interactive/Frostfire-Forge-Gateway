@@ -90,6 +90,7 @@ After registering, the game server sends `POST /heartbeat` on a timer. The inter
 {
   "id": "realm-one",
   "activeConnections": 42,
+  "hiddenConnections": 1,
   "cpuUsage": 12,
   "ramUsage": 310.5,
   "rtt": 4,
@@ -99,6 +100,8 @@ After registering, the game server sends `POST /heartbeat` on a timer. The inter
 ```
 
 The gateway records the time of the heartbeat, the player count, CPU percentage, memory in megabytes and the whitelist flag. It stores half of `rtt` (the round trip time of the previous heartbeat) as the realm's latency.
+
+`hiddenConnections` is how many of the players are admins in stealth. `GET /status`, which the realm list reads, reports `activeConnections` without them, so to players a stealthed admin is not online. The dashboard and the `full` state use the whole count. A game server that does not send the field hides nobody.
 
 If the gateway does not know the id it answers `404`. The game server treats that, or any network error, as a lost connection and registers again with the same backoff as at startup.
 

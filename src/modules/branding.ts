@@ -27,6 +27,7 @@ export const BRANDED_PAGES: ReadonlySet<string> = new Set([
   "/manage-profile",
   "/2fa-challenge",
   "/map-editor",
+  "/zone-map",
   "/particle-editor",
   "/npc-editor",
   "/creature-editor",

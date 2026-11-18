@@ -68,6 +68,7 @@ Guests can walk around and look at the world, but a lot is locked. As a guest yo
 - Loot creatures
 - Join a party or guild, or add friends
 - Trade, send mail, or report or ignore players
+- Manage a profile. The menu has no **Manage Profile** button for a guest, and the profile page says that guest accounts have no profile.
 
 Other players cannot attack guests either. When you try most locked features you will see "Please create an account to use that feature."
 
@@ -105,7 +106,7 @@ When the loading bar finishes you are in the world. A few things to try first:
 - Move with **W**, **A**, **S** and **D**.
 - Press **Enter** to chat.
 - Press **E** next to a character with a marker over their head to talk to them.
-- Press **Esc** to open the menu, where you find **Settings**, **Manage Profile** and **Logout**.
+- Press **Esc** to open the menu, where you find **Settings**, **Manage Profile** (not for guests) and **Logout**.
 
 The full list of keys is on the [Controls](#/player-guide/controls) page.
 

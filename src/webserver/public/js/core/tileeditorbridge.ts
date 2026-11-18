@@ -314,10 +314,26 @@ class TileEditorBridge {
 
   private setupBeforeUnload() {
     window.addEventListener('beforeunload', () => {
+      if (this.zoneMapWindow && !this.zoneMapWindow.closed) this.zoneMapWindow.close();
       if (window.opener) {
         window.opener.postMessage({ type: 'editorClosed' }, '*');
       }
     });
+  }
+
+  /**
+   * The zone map window (/zone-map, zonemap.ts): the whole map to draw zone borders on. Opened from here because this
+   * click is the user's (the game window could not open it); it talks to the game window itself. Zones are drawn and
+   * edited there only (USER REQUEST 2026-11-18: "Disable the in-world zone editing, it should always be the popup
+   * version"); Zones in the row of views opens it.
+   */
+  private zoneMapWindow: Window | null = null;
+  private zonesTab = el("button", "tl-seg-item me-zones-open");
+  private openZoneMap() {
+    if (this.zoneMapWindow && !this.zoneMapWindow.closed) { this.zoneMapWindow.focus(); return; }
+    const w = Math.min(1400, window.screen.availWidth - 80), h = Math.min(900, window.screen.availHeight - 80);
+    this.zoneMapWindow = window.open(`${location.origin}/zone-map`, 'ZoneMap', `width=${w},height=${h},resizable=yes`);
+    if (!this.zoneMapWindow) toast("The zone map was blocked. Allow popups for this site and try again.", "error");
   }
 
   private setupMessageListener() {
@@ -491,6 +507,13 @@ class TileEditorBridge {
       tab.addEventListener("click", () => this.setView(id));
       this.viewTabs.appendChild(tab);
     }
+    // Zones is not a view of this window: it opens the zone map window (USER REQUEST 2026-11-18: "make it an item in
+    // this button section"). It is never marked as the view in use, and the arrow keys pass over it.
+    this.zonesTab.type = "button";
+    this.zonesTab.title = "Open the zone map: the whole map in its own window, to draw zone borders";
+    this.zonesTab.append(icon("map", 15), el("span", "", "Zones"));
+    this.zonesTab.addEventListener("click", () => this.openZoneMap());
+    this.viewTabs.appendChild(this.zonesTab);
     arrowKeys(this.viewTabs);
     this.toolbarEl.append(this.viewTabs, el("span", "tl-topbar-rule"), this.paintBar, this.soundBar, this.fishBar, this.printBar);
     let kept: string | null = null;
@@ -1182,6 +1205,19 @@ class TileEditorBridge {
       this.objectsList.appendChild(row);
       this.paintObjectRow(row);
     });
+    this.paintZonesTab();
+  }
+
+  /** Zones in the row of views, with the unsaved mark while the zones have edits not saved. */
+  private paintZonesTab() {
+    const isUnsaved = this.unsavedLayers.has('Zones');
+    this.zonesTab.querySelector(".me-unsaved")?.remove();
+    if (isUnsaved) {
+      const dot = el("span", "me-unsaved");
+      dot.setAttribute("role", "img");
+      dot.setAttribute("aria-label", "unsaved edits");
+      this.zonesTab.appendChild(dot);
+    }
   }
 
   private paintObjectRow(row: HTMLElement) {
@@ -1228,6 +1264,7 @@ class TileEditorBridge {
   /** The object layers have unsaved edits of their own, which arrive with the tile layers'. */
   private paintObjectMarks() {
     for (const row of this.objectRows()) this.paintObjectRow(row);
+    this.paintZonesTab();
   }
 
   // ---------------------------------------------------------------- tilesets

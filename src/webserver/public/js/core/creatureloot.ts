@@ -10,7 +10,8 @@ import { sendRequest, cachedPlayerId } from "./socket.js";
 import { itemFrame, qualityOf } from "./itemframe.js";
 import Cache from "./cache.js";
 import { creatures, type CreatureView } from "./creature.js";
-import { canvasDpr, worldToScreen } from "./worldzoom.js";
+import { canvasDpr, worldToScreen, worldZoom } from "./worldzoom.js";
+import { drawKeyBadge, PLAIN_BADGE } from "./keybadge.js";
 import { autoLootCheckbox } from "./ui.js";
 import { showNotification } from "./notifications.js";
 import { setupItemTooltip, hideItemTooltip } from "./tooltip.js";
@@ -74,9 +75,9 @@ export function lootNearestCorpse(): boolean {
 const TOUCH = window.matchMedia?.("(hover: none) and (pointer: coarse)").matches ?? false;
 
 /**
- * The E badge over the corpse E would loot, in screen space, as a mailbox's and a
+ * The Interact key's badge over the corpse that key would loot, in screen space, as a mailbox's and a
  * gathering node's are (mail.ts renderMailboxHint). Not while its window is open,
- * and not on a touch screen (a tap loots). Whether one was drawn: E loots before
+ * and not on a touch screen (a tap loots). Whether one was drawn: the key loots before
  * it talks, opens a mailbox or gathers, so their badges stay hidden then.
  */
 export function renderCorpseLootHint(ctx: CanvasRenderingContext2D): boolean {
@@ -85,25 +86,7 @@ export function renderCorpseLootHint(ctx: CanvasRenderingContext2D): boolean {
   if (TOUCH || activeCreatureId === corpse.id) return true;
   const dpr = canvasDpr();
   const spot = worldToScreen(corpse.renderX, corpse.renderY - 52);
-  const x = spot.x * dpr;
-  const y = spot.y * dpr;
-  ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.beginPath();
-  ctx.arc(x, y, 10 * dpr, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-  ctx.fill();
-  ctx.strokeStyle = "#FFFFFF";
-  ctx.lineWidth = 1.5 * dpr;
-  ctx.stroke();
-  ctx.fillStyle = "#FFFFFF";
-  ctx.font = `bold ${11 * dpr}px 'Comic Relief', sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.shadowColor = "rgba(0, 0, 0, 1)";
-  ctx.shadowBlur = 3 * dpr;
-  ctx.fillText("E", x, y + 0.5 * dpr);
-  ctx.restore();
+  drawKeyBadge(ctx, spot.x * dpr, spot.y * dpr, "interact", dpr * worldZoom(), PLAIN_BADGE);
   return true;
 }
 

@@ -16,7 +16,8 @@ import { openInventory, stopMovement } from "./input.js";
 import { coinHtml } from "./coins.js";
 import { spareOf } from "./trade.js";
 import { teleportsHome, isSoulbound } from "./consumables.js";
-import { canvasDpr, worldToScreen } from "./worldzoom.js";
+import { canvasDpr, worldToScreen, worldZoom } from "./worldzoom.js";
+import { drawKeyBadge, PLAIN_BADGE } from "./keybadge.js";
 
 const cache = Cache.getInstance();
 
@@ -179,7 +180,10 @@ export function mailboxAt(worldX: number, worldY: number, slop = 0): Mailbox | n
   ctx.restore();
 };
 
-/** The E badge over the mailbox the player stands at, in screen space. Not while the window is open, nor when E talks to an NPC instead. */
+/**
+ * The Interact key's badge over the mailbox the player stands at, in screen space, white as an NPC's is (npc.ts
+ * renderNpcInteractBadge). Not while the window is open, nor when the key talks to an NPC instead.
+ */
 (window as any).renderMailboxHint = (ctx: CanvasRenderingContext2D, npcNear: boolean) => {
   if (inbox || npcNear || TOUCH) return;
   const at = playerSpot();
@@ -187,26 +191,7 @@ export function mailboxAt(worldX: number, worldY: number, slop = 0): Mailbox | n
   if (!box) return;
   const dpr = canvasDpr();
   const spot = worldToScreen(box.x, box.y - BOX_HEIGHT - 14);
-  const x = spot.x * dpr;
-  const y = spot.y * dpr;
-  ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.beginPath();
-  ctx.arc(x, y, 10 * dpr, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-  ctx.fill();
-  // White, as an NPC's E badge is (npc.ts renderNpcInteractBadge).
-  ctx.strokeStyle = "#FFFFFF";
-  ctx.lineWidth = 1.5 * dpr;
-  ctx.stroke();
-  ctx.fillStyle = "#FFFFFF";
-  ctx.font = `bold ${11 * dpr}px 'Comic Relief', sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.shadowColor = "rgba(0, 0, 0, 1)";
-  ctx.shadowBlur = 3 * dpr;
-  ctx.fillText("E", x, y + 0.5 * dpr);
-  ctx.restore();
+  drawKeyBadge(ctx, spot.x * dpr, spot.y * dpr, "interact", dpr * worldZoom(), PLAIN_BADGE);
 };
 
 // Walking away from every mailbox closes the window. Past the radius the server refuses anyway.

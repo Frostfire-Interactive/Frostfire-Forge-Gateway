@@ -5,7 +5,8 @@
 // the bags. While the gathering editor shows a preview, its circle and the spots nodes would take are drawn too.
 import { sendRequest, cachedPlayerId } from "./socket.js";
 import Cache from "./cache.js";
-import { canvasDpr, worldToScreen } from "./worldzoom.js";
+import { canvasDpr, worldToScreen, worldZoom } from "./worldzoom.js";
+import { drawKeyBadge, PLAIN_BADGE } from "./keybadge.js";
 import { nearMailbox } from "./mail.js";
 
 // `size`: how big the node is drawn, px: its picture's longest side, set per area in the gathering editor.
@@ -126,8 +127,8 @@ export function gatherNearest(): boolean {
 const TOUCH = window.matchMedia?.("(hover: none) and (pointer: coarse)").matches ?? false;
 
 /**
- * The E badge over the node E would gather, in screen space, as a mailbox's and an NPC's are (mail.ts
- * renderMailboxHint). Not when E talks to an NPC or opens a mailbox instead, and not on a touch screen (a tap gathers).
+ * The Interact key's badge over the node that key would gather, in screen space, as a mailbox's and an NPC's are (mail.ts
+ * renderMailboxHint). Not when the key talks to an NPC or opens a mailbox instead, and not on a touch screen (a tap gathers).
  */
 export function renderGatherHint(ctx: CanvasRenderingContext2D, npcNear: boolean): void {
   hintedId = null;
@@ -137,25 +138,7 @@ export function renderGatherHint(ctx: CanvasRenderingContext2D, npcNear: boolean
   hintedId = node.id;
   const dpr = canvasDpr();
   const spot = worldToScreen(node.x, boxOf(node, node.size).top - 12);
-  const x = spot.x * dpr;
-  const y = spot.y * dpr;
-  ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.beginPath();
-  ctx.arc(x, y, 10 * dpr, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-  ctx.fill();
-  ctx.strokeStyle = "#FFFFFF";
-  ctx.lineWidth = 1.5 * dpr;
-  ctx.stroke();
-  ctx.fillStyle = "#FFFFFF";
-  ctx.font = `bold ${11 * dpr}px 'Comic Relief', sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.shadowColor = "rgba(0, 0, 0, 1)";
-  ctx.shadowBlur = 3 * dpr;
-  ctx.fillText("E", x, y + 0.5 * dpr);
-  ctx.restore();
+  drawKeyBadge(ctx, spot.x * dpr, spot.y * dpr, "interact", dpr * worldZoom(), PLAIN_BADGE);
 }
 
 /** Draws a node's picture in its square: the longest side at `size`, the other in proportion, standing on the square's bottom. No shadow. */

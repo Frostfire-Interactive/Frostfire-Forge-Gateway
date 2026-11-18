@@ -2237,30 +2237,13 @@ body.timelapse-active .ui-hidden-in-timelapse {
 #options-menu {
   width: 500px;
   max-height: 600px;
-  background: url("../img/ui/ui-book.png");
-  background-repeat: no-repeat;
-  background-size: 100% 100%;
-  will-change: opacity;
-  animation: pauseMenuSlideIn 0.4s ease-out;
+  /* ui-book.png (416 x 320) as nine slices: the frame keeps one thickness whatever the size of the panel, so the
+     Menu, Settings and Hotkeys panels have the same frame, and the title and close button sit the same in each. */
+  background: none;
+  border-image: url("../img/ui/ui-book.png") 24 14 10 18 fill / 33px 17px 14px 22px stretch;
   display: flex;
   flex-direction: column;
   position: relative;
-}
-
-#options-menu::before {
-  content: "Settings";
-  display: block;
-  padding: 30px 30px 20px 30px;
-  border-bottom: 2px solid rgba(139, 112, 48, 0.3);
-  border-left: 20px solid transparent;
-  border-right: 20px solid transparent;
-  text-align: center;
-  font-family: 'Comic Relief';
-  font-size: 1.8em;
-  font-weight: 700;
-  color: #FFF1DA;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-  letter-spacing: 0.5px;
 }
 
 #options-menu-selections-container {
@@ -2405,14 +2388,12 @@ body.timelapse-active .ui-hidden-in-timelapse {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), inset 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
-#pause-menu-close {
-  top: 22px !important;
-  right: 0 !important;
-}
-
-#options-menu-close {
-  top: 27px !important;
-  right: 25px !important;
+/* In a panel header the close button is centred on the title, the same distance in from the frame in every panel. */
+.pause-header .menu-close-button {
+  top: 30px;
+  bottom: 20px;
+  right: 5px;
+  margin: auto 0;
 }
 
 #pause-menu-container {
@@ -2439,11 +2420,10 @@ body.timelapse-active .ui-hidden-in-timelapse {
 #pause-menu {
   width: 450px;
   max-height: 600px;
-  background: url("../img/ui/ui-book.png");
-  background-repeat: no-repeat;
-  background-size: 100% 100%;
-  will-change: opacity;
-  animation: pauseMenuSlideIn 0.4s ease-out;
+  /* ui-book.png (416 x 320) as nine slices: the frame keeps one thickness whatever the size of the panel, so the
+     Menu, Settings and Hotkeys panels have the same frame, and the title and close button sit the same in each. */
+  background: none;
+  border-image: url("../img/ui/ui-book.png") 24 14 10 18 fill / 33px 17px 14px 22px stretch;
   display: flex;
   flex-direction: column;
   position: relative;
@@ -2458,17 +2438,6 @@ body.timelapse-active .ui-hidden-in-timelapse {
   #pause-menu {
     width: 90vw;
     max-width: 450px;
-  }
-}
-
-@keyframes pauseMenuSlideIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
   }
 }
 
@@ -5291,9 +5260,6 @@ body.ios-device .notification {
 }
 body.ios-device .currency-amount {
   text-shadow: 0.5px 0.5px 1px rgba(0,0,0,0.5);
-}
-body.ios-device #options-menu::before {
-  text-shadow: 1px 1px 2px rgba(0,0,0,0.4);
 }
 body.ios-device .settings-row label {
   text-shadow: 0.5px 0.5px 1px rgba(0,0,0,0.4);
@@ -9318,4 +9284,207 @@ body.ios-device #mail-window .mail-postage-amount {
     visibility: visible !important;
     pointer-events: auto !important;
   }
+}
+
+/* ---- Options menu: Hotkeys screen (keybindsui.ts) ----
+   The window grows wider and as tall as the screen lets it, and the list fills it in two columns. Each action is a row
+   with its key as a small flat key cap on the right; the rows sit in a darker well so the light labels read clearly. */
+#options-menu.hotkeys-open {
+  width: 660px;
+  height: min(600px, calc(100vh - 40px));
+}
+
+#options-hotkeys-container {
+  display: none;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  flex-direction: column;
+  padding: 14px 30px 26px;
+  gap: 14px;
+  box-sizing: border-box;
+}
+
+#options-menu.hotkeys-open #options-menu-selections-container {
+  display: none;
+}
+
+#options-menu.hotkeys-open #options-hotkeys-container {
+  display: flex;
+}
+
+#options-hotkeys-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 14px 2px;
+  background: rgba(46, 26, 12, 0.42);
+  border: 1px solid rgba(46, 26, 12, 0.5);
+  border-radius: 6px;
+}
+
+#options-hotkeys-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+#options-hotkeys-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#options-hotkeys-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 241, 218, 0.3);
+  border-radius: 3px;
+}
+
+#options-hotkeys-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 241, 218, 0.5);
+}
+
+/* The groups flow down the first column and on into the second; a group is never split between them. */
+.hotkeys-columns {
+  columns: 2;
+  column-gap: 26px;
+}
+
+.hotkeys-section {
+  break-inside: avoid;
+  padding-bottom: 12px;
+}
+
+.hotkeys-group {
+  margin-bottom: 4px;
+  padding: 0 6px 4px;
+  border-bottom: 1px solid rgba(255, 241, 218, 0.16);
+  color: #f0b04a;
+  font-family: 'Comic Relief';
+  font-size: 0.78em;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.hotkeys-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 30px;
+  padding: 0 3px 0 6px;
+  border-radius: 4px;
+}
+
+.hotkeys-row:hover {
+  background: rgba(255, 241, 218, 0.07);
+}
+
+.hotkeys-row label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #FFF1DA;
+  font-family: 'Comic Relief';
+  font-size: 0.92em;
+  font-weight: 600;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+
+.hotkeys-key {
+  flex-shrink: 0;
+  min-width: 58px;
+  height: 24px;
+  padding: 0 10px;
+  cursor: pointer;
+  background: rgba(20, 11, 4, 0.5);
+  color: #FFF1DA;
+  font-family: 'Comic Relief';
+  font-weight: 700;
+  font-size: 0.82em;
+  border: 1px solid rgba(255, 241, 218, 0.22);
+  border-radius: 4px;
+  outline: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.hotkeys-key:hover,
+.hotkeys-key:focus-visible {
+  background: rgba(20, 11, 4, 0.7);
+  border-color: #f0b04a;
+}
+
+.hotkeys-key.capturing {
+  background: #f0b04a;
+  border-color: #f0b04a;
+  color: #2a1608;
+}
+
+.hotkeys-key.fixed {
+  cursor: default;
+  background: transparent;
+  border-style: dashed;
+  border-color: rgba(255, 241, 218, 0.22);
+  color: rgba(255, 241, 218, 0.6);
+}
+
+/* What the last key press did, between the two buttons. */
+#options-hotkeys-footer {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+}
+
+#options-hotkeys-message {
+  flex: 1;
+  min-width: 0;
+  color: #FFF1DA;
+  font-family: 'Comic Relief';
+  font-size: 0.85em;
+  line-height: 1.3;
+  text-align: center;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* Back and Reset are the menu's own buttons, as Rebind keys and the pause menu's are. */
+#options-hotkeys-footer .pause-button {
+  flex-shrink: 0;
+}
+
+/* The admin keys (keybinds.ts), and a group left without rows, for a player who is not an admin. */
+.hotkeys-row[hidden],
+.hotkeys-section[hidden] {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  #options-menu.hotkeys-open {
+    width: 94vw;
+  }
+
+  .hotkeys-columns {
+    columns: 1;
+  }
+}
+
+/* The name or text of the zone the player walks into (areazones.ts): shown for a few seconds, faded in and out. */
+#zone-banner {
+  position: fixed;
+  top: 12%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  pointer-events: none;
+  font-family: 'Alfa Slab One', sans-serif;
+  font-size: clamp(20px, 3.2vw, 40px);
+  color: #f4ead2;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85), 0 0 2px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 1s ease;
+}
+#zone-banner.shown {
+  opacity: 1;
 }

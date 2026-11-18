@@ -1,4 +1,5 @@
-import { canvasDpr, worldToScreen } from "./worldzoom.js";
+import { canvasDpr, worldToScreen, worldZoom } from "./worldzoom.js";
+import { drawKeyBadge, PLAIN_BADGE } from "./keybadge.js";
 import { getLines } from "./chat.js";
 import { npcImage, createCachedImage } from "./images.js";
 import Cache from "./cache.js";
@@ -827,8 +828,8 @@ function deleteNPC(npc: any) {
   }
 }
 
-// Talk-key badge over the nearest interactable NPC, mirroring the loot "E"
-// and chest "F" hints. Desktop only: touch devices tap the NPC instead.
+// Talk-key badge over the nearest interactable NPC, mirroring the loot and
+// chest hints: the Interact key, as bound (keybadge.ts). Desktop only: touch devices tap the NPC instead.
 export function renderNpcInteractBadge(
   ctx: CanvasRenderingContext2D,
   cameraX: number,
@@ -848,33 +849,11 @@ export function renderNpcInteractBadge(
   if (!Number.isFinite(nx) || !Number.isFinite(ny)) return;
 
   // Small badge on the NPC's lower body: sprite shows through the fill while
-  // a bright ring and letter keep it noticeable. Where the world zoom puts it (worldzoom.ts), in the canvas's pixels.
+  // a bright ring and letter keep it noticeable. Where the world zoom puts it (worldzoom.ts), in the canvas's pixels,
+  // as large as the zoom makes the NPC.
   const dpr = canvasDpr();
   const at = worldToScreen(nx, ny + 12);
-  const x = at.x * dpr;
-  const y = at.y * dpr;
-  const radius = 10 * dpr;
-
-  ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-
-  ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-  ctx.fill();
-  ctx.strokeStyle = "#FFFFFF";
-  ctx.lineWidth = 1.5 * dpr;
-  ctx.stroke();
-
-  ctx.fillStyle = "#FFFFFF";
-  ctx.font = `bold ${11 * dpr}px 'Comic Relief', sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.shadowColor = "rgba(0, 0, 0, 1)";
-  ctx.shadowBlur = 3 * dpr;
-  ctx.fillText("E", x, y + 0.5 * dpr);
-
-  ctx.restore();
+  drawKeyBadge(ctx, at.x * dpr, at.y * dpr, "interact", dpr * worldZoom(), PLAIN_BADGE);
 }
 
 export { createNPC, reinitNpcSprite, particlePool, getParticleSprite, particleBrightness, glowReach, deleteNPC };

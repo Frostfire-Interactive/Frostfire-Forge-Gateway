@@ -169,6 +169,8 @@ import { getCookie } from "./cookies.ts";
 import { createCachedImage } from "./images.ts";
 import { encodeFrame, FrameDecoder, decodeCloseReason } from "./wtframing.ts";
 import { setTileSounds } from "./tilesounds.ts";
+import { zonesLoaded } from "./areazones.js";
+import { zonesOfKind } from "./zonelogic.js";
 
 let socket: WebTransport;
 let streamWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
@@ -4066,6 +4068,22 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       for (const npcData of list) addStreamedNpc(npcData);
       break;
     }
+    // The zones of a map were saved in the map editor: the map the player is on takes them at once.
+    case "MAP_ZONES": {
+      const map = window.mapData as any;
+      const bare = (name: unknown) => String(name ?? "").replace(/\.json$/i, "");
+      if (!map || !data || bare(data.mapName) !== bare(map.name)) break;
+      const list = Array.isArray(data.zones) ? data.zones : [];
+      // the map editor, once opened, keeps the zones by name (tileeditor.ts): they stay that way
+      if (map.zones && !Array.isArray(map.zones)) map.zones = Object.fromEntries(list.map((z: any) => [z.name, z]));
+      else map.zones = list.length ? list : null;
+      // the storms read their zones apart (as LOAD_MAP sends them): kind "desert" and kind "snow"
+      const deserts = zonesOfKind(list, "desert"), snowfields = zonesOfKind(list, "snow");
+      map.deserts = deserts.length ? deserts : null;
+      map.snowfields = snowfields.length ? snowfields : null;
+      zonesLoaded({ fresh: false });
+      break;
+    }
     case "LOAD_MAP":
       {
         // The node took the login (a SWITCH comes before this): the switches that led here were not a loop.
@@ -5354,13 +5372,13 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       document.getElementById(
         "effects-volume-label"
       )!.innerText = `Effects: (${effectsSlider.value})`;
-      // (a server from before the Ambience slider sends no level: full)
-      ambienceSlider.value = String(config.ambience_volume ?? 100);
+      // (a server from before the Ambience slider sends no level: its default)
+      ambienceSlider.value = String(config.ambience_volume ?? 50);
       document.getElementById(
         "ambience-volume-label"
       )!.innerText = `Ambience: (${ambienceSlider.value})`;
-      // (a server from before the Weather slider sends no level: full)
-      weatherSlider.value = String(config.weather_volume ?? 100);
+      // (a server from before the Weather slider sends no level: its default)
+      weatherSlider.value = String(config.weather_volume ?? 60);
       document.getElementById(
         "weather-volume-label"
       )!.innerText = `Weather: (${weatherSlider.value})`;

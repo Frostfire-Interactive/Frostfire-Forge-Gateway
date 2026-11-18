@@ -1,6 +1,7 @@
 import Cache from "./cache.js";
 import { cachedPlayerId } from "./socket.js";
 import controlPanel from "./controlpanel.js";
+import { ACTIONS, getKey } from "./keybinds.js";
 
 // State management
 let isMenuOpen = false;
@@ -95,7 +96,10 @@ function toggleRadialMenu() {
 /**
  * Dispatch a hotkey event as if user pressed the key
  */
-function dispatchHotkey(keyCode: string) {
+function dispatchHotkey(defaultCode: string) {
+  // The radial menu names the key an action had by default; the player may have given it another.
+  const action = ACTIONS.find((candidate) => candidate.defaultCode === defaultCode);
+  const keyCode = action ? getKey(action.id) : defaultCode;
   const event = new KeyboardEvent('keydown', {
     code: keyCode,
     key: keyCode === 'KeyB' ? 'b' :

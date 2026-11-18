@@ -57,8 +57,14 @@ Your target's name, level, health and mana appear in the target frame. A target 
 | Ctrl and W | Does not close the game by accident: the browser asks first whether to leave the page |
 
 :::note Changing the keys
-The keys are fixed. There is no key binding screen at the moment.
+The keys above are the defaults. To change one, press **Esc**, select **Settings**, then **Rebind keys**. Select the key next to an action and press the new one, or press **Esc** to keep the old one. A key another action already has is swapped between the two. **Reset to defaults** puts every key back. **Esc** and **Enter** cannot be changed. Your keys are kept in this browser.
+
+While the menu or Settings is open, keys do nothing in the game, so choosing a new key never casts a spell or opens a window.
 :::
+
+### Key badges
+
+When you stand next to something a key acts on, a small badge over it shows that key: the **Interact / Loot** key over a character to talk to, loot, a defeated creature, a mailbox or a resource node, and the **Open Chest** key over a loot chest. The badge shows the key you set, and grows and shrinks with the world as you zoom. Holding the key to pick up all loot or open a chest fills a gold ring round the badge.
 
 ### What Esc does
 
@@ -162,7 +168,7 @@ To close a window, press its key again, select the **✕** at its top right corn
 | Guild | G | Your guild, or the form to create one. See [Guilds](#/player-guide/guilds). |
 | Collectables | K | Your mounts. See [Mounts](#/player-guide/mounts). |
 | Achievements | Y | Your achievements and progress. |
-| Menu | Esc | Settings, Manage Profile and Logout. |
+| Menu | Esc | Settings, Manage Profile (not for guests) and Logout. |
 
 ## Notifications
 
@@ -180,17 +186,17 @@ A message about your connection, such as an attempt to reconnect, stays until it
 Press **Esc** to open the menu. It has three buttons:
 
 - **Settings** opens the options below.
-- **Manage Profile** opens your account page in a new tab. See [Account Security](#/player-guide/account-security).
+- **Manage Profile** opens your account page in a new tab. See [Account Security](#/player-guide/account-security). A guest account has no profile, so the menu shows this button only to full accounts.
 - **Logout** leaves the game and returns you to the login screen.
 
-| Setting | What it does |
-|---------|--------------|
-| FPS | Limits how many frames per second the game draws, from 30 up to 240 and above |
-| Music | Music volume |
-| Effects | Sound effect volume |
-| Ambience | Volume of the sounds of the places around you |
-| Weather | Volume of rain, wind and thunder |
-| Muted | Turns all sound off |
-| Auto loot | Takes everything from a defeated creature at once, without opening its loot window |
+| Setting | What it does | A new character starts at |
+|---------|--------------|---------------------------|
+| FPS | Limits how many frames per second the game draws, from 30 up to 240 and above | 60 |
+| Music | Music volume | 50 |
+| Effects | Sound effect volume | 30 |
+| Ambience | Volume of the sounds of the places around you | 50 |
+| Weather | Volume of rain, wind and thunder | 60 |
+| Muted | Turns all sound off | Off |
+| Auto loot | Takes everything from a defeated creature at once, without opening its loot window | Off |
 
 Your settings are saved with your character.

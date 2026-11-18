@@ -152,6 +152,10 @@ Sends a private message to one online player. The target is matched by username,
 |---------|--------|
 | No username given | `Please provide a username` |
 | Target is offline or does not exist | `Player not found or is not online` |
+| Target is an admin in stealth, and you are not an admin | `Player not found or is not online` |
+| The target's server node did not answer in time | `That player could not be reached.` |
+
+An admin in stealth counts as offline for whispers from players. Admins can whisper them. In a cluster the target's node decides, since only it knows whether the target is in stealth.
 
 ```text title="Example"
 /w alice Meet me at the inn

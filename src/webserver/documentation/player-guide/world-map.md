@@ -13,6 +13,7 @@ Press **M** to open the world map. It fills the screen and opens centred on you.
 The map marks:
 
 - **You**, so you always know where you are.
+- **Zones**, the named areas of the map, such as a forest or a town. Each one has a thin border under the houses, caves and warps, and its name written inside it, over them. Hold the mouse over a zone to light the whole area. Names of small zones show when you zoom in.
 - **Houses**, each drawn as a small house standing on its door. The pictures grow as you zoom in. A house with an inn in it shows the innkeeper's name when you zoom in.
 - **Caves**, each drawn as a cave mouth over the way in. In the underworld these are the ways back up.
 - **Other warps**, as blue diamonds. Zoom in to read where each one leads.
@@ -46,7 +47,7 @@ The minimap is always on screen and shows the area around you.
 | Pale pin with a gold coin | A merchant. The pin's point stands on the door of the house the merchant sells in. See [Vendors](#/player-guide/vendors). |
 | Pale pin with a cave mouth | A cave: a way down into the underworld, or back up from it. The pin's point stands on the entrance. |
 | Top label | The current time in the game world |
-| Bottom label | The name of the map you are on |
+| Bottom label | The name of the zone you are in, or the name of the map when you are in no zone |
 
 A house that holds both an inn and a merchant shows the two pins side by side. A merchant or innkeeper who stands out in the open is marked where they stand.
 

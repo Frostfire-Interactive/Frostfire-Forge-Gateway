@@ -135,7 +135,7 @@ Friends, party members and guild members learn of each other from the player, no
 | Login | The player greets each contact on the node that holds them. Each contact is told the player is online, and answers with their own status. |
 | Joining a party or guild, or becoming friends | The same greeting, with the new contacts |
 | Logout | Every contact is told the player is offline, unless the player is online on another node |
-| Stealth | Turning it on tells every contact the player is offline. Turning it off greets them. |
+| Stealth | Turning it on tells every contact the player is offline. Turning it off greets them. A whisper to a player on another node asks that node first whether the player is in stealth (the `whisper-reach` action), and a player's whisper to a stealthed admin is refused as to an offline player. |
 | Crossing a border | Nothing is sent: the player is still online |
 | A handoff whose client never arrives | Every contact is told the player is offline once the directory entry is released |
 | A node dies | Each surviving node tells its players about their contacts who were on it |

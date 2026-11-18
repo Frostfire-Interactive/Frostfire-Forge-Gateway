@@ -137,7 +137,7 @@ Edits made in the [map editor](#/tools/map-editor) reach the asset server throug
 | Endpoint | What is saved | On disk |
 | --- | --- | --- |
 | `POST /save-map-chunks` | The edited chunks are merged into the map's layers. Infinite maps grow to fit the edit and are trimmed back to their content. | `maps/<name>.json` is rewritten as minified JSON. |
-| `POST /save-map-properties` | Graveyards and warps. They are stored on the map and mirrored into its `Graveyards` and `Warps` object layers. | `maps/<name>.json` is rewritten as formatted JSON. |
+| `POST /save-map-properties` | Graveyards, warps and zones. Graveyards and warps are stored on the map and mirrored into its `Graveyards` and `Warps` object layers. Zones are stored in the map's top-level `zones` key. | `maps/<name>.json` is rewritten as formatted JSON. |
 | `POST /update-map` | The whole map is replaced. | Nothing. The change lives in the cache only and is lost on restart. |
 
 After each save the map gets a new checksum and its cached chunks are dropped, so the next `/map-chunk` request returns the new tiles.

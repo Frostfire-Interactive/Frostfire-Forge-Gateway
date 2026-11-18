@@ -1,8 +1,10 @@
 // The character page (/character). USER REQUEST 2026-10-14: after realm selection, an account that has no character
 // makes one here: it picks a class, and the gateway makes the character (src/systems/characters.ts). One character per
 // account, named as the account is. An account made before characters existed starts over (the page says so first).
-// The page is a full-screen creator over the world's start area (js/web/startarea.ts): the classes on the left, the
-// chosen one named large in the middle, its stats, spells and starter items on the right, and Create under it.
+// The page is a full-screen character creation screen over the world's start area (js/web/startarea.ts): the classes
+// down the left, the chosen class's description, stats, spells and starter items on the right, the world open between
+// them, and Back and Create in the bar at the foot. A class has no picture of its own: its mark is the icon of its
+// first spell.
 
 interface CharacterClassView {
     id: number;
@@ -20,6 +22,17 @@ interface CharacterStatus {
     classes: CharacterClassView[];
     spellInfo: Record<string, { description: string; icon: string | null }>;
     itemInfo?: Record<string, { description: string; icon: string | null }>;
+}
+
+/** A spell or starter item as its slot and the line under the slots show it. */
+interface SlotView {
+    name: string;
+    icon: string | null;
+    /** In the slot's corner, as the game's slots show a count: the level a spell is learned at, an item's count. */
+    badge: string;
+    /** The same said in full, beside the name under the slots. */
+    tag: string;
+    description: string;
 }
 
 function readCookie(name: string): string | undefined {
@@ -51,6 +64,28 @@ let creating = false;
 const escapeHtml = (s: unknown): string =>
     String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
 
+const readable = (name: string): string => name.replace(/_/g, ' ');
+
+/** An icon's address on the asset server: spells are under /sprite, items under /icon, both without the extension. */
+function assetIcon(kind: 'sprite' | 'icon', icon: string | null | undefined): string | null {
+    if (!icon) return null;
+    return `${ASSET_SERVER}/${kind}?name=${encodeURIComponent(icon.replace(/\.(png|jpg|jpeg|gif)$/i, ''))}`;
+}
+
+/** A class's mark: the icon of its first spell, or null when it has none. */
+function classEmblem(c: CharacterClassView): string | null {
+    const first = c.spells[0];
+    return first ? assetIcon('sprite', characterStatus?.spellInfo[first.spell]?.icon) : null;
+}
+
+/** The mark inside a round slot: the icon, or the class's first letter when there is no icon. */
+function emblemHtml(c: CharacterClassView): string {
+    const icon = classEmblem(c);
+    return icon
+        ? `<img src="${escapeHtml(icon)}" alt="" loading="lazy">`
+        : `<span class="cc-emblem-letter">${escapeHtml(c.name.charAt(0).toUpperCase())}</span>`;
+}
+
 function showError(message: string | null): void {
     const box = document.getElementById('error-message');
     if (!box) return;
@@ -79,8 +114,6 @@ async function loadStatus(): Promise<void> {
     // Nothing to make (a character already, or no classes to choose from): on into the game.
     if (!characterStatus.needed) { window.location.href = '/game'; return; }
 
-    const subtitle = document.getElementById('character-subtitle');
-    if (subtitle) subtitle.textContent = `Playing as ${characterStatus.username}`;
     const warning = document.getElementById('starts-over');
     if (warning) warning.hidden = !characterStatus.startsOver;
     const confirmBox = document.getElementById('starts-over-confirm');
@@ -92,47 +125,21 @@ async function loadStatus(): Promise<void> {
     document.body.classList.add('cc-ready');
 }
 
-/** A colour of its own for each class, from its name, so the emblems differ without art. */
-function hueOf(name: string): number {
-    let h = 0;
-    for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360;
-    return (h + 200) % 360;
-}
-
-/** A shield with the class's first letter. */
-function emblem(c: CharacterClassView, size: 'small' | 'large' | 'head' = 'small'): string {
-    const hue = hueOf(c.name);
-    const id = `cc-emblem-${c.id}-${size}`;
-    const letter = escapeHtml((c.name.trim()[0] || '?').toUpperCase());
-    return `
-        <svg class="cc-emblem cc-emblem-${size}" viewBox="0 0 40 46" aria-hidden="true">
-            <defs>
-                <linearGradient id="${id}" x1="0" y1="0" x2="0.9" y2="1">
-                    <stop offset="0" stop-color="hsl(${hue} 65% 58%)"/>
-                    <stop offset="1" stop-color="hsl(${(hue + 35) % 360} 70% 24%)"/>
-                </linearGradient>
-            </defs>
-            <path d="M20 2.5 36.5 8.5v13c0 10.5-7.4 17.8-16.5 21.9C10.9 39.3 3.5 32 3.5 21.5v-13z" fill="url(#${id})" stroke="rgba(255, 236, 200, 0.55)" stroke-width="1.3"/>
-            <path d="M20 6.5 33 11.3v10.2c0 8.3-5.8 14.2-13 17.6-7.2-3.4-13-9.3-13-17.6V11.3z" fill="none" stroke="rgba(255, 255, 255, 0.16)" stroke-width="1"/>
-            <text x="20" y="28.5" text-anchor="middle" class="cc-emblem-letter">${letter}</text>
-        </svg>`;
-}
-
+/** The classes down the left: a round slot with the class's mark, its name and the start of its description. */
 function renderClasses(): void {
     const list = document.getElementById('class-list');
     if (!list || !characterStatus) return;
-    list.innerHTML = characterStatus.classes.map((c, i) => `
-        <button type="button" class="cc-class${c.id === selectedClassId ? ' selected' : ''}" data-class-id="${c.id}" style="--i: ${i}" aria-pressed="${c.id === selectedClassId}">
-            ${emblem(c)}
+    list.innerHTML = characterStatus.classes.map((c) => `
+        <button type="button" class="cc-class${c.id === selectedClassId ? ' selected' : ''}" role="option" data-class-id="${c.id}" aria-selected="${c.id === selectedClassId}" tabindex="${c.id === selectedClassId ? 0 : -1}">
+            <span class="cc-emblem">${emblemHtml(c)}</span>
             <span class="cc-class-words">
                 <span class="cc-class-name">${escapeHtml(c.name)}</span>
-                <span class="cc-class-description">${escapeHtml(c.description || 'No description.')}</span>
+                <span class="cc-class-blurb">${escapeHtml(c.description || '')}</span>
             </span>
-            <svg class="cc-class-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
         </button>
     `).join('');
-    list.querySelectorAll<HTMLElement>('.cc-class').forEach((card) => {
-        card.addEventListener('click', () => selectClass(Number(card.dataset.classId)));
+    list.querySelectorAll<HTMLElement>('.cc-class').forEach((row) => {
+        row.addEventListener('click', () => selectClass(Number(row.dataset.classId)));
     });
 }
 
@@ -140,95 +147,111 @@ function selectClass(id: number, scroll = true): void {
     if (!characterStatus || creating) return;
     const chosen = characterStatus.classes.find((c) => c.id === id);
     if (!chosen) return;
+    const changed = selectedClassId !== id;
     selectedClassId = id;
-    document.querySelectorAll<HTMLElement>('#class-list .cc-class').forEach((card) => {
-        const on = Number(card.dataset.classId) === id;
-        card.classList.toggle('selected', on);
-        card.setAttribute('aria-pressed', String(on));
+    document.querySelectorAll<HTMLElement>('#class-list .cc-class').forEach((row) => {
+        const on = Number(row.dataset.classId) === id;
+        row.classList.toggle('selected', on);
+        row.setAttribute('aria-selected', String(on));
+        row.tabIndex = on ? 0 : -1;
     });
     renderHero(chosen);
     renderDetails(chosen);
     updateButton();
 
-    // On a phone the classes are a row that scrolls sideways: the chosen card comes into view in it (the page itself
-    // does not scroll there), and its details start from the top.
-    if (window.matchMedia('(max-width: 900px), (max-height: 520px)').matches) {
-        const card = document.querySelector<HTMLElement>(`#class-list .cc-class[data-class-id="${id}"]`);
+    // A new class's details start from the top and fade in; the chosen row comes into view in the list (which scrolls
+    // sideways on a phone). The page itself does not scroll.
+    const info = document.querySelector<HTMLElement>('.cc-info-scroll');
+    info?.scrollTo({ top: 0 });
+    if (changed && info) {
+        info.classList.remove('cc-swap');
+        void info.offsetWidth;
+        info.classList.add('cc-swap');
+    }
+    if (scroll) {
+        const row = document.querySelector<HTMLElement>(`#class-list .cc-class[data-class-id="${id}"]`);
         const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        if (scroll) card?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'nearest', inline: 'center' });
-        document.querySelector('.cc-details')?.scrollTo({ top: 0 });
+        row?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'nearest', inline: 'nearest' });
     }
 }
 
-/** The chosen class, large over the world. Drawn again so its entrance plays for each class. */
+/** The chosen class's name and description, at the top of the details. */
 function renderHero(c: CharacterClassView): void {
     const hero = document.getElementById('class-hero');
     if (!hero) return;
     hero.innerHTML = `
-        <div class="cc-hero-inner">
-            ${emblem(c, 'large')}
-            <h2 class="cc-hero-name">${escapeHtml(c.name)}</h2>
-            <p class="cc-hero-description">${escapeHtml(c.description || 'No description.')}</p>
-        </div>`;
+        <h2 class="cc-name">${escapeHtml(c.name)}</h2>
+        <p class="cc-description">${escapeHtml(c.description || 'No description.')}</p>`;
+}
+
+/**
+ * A row of slots (spells or items) and, under it, the one picked: its name, level or count, and description. Pointing
+ * at a slot, focusing it or tapping it picks it; the first is picked to begin with.
+ */
+function slotsHtml(kind: string, views: SlotView[], none: string): string {
+    if (views.length === 0) return `<p class="cc-none">${none}</p>`;
+    const slots = views.map((v, i) => `
+        <button type="button" class="cc-slot${i === 0 ? ' picked' : ''}" data-slot="${kind}" data-index="${i}" aria-label="${escapeHtml(`${v.name}, ${v.tag}`)}" aria-pressed="${i === 0}">
+            ${v.icon ? `<img src="${escapeHtml(v.icon)}" alt="" loading="lazy">` : `<span class="cc-slot-letter">${escapeHtml(v.name.charAt(0).toUpperCase())}</span>`}
+            ${v.badge ? `<span class="cc-slot-badge">${escapeHtml(v.badge)}</span>` : ''}
+        </button>`).join('');
+    return `<div class="cc-slots">${slots}</div><div class="cc-slot-info" data-slot-info="${kind}" aria-live="polite">${slotInfoHtml(views[0])}</div>`;
+}
+
+function slotInfoHtml(v: SlotView): string {
+    return `
+        <div class="cc-slot-info-head"><span class="cc-slot-info-name">${escapeHtml(v.name)}</span><span class="cc-slot-info-tag">${escapeHtml(v.tag)}</span></div>
+        ${v.description ? `<p class="cc-slot-info-text">${escapeHtml(v.description)}</p>` : ''}`;
 }
 
 function renderDetails(c: CharacterClassView): void {
     const box = document.getElementById('class-details');
     if (!box || !characterStatus) return;
-    // each bar against the highest of that stat among the classes, so they compare at a glance
-    const most = (key: string) => Math.max(1, ...characterStatus!.classes.map((k) => Number(k.stats[key]) || 0));
+    // label and number only: the stats have no common scale to draw bars against
     const stats = STAT_LABELS.map(([key, label, unit]) => {
         const value = Number(c.stats[key]) || 0;
-        const share = Math.round((value / most(key)) * 100);
-        return `
-        <div class="cc-stat">
-            <span class="cc-stat-label">${label}</span>
-            <span class="cc-stat-value">${escapeHtml(value)}${unit}</span>
-            <span class="cc-stat-bar" aria-hidden="true"><span style="width: ${value > 0 ? Math.max(4, share) : 0}%"></span></span>
-        </div>`;
+        return `<div class="cc-stat"><span class="cc-stat-label">${label}</span><span class="cc-stat-value">${escapeHtml(value)}${unit}</span></div>`;
     }).join('');
-    const spells = c.spells.length === 0
-        ? '<p class="cc-none">This class learns no spells.</p>'
-        : `<ul class="cc-spells">${c.spells.map((s) => {
-            const info = characterStatus!.spellInfo[s.spell];
-            const icon = info?.icon ? `${ASSET_SERVER}/sprite?name=${encodeURIComponent(info.icon.replace(/\.(png|jpg|jpeg|gif)$/i, ''))}` : null;
-            return `
-            <li class="cc-spell">
-                <span class="cc-spell-icon">${icon ? `<img src="${escapeHtml(icon)}" alt="" loading="lazy">` : ''}</span>
-                <span class="cc-spell-words">
-                    <span class="cc-spell-name">${escapeHtml(s.spell.replace(/_/g, ' '))}</span>
-                    ${info?.description ? `<span class="cc-spell-description">${escapeHtml(info.description)}</span>` : ''}
-                </span>
-                <span class="cc-spell-level">${s.level <= 1 ? 'Start' : `Lv ${escapeHtml(s.level)}`}</span>
-            </li>`;
-        }).join('')}</ul>`;
-    // the starter items, laid out as the spells are, with the quantity where a spell has its level
-    const starter = c.items ?? [];
-    const items = starter.length === 0
-        ? '<p class="cc-none">This class starts with no items.</p>'
-        : `<ul class="cc-spells">${starter.map((i) => {
-            const info = characterStatus!.itemInfo?.[i.item];
-            const icon = info?.icon ? `${ASSET_SERVER}/icon?name=${encodeURIComponent(info.icon.replace(/\.(png|jpg|jpeg|gif)$/i, ''))}` : null;
-            return `
-            <li class="cc-spell">
-                <span class="cc-spell-icon">${icon ? `<img src="${escapeHtml(icon)}" alt="" loading="lazy">` : ''}</span>
-                <span class="cc-spell-words">
-                    <span class="cc-spell-name">${escapeHtml(i.item.replace(/_/g, ' '))}</span>
-                    ${info?.description ? `<span class="cc-spell-description">${escapeHtml(info.description)}</span>` : ''}
-                </span>
-                <span class="cc-spell-level">×${escapeHtml(i.quantity)}</span>
-            </li>`;
-        }).join('')}</ul>`;
-    // (the heading only shows where the class is not named large over the world: a phone held sideways)
+    const spells: SlotView[] = c.spells.map((s) => {
+        const info = characterStatus!.spellInfo[s.spell];
+        const start = s.level <= 1;
+        return {
+            name: readable(s.spell), icon: assetIcon('sprite', info?.icon), description: info?.description ?? '',
+            badge: start ? '' : `Lv${s.level}`, tag: start ? 'Known from the start' : `Learned at level ${s.level}`,
+        };
+    });
+    const items: SlotView[] = (c.items ?? []).map((i) => {
+        const info = characterStatus!.itemInfo?.[i.item];
+        return {
+            name: readable(i.item), icon: assetIcon('icon', info?.icon), description: info?.description ?? '',
+            badge: i.quantity > 1 ? `${i.quantity}` : '', tag: `x${i.quantity}`,
+        };
+    });
     box.innerHTML = `
-        <div class="cc-details-head">${emblem(c, 'head')}<h2 class="cc-details-name">${escapeHtml(c.name)}</h2></div>
         <h3 class="cc-section-title">Starting stats</h3>
         <div class="cc-stats">${stats}</div>
         <h3 class="cc-section-title">Spells</h3>
-        ${spells}
+        ${slotsHtml('spells', spells, 'This class learns no spells.')}
         <h3 class="cc-section-title">Starter items</h3>
-        ${items}
+        ${slotsHtml('items', items, 'This class starts with no items.')}
     `;
+    const lists: Record<string, SlotView[]> = { spells, items };
+    box.querySelectorAll<HTMLElement>('.cc-slot').forEach((slot) => {
+        const pick = () => {
+            const kind = slot.dataset.slot as string;
+            const view = lists[kind]?.[Number(slot.dataset.index)];
+            const info = box.querySelector<HTMLElement>(`[data-slot-info="${kind}"]`);
+            if (!view || !info) return;
+            box.querySelectorAll<HTMLElement>(`.cc-slot[data-slot="${kind}"]`).forEach((other) => {
+                other.classList.toggle('picked', other === slot);
+                other.setAttribute('aria-pressed', String(other === slot));
+            });
+            info.innerHTML = slotInfoHtml(view);
+        };
+        slot.addEventListener('click', pick);
+        slot.addEventListener('focus', pick);
+        slot.addEventListener('pointerenter', (event) => { if (event.pointerType === 'mouse') pick(); });
+    });
 }
 
 function updateButton(): void {
@@ -236,8 +259,7 @@ function updateButton(): void {
     const confirmed = (document.getElementById('starts-over-checkbox') as HTMLInputElement | null)?.checked ?? false;
     if (!button || !characterStatus) return;
     button.disabled = creating || selectedClassId === null || (characterStatus.startsOver && !confirmed);
-    const chosen = characterStatus.classes.find((c) => c.id === selectedClassId);
-    button.textContent = creating ? 'Creating...' : chosen ? `Create ${chosen.name}` : 'Create Character';
+    button.textContent = creating ? 'Creating...' : 'Create';
 }
 
 async function createCharacter(): Promise<void> {
@@ -267,6 +289,34 @@ async function createCharacter(): Promise<void> {
         updateButton();
     }
 }
+
+const goBack = (): void => { window.location.href = '/realm-selection'; };
+
+/** The arrow keys move through the classes (up and down, or left and right when they are a row on a phone). */
+document.getElementById('class-list')?.addEventListener('keydown', (event) => {
+    if (!characterStatus || !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const classes = characterStatus.classes;
+    const at = Math.max(0, classes.findIndex((c) => c.id === selectedClassId));
+    const next = event.key === 'Home' ? 0
+        : event.key === 'End' ? classes.length - 1
+        : event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? Math.max(0, at - 1)
+        : Math.min(classes.length - 1, at + 1);
+    const target = classes[next];
+    if (!target) return;
+    selectClass(target.id);
+    document.querySelector<HTMLElement>(`#class-list .cc-class[data-class-id="${target.id}"]`)?.focus();
+});
+
+// Escape goes back to realm selection; Enter with nothing in focus makes the character.
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { goBack(); return; }
+    if (event.key === 'Enter' && (document.activeElement === document.body || !document.activeElement)) {
+        event.preventDefault();
+        const button = document.getElementById('create-button') as HTMLButtonElement | null;
+        if (button && !button.disabled) void createCharacter();
+    }
+});
 
 document.getElementById('create-button')?.addEventListener('click', () => void createCharacter());
 document.getElementById('starts-over-checkbox')?.addEventListener('change', updateButton);

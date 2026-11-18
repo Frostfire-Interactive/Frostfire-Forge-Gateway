@@ -13,6 +13,7 @@ import { getDocsManifest, getDocsPage, getDocsSearchIndex } from "../services/do
 import { DOCS_ENABLED, docsNotFound } from "../modules/docs_switch";
 import { startSubscriptions, getSubscriptionInfo, createCheckout, createPortal, processStripeWebhook, type Reply } from "../systems/subscription";
 import { RateLimit, tooMany } from "../modules/ratelimit";
+import { accountsOnly } from "../modules/accountsonly";
 import { HerdSpread, fetchGatewayRoute, pickRegionNode as pickNode, savedPointOf, type SavedPoint } from "./regionpick";
 
 const settings = {
@@ -64,6 +65,7 @@ import login_html from "./public/index.html";
 import register_html from "./public/register.html";
 import game_html from "./public/game.html";
 import map_editor_html from "./public/map-editor.html";
+import zone_map_html from "./public/zone-map.html";
 import particleeditor_html from "./public/particleeditor.html";
 import npceditor_html from "./public/npceditor.html";
 import creatureeditor_html from "./public/creatureeditor.html";
@@ -170,6 +172,18 @@ async function getUsernameFromToken(req: Request): Promise<string | null> {
   if (!result || result.length === 0) return null;
   return result[0].username;
 }
+
+// Whether the request is signed in as a guest account (`guest_mode`, as the account was made). No sign-in is not a
+// guest: the route itself answers that with 401.
+async function isGuestRequest(req: Request): Promise<boolean> {
+  const username = await getUsernameFromToken(req);
+  if (!username) return false;
+  const rows = await query("SELECT guest_mode FROM accounts WHERE username = ? LIMIT 1", [username]) as any[];
+  return Number(rows?.[0]?.guest_mode) === 1;
+}
+
+// A profile route, refused to guests (see accountsonly.ts).
+const profileRoute = (route: (req: Request) => Promise<Response>) => accountsOnly(route, isGuestRequest);
 
 async function requireAuth(req: Request): Promise<{ username: string } | Response> {
   const username = await getUsernameFromToken(req);
@@ -336,6 +350,7 @@ const routes = {
   "/registration": register_html,
   "/game": game_html,
   "/map-editor": map_editor_html,
+  "/zone-map": zone_map_html,
   "/particle-editor": particleeditor_html,
   "/npc-editor": npceditor_html,
   "/creature-editor": creatureeditor_html,
@@ -528,40 +543,40 @@ const routes = {
     GET: async (req: Request) => handleDocs(req),
   },
   "/api/profile": {
-    GET: async (req: Request) => handleGetProfile(req),
+    GET: profileRoute(handleGetProfile),
   },
   "/api/profile/change-email": {
-    POST: async (req: Request) => handleChangeEmail(req),
+    POST: profileRoute(handleChangeEmail),
   },
   "/api/profile/change-password": {
-    POST: async (req: Request) => handleChangePassword(req),
+    POST: profileRoute(handleChangePassword),
   },
   "/api/profile/setup-totp": {
-    POST: async (req: Request) => handleSetupTOTP(req),
+    POST: profileRoute(handleSetupTOTP),
   },
   "/api/profile/verify-totp": {
-    POST: async (req: Request) => handleVerifyTOTP(req),
+    POST: profileRoute(handleVerifyTOTP),
   },
   "/api/profile/disable-totp": {
-    POST: async (req: Request) => handleDisableTOTP(req),
+    POST: profileRoute(handleDisableTOTP),
   },
   "/api/profile/register-webauthn": {
-    POST: async (req: Request) => handleRegisterWebAuthn(req),
+    POST: profileRoute(handleRegisterWebAuthn),
   },
   "/api/profile/verify-webauthn-registration": {
-    POST: async (req: Request) => handleVerifyWebAuthnRegistration(req),
+    POST: profileRoute(handleVerifyWebAuthnRegistration),
   },
   "/api/profile/remove-webauthn": {
-    POST: async (req: Request) => handleRemoveWebAuthn(req),
+    POST: profileRoute(handleRemoveWebAuthn),
   },
   "/api/profile/reveal-email": {
-    POST: async (req: Request) => handleRevealEmail(req),
+    POST: profileRoute(handleRevealEmail),
   },
   "/api/profile/generate-password": {
     GET: async () => handleGeneratePassword(),
   },
   "/api/profile/2fa-requirements": {
-    POST: async (req: Request) => handleSet2FARequirement(req),
+    POST: profileRoute(handleSet2FARequirement),
   },
   "/api/subscription": {
     GET: async (req: Request) => handleGetSubscription(req),
@@ -641,6 +656,7 @@ Bun.serve({
       "/realm-selection": routes["/realm-selection"],
       "/game": routes["/game"],
       "/map-editor": routes["/map-editor"],
+      "/zone-map": routes["/zone-map"],
       "/particle-editor": routes["/particle-editor"],
       "/npc-editor": routes["/npc-editor"],
       "/creature-editor": routes["/creature-editor"],

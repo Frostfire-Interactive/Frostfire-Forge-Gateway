@@ -198,7 +198,7 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `CLIENTCONFIG` | Both | Session | Client settings: saved when sent by the client, delivered at login |
 | `SERVER_TIME` | To client | Session | The server clock, for the time of day |
 | `CONSOLE_MESSAGE` | Unused | Session | A builder exists (`packetManager.consoleMessage`) but nothing calls it |
-| `LOAD_MAP` | To client | Map | Map metadata: name, size, tilesets, spawn, warps, graveyards |
+| `LOAD_MAP` | To client | Map | Map metadata: name, size, tilesets, spawn, warps, graveyards, zones |
 | `PRELOAD_MAP_CHUNKS` | To client | Map | Chunks for the client to load ahead of time |
 | `CHUNK_DATA` | Unused | Map | A builder exists (`packetManager.chunkData`) but nothing calls it |
 | `REQUEST_MAP_CHUNK` | Unused | Map | In the registry only |
@@ -206,6 +206,7 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `RELOAD_CHUNKS` | Unused | Map | A builder exists (`packetManager.reloadChunks`) but nothing calls it |
 | `UPDATE_CHUNKS` | To client | Map | Chunks that changed |
 | `MAP_REBASE` | To client | Map | Sent to players on a map after a save that changed its origin or bounds |
+| `MAP_ZONES` | To client | Map | `{ mapName, zones }`: the new [zones](#/engine/zones) of a map after a map editor save, sent to every player on it |
 | `MOVEXY` | To server | Movement | Start moving in a direction, or `"ABORT"` to stop. Positions come back as binary frames |
 | `BATCH_MOVEXY` | Unused | Movement | In the registry only. Batched movement is sent as a binary frame, not as this type |
 | `TELEPORTXY` | To server | Movement | An admin moves themself to a position |
@@ -380,7 +381,7 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `LIGHTNING` | To client | Weather | A lightning flash |
 | `TORNADOES` | To client | Weather | `{ map, tornadoes: [{ id, x, y }] }`: where each tornado on the player's map is. Sent repeatedly while there are any, and once with none when the last has gone |
 | `TOGGLE_TILE_EDITOR` | To client | Map editor | Open or close the map editor |
-| `SAVE_MAP` | To server | Map editor | Save map changes. Needs `server.admin` or `server.*` |
+| `SAVE_MAP` | To server | Map editor | Save map changes (chunks, and when changed graveyards, warps and `zones`). Needs `server.admin` or `server.*` |
 | `EDITOR_OPEN` | To server | Map editor | An admin opened the editor on this map |
 | `EDITOR_CLOSE` | To server | Map editor | An admin closed the editor |
 | `EDITOR_TILE_EDIT` | Both | Map editor | Live tile edits, relayed to other admins editing the same map |

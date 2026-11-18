@@ -498,7 +498,7 @@ Some admin actions are packets sent by the client, not chat commands:
 | Packet | Requirement | What it does |
 |--------|-------------|--------------|
 | `NOCLIP` | Admin role | Toggles walking through collision |
-| `STEALTH` | Admin role | Toggles admin stealth. Other players stop seeing you, other admins still do |
+| `STEALTH` | Admin role | Toggles admin stealth. To other players you look offline: they stop seeing you, your contacts are told you went offline, the realm list's player count leaves you out, and their whispers to you are refused as to an offline player. Other admins still see and whisper you |
 | `TELEPORTXY` | Admin role | Moves you to a position on the current map |
 | `GET_ONLINE_PLAYERS` | Admin role | Asks for the list of online players, answered with `ONLINE_PLAYERS_LIST` |
 | `DRAG_PLAYER_START`, `DRAG_UPDATE`, `DRAG_PLAYER_STOP` | `admin.drag` or `admin.*` | Drags another player around the map |

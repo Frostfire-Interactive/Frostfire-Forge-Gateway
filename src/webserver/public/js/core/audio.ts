@@ -1,4 +1,5 @@
 import { ambienceSlider, effectsSlider, musicSlider, mutedCheckbox, weatherSlider } from "./ui.js";
+import { fadePoints, musicLevel, ZONE_MUSIC_FADE, zoneMusicAction } from "./zonelogic.js";
 
 /**
  * Sound effects. A sound is an audio file of the asset server (its assets/audio folder), asked for by name with or
@@ -431,4 +432,123 @@ export function fadeSoundsExcept(keys: Set<string>): void {
   const ctx = audio;
   if (!ctx) return;
   for (const [key, spot] of [...spots]) if (!keys.has(key)) glideSpot(ctx, key, spot, 0, 1);
+}
+
+/**
+ * The music of the zone the player is in (areazones.ts says which). A new track fades in from silence over
+ * ZONE_MUSIC_FADE seconds from the start of its file, looping the whole file as it is, while the old one fades out to silence
+ * over the same time (fadePoints: slow at the quiet end). A track still fading out keeps fading when the music changes
+ * again, unless it is the one wanted again, which fades back up from where it is. The level is the Music slider
+ * (musicLevel), silent when muted or in a cutscene; a slider change glides, and the music coming back from silence
+ * fades in. A file the asset server does not have plays nothing.
+ */
+const ZONE_MUSIC_GLIDE = 0.15;
+interface ZoneTrack { name: string; source: AudioBufferSourceNode; level: GainNode; boost: number; fadeUntil: number }
+let zoneWanted: string | null = null, zoneTrack: ZoneTrack | null = null;
+const zoneFading: ZoneTrack[] = [];
+let zoneCutscene = false, zoneTarget = -1;
+
+function zoneMusicLevel(): number {
+  return musicLevel(Number(musicSlider?.value), !settingsApplied || !!mutedCheckbox?.checked, zoneCutscene);
+}
+
+function holdGain(g: AudioParam, now: number): void {
+  if (typeof (g as any).cancelAndHoldAtTime === "function") (g as any).cancelAndHoldAtTime(now);
+  else { const v = g.value; g.cancelScheduledValues(now); g.setValueAtTime(v, now); }
+}
+
+/** Ramps a gain from the level it has now to `to` along fadePoints. */
+function fadeGain(g: AudioParam, to: number, now: number, seconds: number): void {
+  holdGain(g, now);
+  const from = g.value;
+  for (const [at, level] of fadePoints(from, to, seconds)) g.linearRampToValueAtTime(level, now + at);
+}
+
+/** Fades a track out to silence over ZONE_MUSIC_FADE seconds, then stops it. */
+function fadeOutZoneTrack(ctx: AudioContext, track: ZoneTrack): void {
+  const now = ctx.currentTime;
+  fadeGain(track.level.gain, 0, now, ZONE_MUSIC_FADE);
+  track.fadeUntil = now + ZONE_MUSIC_FADE;
+  try { track.source.stop(now + ZONE_MUSIC_FADE + 0.05); } catch { /* already stopped */ }
+  track.source.onended = () => {
+    track.source.disconnect();
+    track.level.disconnect();
+    const at = zoneFading.indexOf(track);
+    if (at >= 0) zoneFading.splice(at, 1);
+  };
+  zoneFading.push(track);
+}
+
+function startZoneTrack(): void {
+  const ctx = audio, name = zoneWanted;
+  if (!ctx || !name || zoneTrack || ctx.state !== "running") return;
+  const sound = sounds.get(name);
+  if (sound === undefined) { void loadEffect(name); return; }
+  if (!sound || sound instanceof Promise) return;
+  const source = ctx.createBufferSource(), level = ctx.createGain(), now = ctx.currentTime;
+  // USER REPORT 2026-11-18 ("music is not looping correctly. It's not seamlessly repeating"): music is made to loop
+  // over its whole file. Measured the same day, the Mystika tracks (.ogg, .mp3) decode with no silence at either end,
+  // and the step from their last sample to their first is a usual one. loopedBuffer (made for weather noise) cut the
+  // last second off and crossfaded it into the first, so every turn skipped a second of the beat and faded the start
+  // in. The decoded file is looped as it is.
+  source.buffer = sound.buffer;
+  source.loop = true;
+  zoneTarget = zoneMusicLevel();
+  level.gain.setValueAtTime(0, now);
+  for (const [at, value] of fadePoints(0, zoneTarget * sound.boost, ZONE_MUSIC_FADE)) level.gain.linearRampToValueAtTime(value, now + at);
+  source.connect(level).connect(master(ctx));
+  source.start(0, 0);
+  zoneTrack = { name, source, level, boost: sound.boost, fadeUntil: now + ZONE_MUSIC_FADE };
+}
+
+/** Which zone music should play: a file name, or null for none. Asked every look; only a change does anything. */
+export function setZoneMusic(name: string | null): void {
+  const key = name?.trim().toLowerCase() || null;
+  if (key === zoneWanted) { startZoneTrack(); return; }
+  zoneWanted = key;
+  const ctx = audio;
+  const action = zoneMusicAction(key, zoneTrack?.name ?? null, zoneFading.map((track) => track.name));
+  if (ctx && action !== "keep") {
+    if (zoneTrack) { fadeOutZoneTrack(ctx, zoneTrack); zoneTrack = null; }
+    const back = action === "revive" ? zoneFading.find((track) => track.name === key) : undefined;
+    if (back) { reviveZoneTrack(ctx, back); return; }
+  }
+  startZoneTrack();
+}
+
+/** Brings back a track still fading out (walking back over a zone's edge): it fades up from where it is, not anew. */
+function reviveZoneTrack(ctx: AudioContext, track: ZoneTrack): void {
+  const now = ctx.currentTime;
+  zoneFading.splice(zoneFading.indexOf(track), 1);
+  track.source.onended = null;
+  // a later stop() replaces the one the fade set, while the source has not stopped yet
+  try { track.source.stop(now + 1e7); } catch { /* stopped already */ }
+  zoneTarget = zoneMusicLevel();
+  fadeGain(track.level.gain, zoneTarget * track.boost, now, ZONE_MUSIC_FADE);
+  track.fadeUntil = now + ZONE_MUSIC_FADE;
+  zoneTrack = track;
+}
+
+/**
+ * Follows the Music slider, the Muted box and whether a cutscene plays; starts a track that could not start before.
+ * Coming back from silence fades in over ZONE_MUSIC_FADE; a change during a fade in keeps its end; else it glides.
+ */
+export function updateZoneMusic(cutscene: boolean): void {
+  zoneCutscene = cutscene;
+  const ctx = audio;
+  if (!ctx) return;
+  if (!zoneTrack) { startZoneTrack(); return; }
+  const target = zoneMusicLevel();
+  if (Math.abs(target - zoneTarget) < 0.001) return;
+  const now = ctx.currentTime, g = zoneTrack.level.gain, level = target * zoneTrack.boost;
+  if (target >= 0.001 && (zoneTarget < 0.001 || now < zoneTrack.fadeUntil)) {
+    const seconds = zoneTarget < 0.001 ? ZONE_MUSIC_FADE : Math.max(ZONE_MUSIC_GLIDE, zoneTrack.fadeUntil - now);
+    fadeGain(g, level, now, seconds);
+    zoneTrack.fadeUntil = now + seconds;
+  } else {
+    holdGain(g, now);
+    g.setTargetAtTime(level, now, ZONE_MUSIC_GLIDE);
+    zoneTrack.fadeUntil = 0;
+  }
+  zoneTarget = target;
 }

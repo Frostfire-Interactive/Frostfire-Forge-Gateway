@@ -1,4 +1,5 @@
-import { sendRequest } from "./socket.js";
+import { cachedPlayerId, sendRequest } from "./socket.js";
+import Cache from "./cache.js";
 import { canvas, ctx, collisionTilesDebugCheckbox, noPvpDebugCheckbox, shadowsDebugCheckbox } from "./ui.js";
 import { ensureChunkForTile, parseChunkKey, clearChunkFromCache } from "./map.js";
 import { invalidateChunk } from "./glmap/index.js";
@@ -8,6 +9,8 @@ import { panEditorCamera } from "./renderer.js";
 import { TilePreviewCache } from "./tilepreviewcache.js";
 import { getTileSounds, loadTileSounds, onTileSounds, tilesetKey } from "./tilesounds.js";
 import { getTileFootprints, onTileFootprints } from "./footprints.js";
+import type { ClientZone } from "./zonelogic.js";
+import { buildSaveZones, checkZoneEdit, fillHoles, fitZoneEdit, shiftZones, zoneBox, zoneProblems } from "./tileeditorzones.js";
 
 declare global {
   interface Window {
@@ -66,12 +69,18 @@ interface TileChangeGroup {
   changes: TileChange[];
 }
 
-interface ObjectMutation {
+type ObjectMutation = {
   type: 'graveyard' | 'warp';
   name: string;
   oldState: { x?: number, y?: number, width?: number, height?: number } | null;
   newState: { x?: number, y?: number, width?: number, height?: number } | null;
-}
+} | {
+  // A zone: the whole zone before and after the edit (null where there was none), as copies
+  type: 'zone';
+  name: string;
+  oldState: ClientZone | null;
+  newState: ClientZone | null;
+};
 
 class TileEditor {
   public isActive: boolean = false;
@@ -125,6 +134,17 @@ class TileEditor {
   private panLastY = 0;
   private isShiftHeld = false;
   private lastPlacedTilePos: { x: number, y: number } | null = null;
+
+  // The zone map window (/zone-map), opened by the map editor window: the whole map zoomed out, to draw zones on.
+  // Zones are drawn and edited there only (USER REQUEST 2026-11-18: "Disable the in-world zone editing, it should
+  // always be the popup version"); this window keeps them, their undo steps and their save.
+  // Its zones are sent again after every change (once a task), its player marker every half second when he moved.
+  private zoneMapWindow: Window | null = null;
+  private zoneMapQueued = false;
+  private zoneMapTimer: ReturnType<typeof setInterval> | null = null;
+  private zoneMapSentZones: unknown = null;
+  private zoneMapSentUnsaved = false;
+  private zoneMapPlayerAt = '';
 
   constructor() {
     this.setupEventListeners();
@@ -243,6 +263,7 @@ class TileEditor {
       this.windowCloseInterval = null;
     }
 
+    this.closeZoneMap();
     sendRequest({ type: 'EDITOR_CLOSE', data: null });
 
     await this.restoreLayerSnapshot();
@@ -268,6 +289,7 @@ class TileEditor {
     this.selectedTilesPreview.invalidate();
     this.hideSyncNotification();
 
+    this.closeZoneMap();
     sendRequest({ type: 'EDITOR_CLOSE', data: null });
 
     this.restoreLayerSnapshot();
@@ -393,6 +415,11 @@ class TileEditor {
 
   private setupMessageListener() {
     window.addEventListener('message', (e) => {
+      // The zone map window's messages: it is not the map editor window, so they are taken before its check
+      if (typeof e.data?.type === 'string' && e.data.type.startsWith('zoneMap')) {
+        this.onZoneMapMessage(e);
+        return;
+      }
       if (this.editorWindow && e.source !== this.editorWindow) return;
 
       const msg = e.data;
@@ -484,6 +511,7 @@ class TileEditor {
           this.isActive = false;
           this.endOpen();
           this.hideSyncNotification();
+          this.closeZoneMap();
           sendRequest({ type: 'EDITOR_CLOSE', data: null });
           this.restoreLayerSnapshot();
           collisionTilesDebugCheckbox.checked = false;
@@ -631,6 +659,18 @@ class TileEditor {
         });
         window.mapData.warps = warpsObj;
       }
+
+    // Zones by name too (none: an empty set to draw into). Every key a zone has is kept; its box is made when missing
+    // and its holes are filled.
+    if (Array.isArray(window.mapData.zones) || !window.mapData.zones) {
+      const zonesObj: Record<string, ClientZone> = {};
+      (window.mapData.zones || []).forEach((z: any) => {
+        if (!z?.name) return;
+        const outline = Array.isArray(z.outline) ? fillHoles(z.outline) : [];
+        zonesObj[z.name] = { ...z, outline, bbox: z.bbox ?? zoneBox(outline) };
+      });
+      window.mapData.zones = zonesObj;
+    }
     }
 
   private loadLayers() {
@@ -694,6 +734,7 @@ class TileEditor {
   }
 
   private loadObjectLayers() {
+    // Zones are not here: they are drawn and edited in the zone map window only (see onZoneMapMessage)
     const objectTypes = ['Graveyards', 'Warps'];
 
     // Initialize visibility map - all visible by default
@@ -718,6 +759,10 @@ class TileEditor {
 
   public getSelectedObjectName(): string | null {
     return this.selectedObjectName;
+  }
+
+  public getSelectedObject(): string | null {
+    return this.selectedObject;
   }
 
   public setDeleteButtonCoords(type: string, name: string, x: number, y: number, size: number) {
@@ -1510,6 +1555,222 @@ class TileEditor {
     }
 
     return null;
+  }
+
+  // ------------------------------------------------------------------ the Zones layer
+
+  /** A copy of a zone that shares nothing with it. */
+  private copyZone(zone: ClientZone): ClientZone {
+    return structuredClone(zone);
+  }
+
+  /** Puts a zone in the map's zones under its name, with its holes filled and its box made again; gives a copy of what was put. */
+  private putZone(zone: ClientZone): ClientZone {
+    if (!window.mapData.zones || Array.isArray(window.mapData.zones)) window.mapData.zones = {};
+    const copy = this.copyZone(zone);
+    const outline = fillHoles(copy.outline || []);
+    const stored = { ...copy, outline, bbox: zoneBox(outline) };
+    window.mapData.zones[stored.name] = stored;
+    this.notifyZoneMap();
+    return this.copyZone(stored);
+  }
+
+  /** One finished zone edit, as one undo step: the zone before and after (null where there was none). */
+  private recordZoneEdit(before: ClientZone | null, after: ClientZone | null) {
+    const name = (before ?? after)?.name;
+    if (!name) return;
+    this.undoStack.push({
+      type: 'zone',
+      name,
+      oldState: before ? this.copyZone(before) : null,
+      newState: after ? this.copyZone(after) : null
+    });
+    this.redoStack = [];
+    this.unsavedLayers.add('Zones');
+    this.updateLayerList();
+    this.notifyZoneMap();
+  }
+
+  /** Undo and redo of a zone edit: the zone `from` is taken away and `to` put in its place. */
+  private applyZoneState(from: ClientZone | null, to: ClientZone | null) {
+    if (!window.mapData) return;
+    if (from && window.mapData.zones) delete window.mapData.zones[from.name];
+    if (to) this.putZone(to);
+    this.unsavedLayers.add('Zones');
+    this.updateLayerList();
+    this.notifyZoneMap();
+  }
+
+  // ------------------------------------------------------------------ the zone map window
+
+  /**
+   * A message from the zone map window (/zone-map). Only a window of this site that the map editor window opened is
+   * listened to, and only while the map editor is open.
+   */
+  private onZoneMapMessage(e: MessageEvent) {
+    if (e.origin !== window.location.origin || !this.isActive || !window.mapData) return;
+    const source = e.source as Window | null;
+    const msg = e.data;
+    if (msg.type === 'zoneMapReady') {
+      let fromEditor = false;
+      try {
+        fromEditor = !!source && !!this.editorWindow && source.opener === this.editorWindow;
+      } catch {
+        fromEditor = false;
+      }
+      if (!fromEditor) return;
+      this.zoneMapWindow = source;
+      this.zoneMapSentZones = window.mapData.zones;
+      this.zoneMapSentUnsaved = this.unsavedLayers.has('Zones');
+      this.zoneMapPlayerAt = '';
+      this.postZoneMap({
+        type: 'zoneMapInit',
+        map: {
+          name: String(window.mapData.name ?? '').replace(/\.json$/i, ''),
+          width: window.mapData.width,
+          height: window.mapData.height,
+          tilewidth: window.mapData.tilewidth,
+          tileheight: window.mapData.tileheight
+        },
+        assetServerUrl: (window as any).__assetServerUrl || '',
+        zones: this.zoneMapZones(),
+        unsaved: this.unsavedLayers.has('Zones'),
+        player: this.zoneMapPlayer()
+      });
+      this.startZoneMapTimer();
+      return;
+    }
+    if (!this.zoneMapWindow || source !== this.zoneMapWindow) return;
+    switch (msg.type) {
+      case 'zoneMapEdit':
+        this.applyZoneMapEdit(typeof msg.name === 'string' ? msg.name : null, msg.zone && typeof msg.zone === 'object' ? msg.zone : null);
+        break;
+      case 'zoneMapCommand':
+        if (msg.name === 'undo') this.undo();
+        else if (msg.name === 'redo') this.redo();
+        else if (msg.name === 'save') this.save();
+        break;
+      case 'zoneMapClosed':
+        this.zoneMapGone();
+        break;
+    }
+  }
+
+  /** The map's zones by name (none: an empty set). */
+  private zoneMapZones(): Record<string, ClientZone> {
+    const zones = window.mapData?.zones;
+    return zones && !Array.isArray(zones) ? zones : {};
+  }
+
+  /** The player's place in tiles, or null before the player is known. */
+  private zoneMapPlayer(): { x: number; y: number } | null {
+    const me: any = Array.from(Cache.getInstance().players).find((p: any) => p.id === cachedPlayerId);
+    if (!me?.position || !window.mapData) return null;
+    return { x: me.position.x / (window.mapData.tilewidth || 16), y: me.position.y / (window.mapData.tileheight || 16) };
+  }
+
+  /**
+   * An edit made in the zone map window: the zone `oldName` (null: a new zone) becomes `zone` (null: it is deleted).
+   * It is one undo step of the map editor, and the Zones layer is marked unsaved. A zone that lies partly over another
+   * zone is snapped to that zone's edge first (fitZoneEdit). One the server would refuse is not made; the window is told
+   * why and sent the zones as they are.
+   */
+  private applyZoneMapEdit(oldName: string | null, zone: ClientZone | null) {
+    if (!window.mapData.zones || Array.isArray(window.mapData.zones)) window.mapData.zones = {};
+    const zones = window.mapData.zones as Record<string, ClientZone>;
+    const refuse = (message: string) => {
+      this.postZoneMap({ type: 'zoneMapRefused', message });
+      this.sendZoneMapZones();
+    };
+    const problem = checkZoneEdit(zones, oldName, zone, window.mapData.width, window.mapData.height);
+    if (problem) return refuse(problem);
+    if (zone) {
+      const fitted = fitZoneEdit(zones, oldName, { ...zone, outline: fillHoles(zone.outline || []) });
+      if (typeof fitted === 'string') return refuse(fitted);
+      // The snapped outline is checked again: a cut gives new points, which must still lie on the map and not cross
+      const again = checkZoneEdit(zones, oldName, fitted, window.mapData.width, window.mapData.height);
+      if (again) return refuse(again);
+      zone = fitted;
+    }
+    const before = oldName !== null ? this.copyZone(zones[oldName]) : null;
+    if (oldName !== null) delete zones[oldName];
+    const after = zone ? this.putZone({ ...zone, name: zone.name.trim() }) : null;
+    this.recordZoneEdit(before, after);
+  }
+
+  /** The zones changed: the zone map window is sent them once the change is done (once a task, however many). */
+  private notifyZoneMap() {
+    if (!this.zoneMapWindow || this.zoneMapQueued) return;
+    this.zoneMapQueued = true;
+    queueMicrotask(() => {
+      this.zoneMapQueued = false;
+      this.sendZoneMapZones();
+    });
+  }
+
+  private sendZoneMapZones() {
+    const target = this.zoneMapWindow;
+    if (!target) return;
+    if (target.closed) {
+      this.zoneMapGone();
+      return;
+    }
+    this.zoneMapSentZones = window.mapData?.zones;
+    this.zoneMapSentUnsaved = this.unsavedLayers.has('Zones');
+    const map = String(window.mapData?.name ?? '').replace(/\.json$/i, '');
+    this.postZoneMap({ type: 'zoneMapZones', map, zones: this.zoneMapZones(), unsaved: this.unsavedLayers.has('Zones') });
+  }
+
+  /**
+   * Every half second while the zone map is open: the player's place when the player moved, and the zones when the map's
+   * zones were put back whole (the map loaded again after someone's save) rather than changed here, or were saved.
+   */
+  private startZoneMapTimer() {
+    if (this.zoneMapTimer) return;
+    this.zoneMapTimer = setInterval(() => {
+      const target = this.zoneMapWindow;
+      if (!target || target.closed) {
+        this.zoneMapGone();
+        return;
+      }
+      if (window.mapData?.zones !== this.zoneMapSentZones || this.unsavedLayers.has('Zones') !== this.zoneMapSentUnsaved) this.sendZoneMapZones();
+      const at = this.zoneMapPlayer();
+      const key = at ? `${Math.round(at.x * 4)},${Math.round(at.y * 4)}` : '';
+      if (key !== this.zoneMapPlayerAt) {
+        this.zoneMapPlayerAt = key;
+        this.postZoneMap({ type: 'zoneMapPlayer', player: at });
+      }
+    }, 500);
+  }
+
+  /** The zone map window has gone: nothing more is sent to it. */
+  private zoneMapGone() {
+    if (this.zoneMapTimer) {
+      clearInterval(this.zoneMapTimer);
+      this.zoneMapTimer = null;
+    }
+    this.zoneMapWindow = null;
+    this.zoneMapSentZones = null;
+    this.zoneMapPlayerAt = '';
+  }
+
+  /** The map editor is closing: the zone map window closes with it. */
+  private closeZoneMap() {
+    const target = this.zoneMapWindow;
+    this.zoneMapGone();
+    try {
+      if (target && !target.closed) target.close();
+    } catch {
+      // it went by itself
+    }
+  }
+
+  private postZoneMap(msg: any) {
+    try {
+      this.zoneMapWindow?.postMessage(msg, window.location.origin);
+    } catch {
+      // closed between the check and the send: the timer finds it gone
+    }
   }
 
   private onMapMouseUp() {
@@ -2410,6 +2671,13 @@ class TileEditor {
     const item = this.undoStack.pop();
     if (!item) return;
 
+    // A zone edit: the zone as it was is put back
+    if ('type' in item && item.type === 'zone') {
+      this.applyZoneState(item.newState, item.oldState);
+      this.redoStack.push(item);
+      return;
+    }
+
     // Handle ObjectMutation
     if ('type' in item && (item.type === 'graveyard' || item.type === 'warp')) {
       const mutation = item as ObjectMutation;
@@ -2596,6 +2864,13 @@ class TileEditor {
   private redo() {
     const item = this.redoStack.pop();
     if (!item) return;
+
+    // A zone edit: the zone as the edit left it is put back
+    if ('type' in item && item.type === 'zone') {
+      this.applyZoneState(item.oldState, item.newState);
+      this.undoStack.push(item);
+      return;
+    }
 
     // Handle ObjectMutation
     if ('type' in item && (item.type === 'graveyard' || item.type === 'warp')) {
@@ -3094,8 +3369,19 @@ class TileEditor {
     const hasChunkChanges = this.undoStack.length > 0;
     const hasGraveyardChanges = window.mapData?.graveyards !== undefined;
     const hasWarpChanges = window.mapData?.warps !== undefined;
+    const hasZoneChanges = this.unsavedLayers.has('Zones');
 
-    if (!hasChunkChanges && !hasGraveyardChanges && !hasWarpChanges) {
+    if (!hasChunkChanges && !hasGraveyardChanges && !hasWarpChanges && !hasZoneChanges) {
+      return;
+    }
+
+    // Validate zones before saving: every ring has at least three points
+    const editorZones = window.mapData?.zones && !Array.isArray(window.mapData.zones) ? window.mapData.zones as Record<string, ClientZone> : null;
+    const invalidZones = editorZones ? zoneProblems(editorZones) : [];
+    if (invalidZones.length > 0) {
+      const message = `Cannot save: Invalid zones: ${invalidZones.join(', ')}`;
+      console.error(message);
+      this.showNotification(message, 'error', 5000);
       return;
     }
 
@@ -3169,6 +3455,11 @@ class TileEditor {
       for (const g of Object.values(window.mapData.graveyards || {}) as any[]) {
         if (g?.position) { g.position.x += dpx; g.position.y += dpy; }
       }
+      // Zones are in tiles, and the server keeps the ones it has when none are sent: moved ones are sent
+      if (editorZones && Object.keys(editorZones).length > 0) {
+        shiftZones(editorZones, shiftTilesX, shiftTilesY);
+        this.unsavedLayers.add('Zones');
+      }
     }
 
     // Count objects being saved
@@ -3199,6 +3490,9 @@ class TileEditor {
         warps: warpsArray
       }
     };
+    // The zones only when they changed: left out, the server keeps those it has
+    const zonesToSave = buildSaveZones(editorZones, this.unsavedLayers.has('Zones'));
+    if (zonesToSave) savePayload.data.zones = zonesToSave;
 
     sendRequest(savePayload);
 
@@ -3214,6 +3508,7 @@ class TileEditor {
     // Clear unsaved layers tracking
     this.unsavedLayers.clear();
     this.updateLayerList();
+    this.notifyZoneMap();
   }
 
   private setTool(tool: 'paint' | 'erase' | 'copy' | 'paste') {
@@ -3888,7 +4183,6 @@ class TileEditor {
     // Add to tile editor container
       document.body.appendChild(this.propertiesPanel);
   }
-
 
   private openAddPropertyModal(objectData: any, excludedKeys: Set<string>, onComplete: () => void) {
     // Create modal overlay

@@ -4,7 +4,7 @@ description: What Frostfire Forge is, what it can do, and the three servers that
 order: 10
 ---
 
-Frostfire Forge is a 2D MMO engine platform written in TypeScript and run on [Bun](https://bun.sh). This page explains what you get, which servers you have to run, and where to go next.
+Frostfire Forge is a 2D MMO engine platform written in TypeScript that runs on [Bun](https://bun.sh). This page explains what you get, which servers you have to run, and where to go next.
 
 ## What Frostfire Forge is
 

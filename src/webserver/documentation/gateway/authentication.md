@@ -93,6 +93,8 @@ With `GUEST_MODE_ENABLED=true` the "Continue as guest" link on the login page ca
 
 With guest mode off the route answers `403` with `Guest mode is disabled`.
 
+A guest account has no profile. Every `/api/profile` route except `generate-password` answers an account with `guest_mode = 1` with `403` and `{"guest": true, "message": "Guest accounts have no profile"}`, before the route does anything. The profile page shows that message, and the game menu leaves out its **Manage Profile** button for a guest.
+
 On a timer the webserver deletes guest accounts that are offline, have no session, have not logged in recently and are in no party or guild; the engine still deletes every guest account when it starts.
 
 `POST /guest-bulk` creates many guest accounts in one request for load tests. It needs guest mode on and the value of `GATEWAY_GAME_SERVER_SECRET` in an `X-Benchmark-Secret` header or as a bearer token. The body `{"count": 500}` asks for that many accounts (a default is used when `count` is left out) and the response lists their tokens. See [Benchmarking](#/engine/benchmarking).
@@ -215,6 +217,8 @@ Any other path redirects to `/` with a `301`.
 | POST | `/api/client-log` | Token | Forward browser console errors to the server log. Limited per player. |
 
 ### Profile
+
+Every route here except `generate-password` refuses a guest account with `403` (see [Guest mode](#/gateway/authentication/guest-mode)).
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |

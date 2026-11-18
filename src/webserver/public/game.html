@@ -59,11 +59,14 @@
     </div>
     <div id="options-menu-container" class="ui">
       <div id="options-menu" class="ui">
-        <button type="button" class="menu-close-button" id="options-menu-close">✕</button>
+        <div id="options-menu-header" class="pause-header">
+          <h1 id="options-menu-title">Settings</h1>
+          <button type="button" class="menu-close-button" id="options-menu-close">✕</button>
+        </div>
         <div id="options-menu-selections-container" class="ui">
           <div class="settings-row">
             <label id="limit-fps-label" class="ui">FPS:</label>
-            <input type="range" min="30" max="240" value="50" step="1" class="slider" id="fps-slider" class="ui">
+            <input type="range" min="30" max="240" value="60" step="1" class="slider" id="fps-slider" class="ui">
           </div>
           <div class="settings-row">
             <label id="music-volume-label" class="ui">Music:</label>
@@ -71,15 +74,15 @@
           </div>
           <div class="settings-row">
             <label id="effects-volume-label" class="ui">Effects:</label>
-            <input type="range" min="0" max="100" value="50" step="1" class="slider" id="effects-slider" class="ui">
+            <input type="range" min="0" max="100" value="30" step="1" class="slider" id="effects-slider" class="ui">
           </div>
           <div class="settings-row">
             <label id="ambience-volume-label" class="ui">Ambience:</label>
-            <input type="range" min="0" max="100" value="100" step="1" class="slider" id="ambience-slider" class="ui">
+            <input type="range" min="0" max="100" value="50" step="1" class="slider" id="ambience-slider" class="ui">
           </div>
           <div class="settings-row">
             <label id="weather-volume-label" class="ui">Weather:</label>
-            <input type="range" min="0" max="100" value="100" step="1" class="slider" id="weather-slider" class="ui">
+            <input type="range" min="0" max="100" value="60" step="1" class="slider" id="weather-slider" class="ui">
           </div>
           <div class="settings-row">
             <label id="muted-label" class="ui">Muted:</label>
@@ -88,6 +91,18 @@
           <div class="settings-row">
             <label id="auto-loot-label" class="ui" for="auto-loot-checkbox">Auto loot:</label>
             <input type="checkbox" id="auto-loot-checkbox" class="ui">
+          </div>
+          <div class="settings-row">
+            <label class="ui">Hotkeys:</label>
+            <button type="button" id="options-hotkeys-open" class="pause-button ui">Rebind keys</button>
+          </div>
+        </div>
+        <div id="options-hotkeys-container" class="ui">
+          <div id="options-hotkeys-list" class="ui"></div>
+          <div id="options-hotkeys-footer" class="ui">
+            <button type="button" id="options-hotkeys-back" class="pause-button ui">Back</button>
+            <div id="options-hotkeys-message" class="ui" aria-live="polite"></div>
+            <button type="button" id="options-hotkeys-reset" class="pause-button pause-button-danger ui">Reset to defaults</button>
           </div>
         </div>
       </div>

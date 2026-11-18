@@ -68,7 +68,7 @@ Three kinds of layer are recognised by name and marked with their own icon:
 
 Every other layer is a plain tile layer.
 
-The object layers are **Graveyards** and **Warps**. Selecting one switches the game window from painting tiles to placing and editing those objects, and turns the tile tools off.
+The object layers are **Graveyards** and **Warps**. Selecting one switches the game window from painting tiles to placing and editing those objects, and turns the tile tools off. Zones are drawn in the zone map window, described under Zones below.
 
 ### Toolbar
 
@@ -182,6 +182,57 @@ If any warp is missing `map`, `x` or `y`, the save is refused with "Cannot save:
 
 Graveyards are where players return after dying. See [Combat and Spells](#/player-guide/combat-and-spells).
 
+## Zones
+
+A zone is a named area drawn as an outline on the map. When a player walks into it, its text shows at the top of the screen and its music fades in. How the game uses zones is described in [Zones](#/engine/zones).
+
+Zones are drawn and edited in the zone map, a window of its own. **Zones**, at the end of the row of views at the top of the map editor (Tiles, Sounds, Fishing, Footprints), opens it. A dot on **Zones** marks zone edits that are not saved yet.
+
+### Zone map
+
+The zone map shows the whole map, so zones of any size can be drawn. It shows the asset server's baked picture of the map (the one the world map shows), with the full-detail pictures once zoomed in close. Your character is the blue dot. Every point snaps to the nearest tile corner.
+
+| Action | Result |
+| --- | --- |
+| Mouse wheel | Zooms around the cursor, from the whole map down to single tiles |
+| Drag an empty part of the map, or drag with the middle button | Pans |
+| `S` | Select tool |
+| `D` | Draw tool |
+| `F`, or **Whole map** | Shows the whole map |
+| **Find me** | Centres the map on your character |
+| `+` and `-` | Zoom in and out |
+
+With the **Select** tool:
+
+| Action | Result |
+| --- | --- |
+| Click a zone, or its name in the list | Selects it. Clicking a name in the list also frames the zone. |
+| Drag a zone | Moves it |
+| Drag a point of the selected zone | Moves that point |
+| Click an edge of the selected zone | Adds a point there |
+| Right click a point, or select it and press `Delete` | Deletes the point |
+| `Delete` or `Backspace` | Deletes the selected zone, after asking |
+| `Escape` | Clears the selection |
+
+With the **Draw** tool, each click places a point on a tile corner. Clicking the first point, double clicking or pressing `Enter` closes the zone (3 points or more). `Backspace` takes back the last point and `Escape` stops drawing. The new zone is called "New zone", is selected, and its name is ready to type over.
+
+A zone can be drawn inside another one: a town inside a forest. The player is in the smallest zone they stand in.
+
+Two zones never lie partly over each other. A zone drawn, moved or reshaped partly over another zone snaps to that zone's edge. When most of it is outside the other zone, the part over that zone is cut away. When most of it is inside, the part outside is cut away, so it becomes a zone inside that one. How the cut is made is described in [Zones](#/engine/zones).
+
+A zone's border never crosses itself. While drawing, the dashed line to the next point turns red where that point would make the border cross. A point placed there, a close that would cross, or a dragged point that would cross is not made, and the message "A zone's border cannot cross itself" shows. A zone saved with a border that crosses itself is drawn with a red border, and its panel says so: drag its points until the red border no longer crosses.
+
+The panel on the right holds the selected zone's fields:
+
+| Field | Meaning |
+| --- | --- |
+| Name | The zone's name, unique on the map in any case |
+| Text | What is shown on entering the zone. When empty, the zone's name is shown. |
+| Music | A track from the asset server's audio files, picked from a searchable list. "No music" clears it. A zone without music keeps the music of the zone around it. |
+| Kind | `none`, `desert` (sandstorms are drawn here) or `snow` (blizzards are drawn here) |
+
+The zone map does not hold zones of its own. The game window holds them, and each edit made in the zone map is sent there: it is one undo step of the map editor and marks the zones unsaved. Undo, Redo and Save in the zone map (and `Ctrl+Z`, `Ctrl+Y`, `Ctrl+S`) do the same as the map editor's. When the map grows to the left or up, the zones move with the tiles when the map is saved. The zone map closes when the map editor closes, and shows the new map when the game changes maps.
+
 ## Keyboard shortcuts
 
 These work in both the tool window and the game window.
@@ -211,13 +262,17 @@ Several admins can edit the same map at once.
 
 ## Saving
 
-Save sends a `SAVE_MAP` packet with the changed chunks, the map bounds, and all graveyards and warps. The game server then:
+Save sends a `SAVE_MAP` packet with the changed chunks, the map bounds, all graveyards and warps, and the zones when they changed. The game server then:
 
 1. Checks `server.admin` or `server.*`.
-2. Sends the changed chunks to the asset server (`/save-map-chunks`) and the graveyards and warps (`/save-map-properties`).
+2. Sends the changed chunks to the asset server (`/save-map-chunks`) and the graveyards, warps and zones (`/save-map-properties`).
 3. Reloads the map so collision and zones match the new tiles.
 4. Answers "Map saved successfully!" with the number of chunks updated.
-5. Tells the other players on the map to reload the changed chunks.
+5. Tells the other players on the map to reload the changed chunks, and sends every player on the map the new zones (`MAP_ZONES`).
+
+The map stays on screen while it is saved, for every player on it: there is no loading screen, and the editor stays open. The asset server tells every game server of each save as soon as it has written it, often before the save has finished. The game server leaves that to the save in progress, which reloads the map itself (step 3). In [cluster mode](#/engine/cluster) the saving node first tells the other nodes that a save of the map is under way, and they leave the asset server's word to the save too. Each node then takes in the save from the saving node's news and sends its players the changed chunks. A save that fails after the asset server has written it ends with the map taken in like any other change on the asset server.
+
+A zone with fewer than 3 points refuses the save with "Cannot save: Invalid zones" and the names of the zones to fix. A zone the server refuses (a point outside the map, a name used twice) gives "Cannot save zones:" and the reason.
 
 Large world maps (see [World Maps](#/engine/world-maps)) are saved the same way, except that the asset server writes the chunks into the world's packs and the game server fetches the new collision and no-PvP data afterwards. A world's size is fixed. For larger edits, a world can also be edited in Tiled with [Frostfire Worlds for Tiled](#/tools/tiled-worlds).
 

@@ -319,7 +319,7 @@ strong { font-weight: 600; }
   height: 32px;
   border-radius: 9px;
   /* Frost to fire. */
-  background: linear-gradient(140deg, #38bdf8, #6366f1 45%, #f97316);
+  background: #6366f1;
   color: #fff;
 }
 .tl-brand-words { display: grid; min-width: 0; line-height: 1.25; }
@@ -444,7 +444,7 @@ strong { font-weight: 600; }
 .tl-card-tools:empty { display: none; }
 .tl-card-body { flex: 1; min-width: 0; padding: 14px var(--s-4) var(--s-4); }
 .tl-card-flush .tl-card-body { padding: var(--s-3) 0 var(--s-1); }
-.tl-card-danger { border-color: var(--danger-line); background: linear-gradient(0deg, rgba(248, 113, 113, 0.05), rgba(248, 113, 113, 0.05)), var(--surface); }
+.tl-card-danger { border-color: var(--danger-line); background: color-mix(in srgb, #f87171 5%, var(--surface)); }
 .tl-card-danger .tl-card-title { color: var(--danger-text); }
 
 .tl-sectionbar { display: flex; align-items: flex-end; gap: var(--s-4); margin-top: var(--s-2); }
@@ -676,15 +676,14 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
 
 .tl-skeleton {
   border-radius: var(--r-lg);
-  background: linear-gradient(100deg, var(--surface) 30%, rgba(148, 163, 184, 0.1) 50%, var(--surface) 70%);
-  background-size: 300% 100%;
-  animation: tl-shimmer 1.6s linear infinite;
+  background: var(--surface);
+  animation: tl-shimmer 1.6s ease-in-out infinite;
 }
 .tl-skeleton-tile { height: 124px; }
 .tl-skeleton-block { height: 320px; }
 .tl-skeleton-row { height: 44px; border-radius: var(--r-md); }
 .tl-skeleton-line { height: 12px; border-radius: var(--r-sm); }
-@keyframes tl-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@keyframes tl-shimmer { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
 /* A field searched on the server, with its matches listed under it. */
 .tl-suggest-wrap { position: relative; min-width: 0; }
@@ -955,16 +954,13 @@ th.tl-num .tl-sort { flex-direction: row-reverse; }
   inset: -2px;
   border-radius: 6px;
   padding: 2px;
-  background: linear-gradient(135deg, #ff6b6b, #ffb347, #ffe66d, #51cf66, #45b7d1, #9b59b6, #ff6b6b);
-  background-size: 300% 300%;
-  animation: tl-rainbow 4s ease-in-out infinite;
+  background: #ffb347;
   pointer-events: none;
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask-composite: exclude;
 }
-@keyframes tl-rainbow { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
 
 /* ------------------------------------------------------------ more of forms */
 

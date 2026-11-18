@@ -1,5 +1,6 @@
 import Cache from "./cache.js";
-import { canvasDpr, worldToScreen } from "./worldzoom.js";
+import { canvasDpr, worldToScreen, worldZoom } from "./worldzoom.js";
+import { badgeLabel, CHEST_BADGE, drawKeyBadge, LOOT_BADGE } from "./keybadge.js";
 
 const QUALITY_COLORS: Record<string, string> = {
   common: "#9d9d9d",
@@ -320,40 +321,11 @@ export function renderLootInteractionHint(
   ctx.globalAlpha = 1;
   ctx.lineWidth = 2;
 
-  // where the world zoom puts the loot on the screen (worldzoom.ts), in the canvas's own pixels
+  // where the world zoom puts the loot on the screen (worldzoom.ts), in the canvas's own pixels, as large as the zoom
+  // makes the loot; the Interact key as bound (keybadge.ts)
   const dpr = canvasDpr();
   const at = worldToScreen(nearestLoot.x, nearestLoot.y - 70);
-  const x = at.x * dpr;
-  const y = at.y * dpr;
-  const radius = 14 * dpr;
-
-  ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-
-  if (progress > 0) {
-    const angle = progress * Math.PI * 2;
-    ctx.beginPath();
-    ctx.arc(x, y, radius + 4 * dpr, -Math.PI / 2, -Math.PI / 2 + angle);
-    ctx.strokeStyle = "#FFD700";
-    ctx.lineWidth = 3 * dpr;
-    ctx.stroke();
-  }
-
-  ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
-  ctx.fill();
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
-  ctx.lineWidth = 2 * dpr;
-  ctx.stroke();
-
-  ctx.fillStyle = "#FFFFFF";
-  ctx.font = `bold ${12 * dpr}px 'Comic Relief', sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("E", x, y);
-
-  ctx.restore();
+  drawKeyBadge(ctx, at.x * dpr, at.y * dpr, "interact", dpr * worldZoom(), LOOT_BADGE, progress);
 }
 
 export function renderLootChests(
@@ -367,6 +339,8 @@ export function renderLootChests(
 
   const now = performance.now();
   const fo = Math.round(Math.sin(now * 0.0015) * 3);
+  // the Open Chest key as bound, over each chest
+  const chestKey = badgeLabel("openChest");
   ctx.save();
   for (const c of chests) {
     const sx = c.x, sy = c.y;
@@ -381,7 +355,7 @@ export function renderLootChests(
     if (img && img.complete) { ctx.drawImage(img, x, y, sz, sz); }
     ctx.font = "bold 9px 'Comic Relief', sans-serif"; ctx.textAlign = "center";
     ctx.fillStyle = "#FFD700"; ctx.shadowColor = "rgba(0,0,0,0.8)"; ctx.shadowBlur = 3;
-    ctx.fillText("F", sx, y - 8);
+    ctx.fillText(chestKey, sx, y - 8);
     ctx.shadowColor = "transparent"; ctx.shadowBlur = 0;
   }
   ctx.restore();
@@ -404,23 +378,11 @@ export function renderChestInteractionHint(
   }
   if (!nc) return;
   ctx.shadowBlur = 0; ctx.shadowColor = "transparent"; ctx.globalAlpha = 1; ctx.lineWidth = 2;
-  // where the world zoom puts the chest on the screen (worldzoom.ts), in the canvas's own pixels
+  // where the world zoom puts the chest on the screen (worldzoom.ts), in the canvas's own pixels, as large as the zoom
+  // makes the chest; the Open Chest key as bound (keybadge.ts)
   const dpr = canvasDpr();
   const at = worldToScreen(nc.x, nc.y - 72);
-  const rx = at.x * dpr;
-  const ry = at.y * dpr;
-  const rr = 15 * dpr;
-  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (progress > 0) {
-    ctx.beginPath(); ctx.arc(rx, ry, rr + 4 * dpr, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
-    ctx.strokeStyle = "#FFD700"; ctx.lineWidth = 3 * dpr; ctx.stroke();
-  }
-  ctx.beginPath(); ctx.arc(rx, ry, rr, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(0,0,0,0.65)"; ctx.fill();
-  ctx.strokeStyle = "rgba(255,215,0,0.8)"; ctx.lineWidth = 2 * dpr; ctx.stroke();
-  ctx.fillStyle = "#FFD700"; ctx.font = `bold ${12 * dpr}px 'Comic Relief', sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillText("F", rx, ry);
-  ctx.restore();
+  drawKeyBadge(ctx, at.x * dpr, at.y * dpr, "openChest", dpr * worldZoom(), CHEST_BADGE, progress);
 }
 
 (window as any).renderLootChests = renderLootChests;

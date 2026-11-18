@@ -168,6 +168,12 @@ async function loadProfile() {
     }
     if (response.status === 403) {
       const body = await response.json();
+      // A guest account has no profile: say so where the profile would be.
+      if (body.guest) {
+        const loadingEl = document.getElementById('profile-loading');
+        if (loadingEl) loadingEl.textContent = 'Guest accounts have no profile. Create an account to have one.';
+        return;
+      }
       window.location.href = body.redirect || '/2fa-challenge';
       return;
     }

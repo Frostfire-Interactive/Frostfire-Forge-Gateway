@@ -5,6 +5,7 @@ import { getCachedImage } from "./images.js";
 import { markerAt, markerIconUrl, markersVersion } from "./mapmarkers.js";
 import { drawMapPicture } from "./mappin.js";
 import { tornadoSpots } from "./tornado.js";
+import { zoneAt, zoneLabelPoint, type ClientZone } from "./zonelogic.js";
 
 /**
  * Full world map (M): the whole map at once from its baked image (bakedmap.ts: the asset server bakes one pixel per tile
@@ -219,6 +220,13 @@ function build() {
     viewX -= dx / zoom; viewY -= dy / zoom;
   };
   for (const type of ["mousedown", "touchstart"]) root.addEventListener(type, () => { slack = 0; }, { passive: true });
+  // the zone under the mouse is lit (drawZones); a touch screen has no hover
+  root.addEventListener("mousemove", (e) => {
+    if (TOUCH || !canvas) return;
+    const r = canvas.getBoundingClientRect();
+    pointer = { x: e.clientX - r.left, y: e.clientY - r.top };
+  });
+  root.addEventListener("mouseleave", () => { pointer = null; });
   window.addEventListener("mousemove", (e) => {
     if (!dragging || !open) return;
     pan(e.clientX - dragX, e.clientY - dragY); dragX = e.clientX; dragY = e.clientY;
@@ -299,6 +307,100 @@ function mapPlaces(tw: number, th: number): MapPlace[] {
     });
   }
   return places;
+}
+
+/**
+ * The map's zones as the world map draws them: each one's outline (a path in tiles) and where its name goes. Worked
+ * out again only for a zone the map editor replaced (an edit makes a new zone object with a new outline).
+ */
+interface MapZone { name: string; zone: ClientZone; outline: unknown; path: Path2D; label: { x: number; y: number } }
+const mapZoneCache = new Map<string, MapZone>();
+
+function mapZones(): MapZone[] {
+  const zones = window.mapData?.zones as ClientZone[] | Record<string, ClientZone> | undefined;
+  const entries: Array<[string, ClientZone]> = !zones ? [] : Array.isArray(zones) ? zones.map((zone) => [zone.name, zone]) : Object.entries(zones);
+  const list: MapZone[] = [], seen = new Set<string>();
+  for (const [name, zone] of entries) {
+    if (!zone || !Array.isArray(zone.outline) || !zone.bbox) continue;
+    seen.add(name);
+    let entry = mapZoneCache.get(name);
+    if (!entry || entry.zone !== zone || entry.outline !== zone.outline) {
+      const path = new Path2D();
+      for (const ring of zone.outline) {
+        ring.forEach(([x, y], i) => (i === 0 ? path.moveTo(x, y) : path.lineTo(x, y)));
+        path.closePath();
+      }
+      entry = { name, zone, outline: zone.outline, path, label: zoneLabelPoint({ ...zone, name }) };
+      mapZoneCache.set(name, entry);
+    }
+    list.push(entry);
+  }
+  for (const name of mapZoneCache.keys()) if (!seen.has(name)) mapZoneCache.delete(name);
+  return list;
+}
+
+/** Where the mouse is over the map (screen px), or null while it is off the map, dragging or on a touch screen. */
+let pointer: { x: number; y: number } | null = null;
+
+/** The zones drawn this frame and the one under the mouse, for their names (drawZoneNames). */
+interface ZoneFrame { zones: MapZone[]; hovered: ClientZone | null }
+
+/**
+ * The zones on the map: every border, and the zone under the mouse lit with a brighter tint (the smallest one there,
+ * as in game). Their names are written later, over the icons (drawZoneNames).
+ */
+function drawZones(ctx: CanvasRenderingContext2D, w: number, h: number, dpr: number): ZoneFrame | null {
+  const zones = mapZones();
+  if (!zones.length) return null;
+  const hovered = pointer && !dragging
+    ? zoneAt(zones.map((z) => z.zone), viewX + (pointer.x - w / 2) / zoom, viewY + (pointer.y - h / 2) / zoom)
+    : null;
+  // the paths are in tiles: drawn through the view's transform, with line widths in screen px divided by the zoom
+  ctx.save();
+  ctx.setTransform(dpr * zoom, 0, 0, dpr * zoom, dpr * (w / 2 - viewX * zoom), dpr * (h / 2 - viewY * zoom));
+  for (const z of zones) {
+    if (z.zone !== hovered) continue;
+    ctx.globalCompositeOperation = "screen";
+    ctx.fillStyle = "rgba(255, 236, 190, 0.32)";
+    ctx.fill(z.path, "evenodd");
+    ctx.globalCompositeOperation = "source-over";
+  }
+  ctx.lineJoin = "round";
+  for (const z of zones) {
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.45)";
+    ctx.lineWidth = 3 / zoom;
+    ctx.stroke(z.path);
+    ctx.strokeStyle = z.zone === hovered ? "rgba(255, 244, 214, 1)" : "rgba(255, 232, 180, 0.75)";
+    ctx.lineWidth = (z.zone === hovered ? 2 : 1.25) / zoom;
+    ctx.stroke(z.path);
+  }
+  ctx.restore();
+  return { zones, hovered };
+}
+
+/**
+ * Each zone's name, written deep inside its zone, over the houses, caves, warps and tornadoes (USER REPORT 2026-11-18:
+ * "zone text is behind map icons"). A zone too small on screen to read is left unnamed.
+ */
+function drawZoneNames(ctx: CanvasRenderingContext2D, w: number, h: number, frame: ZoneFrame | null) {
+  if (!frame) return;
+  const { zones, hovered } = frame;
+  const toX = (ix: number) => w / 2 + (ix - viewX) * zoom, toY = (iy: number) => h / 2 + (iy - viewY) * zoom;
+  ctx.save();
+  ctx.font = "600 13px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineJoin = "round";
+  for (const z of zones) {
+    const name = z.name;
+    if (!name) continue;
+    const sx = toX(z.label.x), sy = toY(z.label.y);
+    if (sx < -100 || sy < -20 || sx > w + 100 || sy > h + 20) continue;
+    if (z.zone !== hovered && Math.max(z.zone.bbox.w, z.zone.bbox.h) * zoom < 36) continue;
+    ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0, 0, 0, 0.8)"; ctx.strokeText(name, sx, sy);
+    ctx.fillStyle = z.zone === hovered ? "#ffffff" : "#fff1cc"; ctx.fillText(name, sx, sy);
+  }
+  ctx.restore();
 }
 
 /** Picks up the shared baked image; fits the view the first time a map's image is there. */
@@ -399,6 +501,9 @@ function draw() {
       }
     }
     // (no outline round the image: USER REQUEST 2026-10-03 "Remove the borders in the map image")
+    // zones' borders and tint under the warps, their names over them (USER REQUEST 2026-11-18: names, borders and a
+    // brighter tint on the one hovered)
+    const zoneFrame = drawZones(ctx, w, h, dpr);
 
     const tw = window.mapData?.tilewidth || 16, th = window.mapData?.tileheight || 16;
     // warps: a house on each door into one, a cave mouth on each cave, and a mark on any other, with where it leads
@@ -451,6 +556,7 @@ function draw() {
       if (sx < -40 || sy < -40 || sx > w + 40 || sy > h + 40) continue;
       drawTornadoMark(ctx, sx, sy, labelled);
     }
+    drawZoneNames(ctx, w, h, zoneFrame);
     ctx.restore();
     // the player
     const me: any = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);

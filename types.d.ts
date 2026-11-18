@@ -12,6 +12,8 @@ interface GameServer {
   useSSL: boolean;
   lastHeartbeat: number;
   activeConnections: number;
+  /** How many of activeConnections the realm list leaves out: stealthed players (gateway/onlinecount.ts). */
+  hiddenConnections?: number;
   maxConnections: number;
   cpuUsage?: number;
   ramUsage?: number;

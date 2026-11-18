@@ -7,6 +7,7 @@ import { setMap as setMapMobile } from "./glmap-mobile/index.js";
 import { MOBILE_RENDERER } from "./renderpath.js";
 import { applyWorldTransform } from "./worldzoom.js";
 import { frameSize } from "./cutsceneframe.js";
+import { zonesLoaded } from "./areazones.js";
 
 const PLAYER_Z_INDEX = config?.PLAYER_Z_INDEX;
 declare global {
@@ -230,6 +231,8 @@ export default async function loadMap(metadata: any): Promise<boolean> {
       deserts: Array.isArray(metadata?.deserts) ? metadata.deserts : null,
       // and its snow zones: a blizzard is only drawn inside them (blizzard.ts)
       snowfields: Array.isArray(metadata?.snowfields) ? metadata.snowfields : null,
+      // its named zones (outlines in tiles): the zone text and music of where the player is (areazones.ts)
+      zones: Array.isArray(metadata?.zones) ? metadata.zones : null,
       // the inside of a building (a house's room): no world map there, and the minimap stays zoomed all the way in
       interior: metadata?.interior === true,
       objectLayers: objectLayers,
@@ -348,6 +351,7 @@ export default async function loadMap(metadata: any): Promise<boolean> {
     }
 
     progressBar.style.width = "100%";
+    zonesLoaded({ fresh: true });
 
     const rawDpr = window.devicePixelRatio || 1;
     const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;

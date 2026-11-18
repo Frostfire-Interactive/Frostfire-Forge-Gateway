@@ -10,7 +10,7 @@ import { chatInput, pauseMenu, optionsMenu, fpsSlider, musicSlider, effectsSlide
 import { showItemTooltip, hideItemTooltip } from "./tooltip.js";
 import { frameSize } from "./cutsceneframe.js";
 import { getUserHasInteracted, setUserHasInteracted, setControllerConnected, getLastSentDirection, setLastSentDirection, setStickDirection,
-    getLastTypingPacket, setLastTypingPacket, getContextMenuKeyTriggered, setContextMenuKeyTriggered, blacklistedKeys, movementKeys,
+    getLastTypingPacket, setLastTypingPacket, getContextMenuKeyTriggered, setContextMenuKeyTriggered, blacklistedKeys,
     pressedKeys,
     setIsKeyPressed,
     getIsKeyPressed,
@@ -34,6 +34,21 @@ import { closeRadialMenu } from "./mobileui.js";
 import "./creatureinput.js";
 import "./skeletons.js";
 import { applyWorldTransform, installWorldZoom, screenToWorld } from "./worldzoom.js";
+import { actionFor, defaultCodeOf, type ActionId } from "./keybinds.js";
+import "./keybindsui.js";
+
+/** Walking: the bound key of each direction, as the default key it was before (pressedKeys, and the walk code that
+ *  reads it, know the directions by those). */
+const MOVE_ACTIONS: ReadonlySet<ActionId> = new Set<ActionId>(["moveUp", "moveLeft", "moveDown", "moveRight"]);
+
+/** Closes in on the nearest target (the Target Closest key). */
+function targetClosest() {
+  const target = Array.from(cache.players).find(player => player.targeted);
+  if (target) {
+    target.targeted = false;
+  }
+  sendRequest({ type: "TARGETCLOSEST", data: null });
+}
 
 /** Extra world pixels around an NPC that still count as a tap on it (touch only). */
 const TOUCH_TARGET_SLOP = 24;
@@ -266,6 +281,14 @@ chatInput.addEventListener("input", () => {
   }, 1000);
 });
 
+/**
+ * The menu or its Settings (with Hotkeys) is open: game keys do nothing then but Escape, so keys pressed while
+ * choosing settings or a new key do not attack, cast or open windows.
+ */
+function menuOpen(): boolean {
+  return pauseMenu.style.display === "block" || optionsMenu.style.display === "block";
+}
+
 window.addEventListener("keydown", async (e) => {
   // Handle Ctrl+S globally to prevent player movement and spam
   if (e.ctrlKey && e.key === 's') {
@@ -285,15 +308,12 @@ window.addEventListener("keydown", async (e) => {
     setContextMenuKeyTriggered(true);
   }
 
+  const action = actionFor(e.code);
+
   if (blacklistedKeys.has(e.code)) {
 
-    if (e.code === "Tab" && !getContextMenuKeyTriggered()) {
-      const target = Array.from(cache.players).find(player => player.targeted);
-      if (target) {
-        target.targeted = false;
-      }
-
-      sendRequest({ type: "TARGETCLOSEST", data: null });
+    if (action === "targetClosest" && !getContextMenuKeyTriggered() && !menuOpen()) {
+      targetClosest();
       e.preventDefault();
       return;
     }
@@ -301,7 +321,7 @@ window.addEventListener("keydown", async (e) => {
     e.preventDefault();
     return;
   }
-  if (!getIsLoaded() || (pauseMenu.style.display === "block" && e.code !== "Escape")) return;
+  if (!getIsLoaded() || (menuOpen() && e.code !== "Escape")) return;
 
   const activeElement = document.activeElement;
   const isTypingInInput = activeElement && (
@@ -314,9 +334,15 @@ window.addEventListener("keydown", async (e) => {
   // Ignore OS key auto-repeat for everything except movement: holding an
   // action key must not re-fire its handler. (Placed after the input guard
   // so chat typing still repeats normally.)
-  if (e.repeat && !movementKeys.has(e.code)) return;
+  if (e.repeat && !(action && MOVE_ACTIONS.has(action))) return;
 
-  if (e.code === "KeyE") {
+  if (action === "targetClosest") {
+    targetClosest();
+    e.preventDefault();
+    return;
+  }
+
+  if (action === "interact") {
     if (e.repeat) return;
     // Corpses and ghosts cannot pick up loot.
     if (isSelfActionLocked()) return;
@@ -338,7 +364,7 @@ window.addEventListener("keydown", async (e) => {
     return;
   }
 
-  if (e.code === "KeyF") {
+  if (action === "openChest") {
     if (e.repeat) return;
     // Corpses and ghosts cannot open chests.
     if (isSelfActionLocked()) return;
@@ -351,8 +377,8 @@ window.addEventListener("keydown", async (e) => {
     return;
   }
 
-  if (movementKeys.has(e.code)) {
-    pressedKeys.add(e.code);
+  if (action && MOVE_ACTIONS.has(action)) {
+    pressedKeys.add(defaultCodeOf(action));
     if (!getIsKeyPressed()) {
       setIsKeyPressed(true);
       if (!getIsMoving()) {
@@ -362,12 +388,15 @@ window.addEventListener("keydown", async (e) => {
   }
 
   const now = Date.now();
-  const handler = keyHandlers[e.code as keyof typeof keyHandlers];
+  if (!action) return;
+  // The handlers and cooldowns are named by the key each action had before it could be rebound.
+  const key = defaultCodeOf(action);
+  const handler = keyHandlers[key as keyof typeof keyHandlers];
   if (!handler) return;
 
-  if (cooldowns[e.code] && now - cooldowns[e.code] < COOLDOWN_DURATION) return;
+  if (cooldowns[key] && now - cooldowns[key] < COOLDOWN_DURATION) return;
 
-  cooldowns[e.code] = now;
+  cooldowns[key] = now;
 
   try {
     await handler();
@@ -385,7 +414,22 @@ window.addEventListener("keyup", (e) => {  const activeElement = document.active
   );
   if (isTypingInInput) return;
 
-  if (e.code === "KeyE") {
+  const action = actionFor(e.code);
+
+  // With the menu or Settings open a key let go does not interact or open a chest (the key that set a new binding is
+  // let go there too). A loot or chest hold begun before it opened is dropped; movement keys are still let go.
+  if (menuOpen() && (action === "interact" || action === "openChest")) {
+    lootKeyDownTime = null;
+    lootHolding = false;
+    lootPickupProgress = 0;
+    (window as any)._lootPickupProgress = 0;
+    chestKeyDownTime = null;
+    chestHolding = false;
+    chestInteractionProgress = 0;
+    return;
+  }
+
+  if (action === "interact") {
     if (lootKeyDownTime) {
       if (!lootHolding && nearestLootId) {
         sendRequest({ type: "PICKUP_LOOT", data: { id: nearestLootId } });
@@ -407,7 +451,7 @@ window.addEventListener("keyup", (e) => {  const activeElement = document.active
     return;
   }
 
-  if (e.code === "KeyF") {
+  if (action === "openChest") {
     if (chestKeyDownTime) {
       if (!chestHolding && nearestChestId) {
         sendRequest({ type: "OPEN_LOOT_CHEST", data: { chestId: nearestChestId } });
@@ -419,8 +463,8 @@ window.addEventListener("keyup", (e) => {  const activeElement = document.active
     return;
   }
 
-  if (movementKeys.has(e.code)) {
-    pressedKeys.delete(e.code);
+  if (action && MOVE_ACTIONS.has(action)) {
+    pressedKeys.delete(defaultCodeOf(action));
     if (pressedKeys.size === 0) {
       setIsKeyPressed(false);
     }
@@ -616,11 +660,20 @@ document
     optionsMenu.style.display = "block";
   });
 
-document
-  .getElementById("pause-menu-action-profile")
-  ?.addEventListener("click", () => {
-    window.open("/manage-profile", "_blank");
-  });
+const profileButton = document.getElementById("pause-menu-action-profile") as HTMLButtonElement | null;
+profileButton?.addEventListener("click", () => {
+  window.open("/manage-profile", "_blank");
+});
+
+// A guest account has no profile, so the menu leaves out Manage Profile for one. Checked each time the menu opens,
+// as the player's own data may come after the page.
+if (profileButton) {
+  new MutationObserver(() => {
+    if (pauseMenu.style.display !== "block") return;
+    const self = Array.from(Cache.getInstance().players).find((p) => p.id === cachedPlayerId);
+    profileButton.style.display = self?.isGuest ? "none" : "";
+  }).observe(pauseMenu, { attributes: true, attributeFilter: ["style"] });
+}
 
 document
   .getElementById("pause-menu-action-exit")

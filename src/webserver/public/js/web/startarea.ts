@@ -38,9 +38,15 @@
     const PAN_PERIOD_MS = 100000;
     /** Points on the figure eight the animation runs straight between. */
     const PAN_STEPS = 360;
+    /**
+     * How much the picture is blurred, in map pixels (a CSS pixel each when the picture is not scaled up). The blur is
+     * made once, in the picture, so it moves with the map; a CSS blur over the moving picture is made again on every
+     * frame from the screen's pixels, and flickers where the picture is scaled by an uneven amount.
+     */
+    const BLUR = 8;
     const CACHE_NAME = 'start-area-v1';
     /** Part of the cache key: raise it when the picture is made differently, so old ones are not shown. */
-    const PICTURE_BUILD = 2;
+    const PICTURE_BUILD = 3;
 
     const normalizeHost = (host: string): string => (host === 'localhost' ? '127.0.0.1' : host);
 
@@ -67,16 +73,15 @@
         const w = Math.min(viewW + 2 * panX, mapW), h = Math.min(viewH + 2 * panY, mapH);
         const ox = Math.min(Math.max(0, Math.round(area.spawnX - w / 2)), mapW - w);
         const oy = Math.min(Math.max(0, Math.round(area.spawnY - h / 2)), mapH - h);
-        // Two picture pixels to a map pixel on a high density screen: the browser then draws it a screen pixel for
-        // each, so it stays crisp while it moves smoothly between pixels (filtered, not snapped: snapped, a diagonal
-        // drift steps across and down at different moments and judders).
-        const k = (window.devicePixelRatio || 1) >= 1.5 ? 2 : 1;
+        // A picture pixel to every two map pixels: the picture is blurred, so a finer one shows nothing more and only
+        // costs memory. The browser scales it up filtered, so it moves smoothly between pixels.
+        const k = 0.5;
         return { ox, oy, w, h, panX, panY, k };
     }
 
     /**
-     * The worker's whole code, run from its own source (it reads nothing outside itself). Given the area and the
-     * picture's place on the map, it answers with the picture as a PNG blob, or an error.
+     * The worker's whole code, run from its own source (it reads nothing outside itself). Given the area, the
+     * picture's place on the map and the blur in picture pixels, it answers with the picture as a PNG blob, or an error.
      */
     function pictureWorker(): void {
         const HIDDEN = ['collision', 'nopvp', 'no-pvp', 'shadow'];
@@ -96,7 +101,7 @@
         }
         self.onmessage = async (event: MessageEvent) => {
             try {
-                const { area, g } = event.data;
+                const { area, g, blur } = event.data;
                 const tw = area.tilewidth, th = area.tileheight;
                 const chunkSize = CHUNK_SIZES[tw] || 32;
                 const images = await Promise.all(area.tilesets.map((ts: any) => tileset(area.assetServerUrl, ts).catch(() => null)));
@@ -123,11 +128,14 @@
                         .then((data) => ({ x, y, data }))
                         .catch(() => ({ x, y, data: null }))));
 
-                const canvas = new OffscreenCanvas(g.w * g.k, g.h * g.k);
+                const W = Math.round(g.w * g.k), H = Math.round(g.h * g.k);
+                const canvas = new OffscreenCanvas(W, H);
                 const c = canvas.getContext('2d')!;
-                c.imageSmoothingEnabled = false;
+                // the tiles are drawn smaller than they are, so smoothed
+                c.imageSmoothingEnabled = true;
+                c.imageSmoothingQuality = 'high';
                 c.fillStyle = '#05080f';
-                c.fillRect(0, 0, g.w * g.k, g.h * g.k);
+                c.fillRect(0, 0, W, H);
                 for (const { x, y, data } of chunks) {
                     const layers = (Array.isArray(data?.layers) ? data.layers : [])
                         .filter((l: any) => !HIDDEN.some((h) => String(l?.name ?? '').toLowerCase().includes(h)))
@@ -148,6 +156,23 @@
                         }
                     }
                 }
+
+                if (blur > 0) {
+                    // The picture with its edge pixels stretched out round it, so near an edge the blur reads more of
+                    // the edge, not empty space: the edges stay as bright as the middle.
+                    const pad = Math.ceil(blur * 3);
+                    const wide = new OffscreenCanvas(W + 2 * pad, H + 2 * pad);
+                    const e = wide.getContext('2d')!;
+                    e.imageSmoothingEnabled = false;
+                    e.drawImage(canvas, pad, pad);
+                    e.drawImage(canvas, 0, 0, W, 1, pad, 0, W, pad);
+                    e.drawImage(canvas, 0, H - 1, W, 1, pad, pad + H, W, pad);
+                    e.drawImage(wide, pad, 0, 1, H + 2 * pad, 0, 0, pad, H + 2 * pad);
+                    e.drawImage(wide, pad + W - 1, 0, 1, H + 2 * pad, pad + W, 0, pad, H + 2 * pad);
+                    c.filter = `blur(${blur}px)`;
+                    c.drawImage(wide, -pad, -pad);
+                    c.filter = 'none';
+                }
                 (self as any).postMessage({ blob: await canvas.convertToBlob({ type: 'image/png' }) });
             } catch (error) {
                 (self as any).postMessage({ error: String((error as Error)?.message ?? error) });
@@ -166,7 +191,7 @@
                 else reject(new Error(event.data?.error || 'the picture could not be made'));
             };
             worker.onerror = (event) => { worker.terminate(); reject(new Error(event.message)); };
-            worker.postMessage({ area, g });
+            worker.postMessage({ area, g, blur: BLUR * g.k });
         });
     }
 
@@ -191,7 +216,7 @@
                 const g = geometry(area);
                 const key = `${location.origin}/__start-area?${new URLSearchParams({
                     server: serverId, map: area.name, version: area.version ?? '', x: String(g.ox), y: String(g.oy),
-                    w: String(g.w), h: String(g.h), k: String(g.k), tile: String(area.tilewidth), build: String(PICTURE_BUILD),
+                    w: String(g.w), h: String(g.h), k: String(g.k), blur: String(BLUR), tile: String(area.tilewidth), build: String(PICTURE_BUILD),
                 })}`;
                 const cache = await openCache();
                 const kept = await cache?.match(key).catch(() => undefined);

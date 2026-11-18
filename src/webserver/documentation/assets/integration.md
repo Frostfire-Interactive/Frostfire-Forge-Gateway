@@ -86,7 +86,7 @@ All of these take a JSON body that includes `authKey`.
 | POST | `/world-list` | `serverId` | Lists the worlds with the hashes of their sync files. |
 | POST | `/world-file` | `id`, `file` | Returns one sync file of a world as binary. |
 | POST | `/save-map-chunks` | `mapName`, `chunks`, optional `bounds`, `serverId` | Saves edited chunks of a map or world to disk. |
-| POST | `/save-map-properties` | `mapName`, optional `graveyards`, `warps` | Saves the graveyards and warps of a map or world to disk. |
+| POST | `/save-map-properties` | `mapName`, optional `graveyards`, `warps`, `zones` | Saves the graveyards, warps and zones of a map or world to disk. |
 | POST | `/update-map` | `mapName`, `mapData`, `serverId` | Replaces a whole map in the cache. Not written to disk. Refused for worlds. |
 | POST | `/create-map` | `name`, `kind` (`map` or `world`), `width`, `height`, `infinite`, `tilesets` | Writes a new, blank map or world into the maps folder. Sent by the map editor's New map form. |
 | POST | `/save-tile-sounds` | `changes`: `[{ "tileset", "ids", "sound" }]` | Saves footstep sounds of tiles to `tilesounds.json` in the assets folder. |
@@ -176,7 +176,7 @@ The asset server answers `503` until it has read its maps. An asset server witho
 - `seq` is the engine's new place.
 - `full` is `true` when the `epoch` sent is not the list's, or the place is older than the changes the list still holds (it keeps the last 256 maps changed). The engine then runs the map sync above once, and its answer gives the engine its new place.
 
-When a map comes back from either call after startup, the engine takes it in at once (`takeInMaps` in `assetloader.ts`). A map whose file on the engine already has the same checksum is skipped, so the engine's own save is not read twice. For every other map:
+When a map comes back from either call after startup, the engine takes it in at once (`takeInMaps` in `assetloader.ts`). A map whose file on the engine already has the same checksum is skipped, so the engine's own save is not read twice. A map with a map editor save under way is skipped too, on the saving engine and, in cluster mode, on every node the saving node told of it (`map-saving` peer news): the asset server sends the save as soon as it has written it, before the save has finished, and the save takes in the asset server's copy itself (`modules/mapsaves.ts`). When that save ends without saving, the engine compares every map with the asset server's again and takes in the ones that differ. For every other map:
 
 1. It writes the map to `src/assets/maps` and reads it again: collision, warps, graveyards, shadow layers and the chunk data it sends to clients.
 2. It removes the map's particle and placed NPCs and makes new ones from the new objects layer.
@@ -253,7 +253,7 @@ Browser (map editor)
 Game engine
    |  checks the player's permission: server.admin or server.*
    |  POST /save-map-chunks        (edited chunks)
-   |  POST /save-map-properties    (graveyards and warps, when present)
+   |  POST /save-map-properties    (graveyards, warps and zones, when present)
    v
 Asset server
    |  updates its cache, writes the map file or the world's packs
@@ -316,9 +316,19 @@ Game engine
       "position": { "x": 1200, "y": 800 },
       "size": { "width": 32, "height": 32 }
     }
+  ],
+  "zones": [
+    {
+      "name": "Riverside",
+      "text": "Welcome to Riverside",
+      "music": "riverside theme",
+      "outline": [[[40, 40], [60, 40], [60, 58], [40, 58]]]
+    }
   ]
 }
 ```
+
+A zone's `outline` is in tiles; the asset server checks every zone against the map's size and works out its `bbox` (see [Zones](#/engine/zones)). One bad zone rejects the save with `400`.
 
 For a warp, `position` and `size` describe the warp area on this map, and `map`, `x`, `y` are the destination. A list that is left out is not changed.
 

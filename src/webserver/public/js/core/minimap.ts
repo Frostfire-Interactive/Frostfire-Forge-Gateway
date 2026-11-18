@@ -10,6 +10,7 @@ import { MOBILE_RENDERER } from "./renderpath.js";
 import { bakedMap, mapDetailPiece, DETAIL_TILES } from "./bakedmap.js";
 import { drawMapPin, PIN_LIFT, PIN_RADIUS } from "./mappin.js";
 import { markerAt, markerIconUrl, markersOfKind } from "./mapmarkers.js";
+import { zoneAt, zonesList } from "./zonelogic.js";
 
 const cache = Cache.getInstance();
 
@@ -116,8 +117,11 @@ function renderMinimap() {
     if (minimapTimeEl.textContent !== timeText) minimapTimeEl.textContent = timeText;
   }
   if (minimapLocationEl) {
+    // the zone the player is in (the smallest there), else the map's name (USER REQUEST 2026-11-18)
+    const at = currentPlayer.renderPosition ?? currentPlayer.position;
+    const zone = at ? zoneAt(zonesList(window.mapData.zones), at.x / (window.mapData.tilewidth || 16), at.y / (window.mapData.tileheight || 16)) : null;
     const rawName = (window.mapData?.name || "").replace(/\.json$/i, "");
-    const displayName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+    const displayName = zone?.name || rawName.charAt(0).toUpperCase() + rawName.slice(1);
     if (minimapLocationEl.textContent !== displayName) minimapLocationEl.textContent = displayName;
   }
 

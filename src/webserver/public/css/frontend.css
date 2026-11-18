@@ -93,9 +93,7 @@ body::before {
     position: fixed;
     inset: 0;
     z-index: -1;
-    background:
-        radial-gradient(55% 50% at 0% 0%, var(--frost-soft), transparent 70%),
-        radial-gradient(50% 50% at 100% 100%, var(--ember-soft), transparent 70%);
+    background: none;
     pointer-events: none;
 }
 

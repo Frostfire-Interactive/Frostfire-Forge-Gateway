@@ -173,7 +173,7 @@ kbd {
     z-index: 60;
     width: 100%;
     height: 2px;
-    background: linear-gradient(90deg, var(--frost), var(--primary), var(--ember));
+    background: var(--primary);
     transform: scaleX(0);
     transform-origin: left;
 }
@@ -216,19 +216,6 @@ kbd {
     font-weight: 700;
     letter-spacing: -0.01em;
     white-space: nowrap;
-}
-
-.brand-tag {
-    padding: 2px 8px;
-    border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent);
-    border-radius: 999px;
-    background: var(--primary-soft);
-    color: var(--primary-strong);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
 }
 
 .search-button {
@@ -1113,10 +1100,7 @@ kbd {
     padding: 52px 44px;
     border: 1px solid var(--border);
     border-radius: 18px;
-    background:
-        radial-gradient(60% 120% at 0% 0%, var(--frost-soft), transparent 60%),
-        radial-gradient(50% 120% at 100% 100%, var(--ember-soft), transparent 60%),
-        var(--bg-raised);
+    background: var(--bg-raised);
     overflow: hidden;
 }
 
@@ -1338,9 +1322,8 @@ kbd {
     height: 14px;
     margin-bottom: 14px;
     border-radius: 6px;
-    background: linear-gradient(90deg, var(--bg-raised), var(--surface), var(--bg-raised));
-    background-size: 200% 100%;
-    animation: shimmer 1.4s linear infinite;
+    background: var(--surface);
+    animation: shimmer 1.4s ease-in-out infinite alternate;
 }
 
 .skeleton-title {
@@ -1355,7 +1338,7 @@ kbd {
 
 @keyframes shimmer {
     to {
-        background-position: -200% 0;
+        opacity: 0.45;
     }
 }
 
