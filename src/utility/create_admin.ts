@@ -1,5 +1,5 @@
 import { transaction } from "../controllers/sqldatabase";
-import player from "../systems/player";
+import player, { firstCharacterStatements } from "../systems/player";
 import { hash, randomBytes } from "../modules/hash";
 import log from "../modules/logger";
 
@@ -21,6 +21,8 @@ const createAdmin = async (username: string, email: string) => {
   const code = randomBytes(8);
   try {
     await transaction([
+      // The admin's first character, named as the account, picks its class on the character page like any other.
+      ...firstCharacterStatements([username], null),
       {
         sql: "UPDATE accounts SET role = 1, email_verified = 1, require_email_2fa = 0, reset_password_code = ? WHERE username = ?",
         values: [code, username],

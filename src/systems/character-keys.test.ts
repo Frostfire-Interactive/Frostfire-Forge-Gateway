@@ -1,0 +1,120 @@
+// Ratchet for the move from "one character per account (character = accounts.username)" to
+// "many characters per account, keyed by characters.id".
+//
+// Heuristic: per source file, find string and template literals that contain a CHARACTER_TABLES
+// table name as a whole word AND the word `username`. That is how SQL on a character table keyed
+// by the account name looks in this code base. A file with such a literal must be in PENDING.
+// Scanned: src/**/*.ts. Skipped: *.test.ts, *.d.ts, node_modules, any tests/ directory
+// and public/js/web/*.js (not .ts). Limits: a statement split over several literals, or built
+// from ${table}, is not seen.
+//
+// Later tasks migrate a file and delete it from PENDING; the list only shrinks. Task 11 asserts
+// it is empty.
+import { describe, expect, test } from "bun:test";
+import { readdirSync, readFileSync, statSync } from "fs";
+import { join, relative, sep } from "path";
+// Own copy of the engine list (F:ProjectsFrostfire-Forge src/utility/charactertables.ts): the repos share no code.
+const CHARACTER_TABLES: readonly string[] = [
+  "inventory", "stats", "clientconfig", "quest_log", "quest_objective_progress", "friendslist", "ignores",
+  "player_home", "currency", "guild_members", "cutscene_views", "collectables", "learned_spells", "equipment",
+  "bags", "player_achievements", "parties", "mail", "trade_log", "reports",
+];
+
+const SRC = join(import.meta.dir, "..");
+
+/** Files still holding SQL that keys a character table by `username`. */
+// Empty since Task 10: the Gateway keys every character table by character_id (guests and sign-ups in
+// systems/player.ts, the class pick in systems/characters.ts). No Gateway file stays: its own setup
+// (utility/database_setup.ts) has no character tables, the engine makes them.
+const PENDING: readonly string[] = [];
+
+function listFiles(dir: string, out: string[] = []): string[] {
+  for (const name of readdirSync(dir)) {
+    if (name === "node_modules" || name === "tests") continue;
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) listFiles(p, out);
+    else if (p.endsWith(".ts") && !p.endsWith(".test.ts") && !p.endsWith(".d.ts")) out.push(p);
+  }
+  return out;
+}
+
+/** The string and template literals of a source text (comments skipped). */
+function literals(src: string): string[] {
+  const out: string[] = [];
+  const n = src.length;
+  let i = 0;
+  const skipQuoted = (q: string, at: number): number => {
+    let j = at + 1;
+    while (j < n && src[j] !== q && src[j] !== "\n") j += src[j] === "\\" ? 2 : 1;
+    return j + 1;
+  };
+  const template = (): string => {
+    let text = "";
+    while (i < n && src[i] !== "`") {
+      if (src[i] === "\\") { text += src[i] + (src[i + 1] ?? ""); i += 2; continue; }
+      if (src[i] === "$" && src[i + 1] === "{") {
+        i += 2;
+        let depth = 1;
+        while (i < n && depth > 0) {
+          const c = src[i];
+          if (c === "{") depth++;
+          else if (c === "}") depth--;
+          else if (c === "`") { i++; out.push(template()); continue; }
+          else if (c === '"' || c === "'") { i = skipQuoted(c, i); continue; }
+          i++;
+        }
+        continue;
+      }
+      text += src[i++];
+    }
+    i++;
+    return text;
+  };
+  while (i < n) {
+    const c = src[i];
+    if (c === "/" && src[i + 1] === "/") { while (i < n && src[i] !== "\n") i++; }
+    else if (c === "/" && src[i + 1] === "*") { i += 2; while (i < n && !(src[i] === "*" && src[i + 1] === "/")) i++; i += 2; }
+    else if (c === '"' || c === "'") { const end = skipQuoted(c, i); out.push(src.slice(i + 1, end - 1)); i = end; }
+    else if (c === "`") { i++; out.push(template()); }
+    else i++;
+  }
+  return out;
+}
+
+const TABLE_WORDS = CHARACTER_TABLES.map((t) => new RegExp("(?<![\\w-])" + t + "(?![\\w-])", "i"));
+
+/** Files with SQL naming a character table together with `username`, and how many literals. */
+function scan(): Map<string, number> {
+  const found = new Map<string, number>();
+  for (const file of listFiles(SRC)) {
+    let count = 0;
+    for (const text of literals(readFileSync(file, "utf8"))) {
+      if (/\busername\b/i.test(text) && TABLE_WORDS.some((re) => re.test(text))) count++;
+    }
+    if (count) found.set(relative(SRC, file).split(sep).join("/"), count);
+  }
+  return found;
+}
+
+describe("character keys ratchet", () => {
+  test("every file with character-table SQL on username is in PENDING", () => {
+    const unlisted = [...scan().keys()].filter((f) => !PENDING.includes(f));
+    expect(unlisted).toEqual([]);
+  });
+
+  test("ratchet lists no file that is already clean", () => {
+    const found = scan();
+    expect(PENDING.filter((f) => !found.has(f))).toEqual([]);
+  });
+
+  test("no Gateway file is pending", () => {
+    expect(PENDING).toEqual([]);
+    expect([...scan().keys()]).toEqual([]);
+  });
+
+  test("CHARACTER_TABLES holds the character tables", () => {
+    expect(CHARACTER_TABLES.length).toBe(20);
+    expect(CHARACTER_TABLES).toContain("inventory");
+    expect(CHARACTER_TABLES).not.toContain("accounts");
+  });
+});

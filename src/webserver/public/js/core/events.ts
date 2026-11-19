@@ -1,4 +1,4 @@
-import { sendRequest, getIsLoaded, getMovementAllowed, cachedPlayerId, itemsByName, showNotification } from "./socket.js";
+import { sendRequest, leaveForCharacterList, getIsLoaded, getMovementAllowed, cachedPlayerId, itemsByName, showNotification } from "./socket.js";
 import { teleportsHome } from "./consumables.js";
 import { isSelfDead, isSelfActionLocked } from "./death.js";
 import Cache from "./cache.js";
@@ -665,13 +665,21 @@ profileButton?.addEventListener("click", () => {
   window.open("/manage-profile", "_blank");
 });
 
-// A guest account has no profile, so the menu leaves out Manage Profile for one. Checked each time the menu opens,
-// as the player's own data may come after the page.
-if (profileButton) {
+// Saves like Logout but sends DISCONNECT, which keeps the web login (LOGOUT clears the token); then the character list.
+const changeCharacterButton = document.getElementById("pause-menu-action-change-character") as HTMLButtonElement | null;
+changeCharacterButton?.addEventListener("click", () => {
+  void leaveForCharacterList();
+});
+
+// A guest account has no profile and one character, so the menu leaves out Manage Profile and Change character for
+// one. Checked each time the menu opens, as the player's own data may come after the page.
+if (profileButton || changeCharacterButton) {
   new MutationObserver(() => {
     if (pauseMenu.style.display !== "block") return;
     const self = Array.from(Cache.getInstance().players).find((p) => p.id === cachedPlayerId);
-    profileButton.style.display = self?.isGuest ? "none" : "";
+    const display = self?.isGuest ? "none" : "";
+    if (profileButton) profileButton.style.display = display;
+    if (changeCharacterButton) changeCharacterButton.style.display = display;
   }).observe(pauseMenu, { attributes: true, attributeFilter: ["style"] });
 }
 

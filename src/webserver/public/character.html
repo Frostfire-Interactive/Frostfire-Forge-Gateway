@@ -9,7 +9,7 @@
         <meta name="apple-mobile-web-app-capable" content="yes">
         <meta name="apple-mobile-web-app-status-bar-style" content="black">
         <meta name="theme-color" content="#1e120a">
-        <title>Frostfire Forge - Create Your Character</title>
+        <title>Frostfire Forge - Characters</title>
         <link rel="stylesheet" href="css/frontend.css">
         <link rel="stylesheet" href="css/character.css">
         <script src="./js/web/notification.js"></script>
@@ -19,11 +19,17 @@
             <img id="start-area" class="cc-world-picture" alt="">
         </div>
 
-        <!-- A full-screen character creation screen over the world: the classes on the left, the chosen class's details
-             on the right, the world open between them, the Create button floating at the foot. -->
+        <!-- A full-screen character screen over the world. The list: the account's characters on the left, the chosen
+             one's class on the right, Play at the foot. Creating: the classes on the left, the chosen class's details on
+             the right, the name and Create at the foot. -->
         <div class="cc-screen">
             <main class="cc-stage">
-                <section class="cc-panel cc-roster" aria-labelledby="cc-roster-title">
+                <section class="cc-panel cc-roster" id="list-panel" aria-labelledby="cc-list-title" hidden>
+                    <h2 class="cc-panel-title" id="cc-list-title">Your characters</h2>
+                    <div id="character-list" class="cc-class-list" role="listbox" aria-labelledby="cc-list-title"></div>
+                </section>
+
+                <section class="cc-panel cc-roster" id="class-panel" aria-labelledby="cc-roster-title">
                     <h2 class="cc-panel-title" id="cc-roster-title">Choose a class</h2>
                     <div id="class-list" class="cc-class-list" role="listbox" aria-labelledby="cc-roster-title">
                         <div class="cc-loading">Loading classes...</div>
@@ -40,6 +46,15 @@
 
             <div class="cc-notices">
                 <div id="error-message" class="cc-error" role="alert"></div>
+                <div id="delete-confirm" class="cc-warning" hidden>
+                    <div class="cc-warning-words">
+                        <strong id="delete-title">Delete this character?</strong>
+                        <span>Type its name to delete it. It leaves the list now and is gone for good after a few days; its name stays taken until then.</span>
+                    </div>
+                    <input type="text" id="delete-name" class="cc-name-input" autocomplete="off" spellcheck="false" aria-label="The character's name">
+                    <button type="button" id="delete-yes" class="cc-button cc-side cc-danger">Delete</button>
+                    <button type="button" id="delete-no" class="cc-button cc-side">Keep</button>
+                </div>
                 <div id="starts-over" class="cc-warning" hidden>
                     <div class="cc-warning-words">
                         <strong>Your current character starts over</strong>
@@ -53,7 +68,19 @@
             </div>
 
             <div class="cc-actions">
-                <button type="button" id="create-button" class="cc-button cc-create" disabled>Create</button>
+                <div class="cc-actions-side">
+                    <button type="button" id="new-button" class="cc-button cc-side" hidden>Create character</button>
+                    <button type="button" id="delete-button" class="cc-button cc-side" hidden>Delete</button>
+                </div>
+                <div class="cc-actions-main">
+                    <!-- The name, with a check or a cross at its right as it is typed: free to take or not. -->
+                    <div id="name-field" class="cc-name-field" hidden>
+                        <input type="text" id="name-input" class="cc-name-input" maxlength="15" autocomplete="off" spellcheck="false" placeholder="Name" aria-label="Character name" aria-describedby="name-status">
+                        <span id="name-status" class="cc-name-status" role="status"></span>
+                    </div>
+                    <button type="button" id="play-button" class="cc-button cc-create" hidden>Play</button>
+                    <button type="button" id="create-button" class="cc-button cc-create" disabled>Create</button>
+                </div>
             </div>
         </div>
 

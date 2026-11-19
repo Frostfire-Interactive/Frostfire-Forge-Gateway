@@ -697,7 +697,7 @@ test("the webserver's token route reads the saved point, passes it to the pick, 
   const web = source("../webserver/server.ts");
   // The wide account query, and the old one when it fails.
   const read = between(web, "let accountRow: any[];", "// The engine refuses this account");
-  expect(read).toContain("SELECT email_verified, guest_mode, map, position, is_dead, corpse_map, corpse_x, corpse_y FROM accounts WHERE username = ?");
+  expect(read).toContain("SELECT a.email_verified, a.guest_mode, c.map, c.position, c.is_dead, c.corpse_map, c.corpse_x, c.corpse_y FROM accounts a LEFT JOIN characters c ON c.id = a.active_character_id WHERE a.username = ?");
   expect(read).toMatch(/catch \{\s*accountRow = await query\("SELECT email_verified, guest_mode FROM accounts WHERE username = \?/);
   // The pick gets the point.
   expect(web).toMatch(/await pickRegionNode\([^\n]*savedPointOf\(accountRow\[0\]\)\)/);

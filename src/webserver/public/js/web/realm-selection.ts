@@ -206,6 +206,7 @@ function renderServers(): void {
 
 // When the realm's Log In lock needs a subscription and this account has none (and is not an admin), the
 // game would refuse it at login with no reason shown. Say it here instead.
+let isGuestAccount = false;
 async function showSubscriptionNeeded(): Promise<boolean> {
     const notice = document.getElementById('subscription-needed');
     let needed = false;
@@ -223,6 +224,7 @@ async function showSubscriptionNeeded(): Promise<boolean> {
     } catch {
         // Not knowing is not a reason to keep a player out: the game decides.
     }
+    isGuestAccount = guest;
     notice?.classList.toggle('show', needed);
     // A guest cannot subscribe, so there is nowhere for the button to lead.
     document.getElementById('subscribe-button')?.classList.toggle('hidden', guest);
@@ -242,7 +244,9 @@ async function continueToGame(serverId: string | null): Promise<void> {
 
         localStorage.removeItem('selectedServerId');
     }
-    window.location.href = await characterNeeded() ? '/character' : '/game';
+    // A full account picks which of its characters to play (the character list); a guest has its one character and
+    // goes straight in, unless it has still to choose its class.
+    window.location.href = !isGuestAccount || await characterNeeded() ? '/character' : '/game';
 }
 
 // USER REQUEST 2026-10-14 ("At realm selection, we should pre-load the chunks"): for an account that makes its

@@ -17,6 +17,10 @@ import { accountsOnly } from "../modules/accountsonly";
 import { HerdSpread, fetchGatewayRoute, pickRegionNode as pickNode, savedPointOf, type SavedPoint } from "./regionpick";
 
 const settings = {
+  characters: {
+    limit: Number(process.env.CHARACTER_LIMIT ?? 5),
+    deleteGraceDays: Number(process.env.CHARACTER_DELETE_GRACE_DAYS ?? 7),
+  },
   guest_mode: {
     enabled: process.env.GUEST_MODE_ENABLED === "true" || process.env.GUEST_MODE_ENABLED === "1"
   },
@@ -451,7 +455,7 @@ const routes = {
         // without those columns is read as before and sends the login to the least-loaded node.
         let accountRow: any[];
         try {
-          accountRow = await query("SELECT email_verified, guest_mode, map, position, is_dead, corpse_map, corpse_x, corpse_y FROM accounts WHERE username = ? LIMIT 1", [username]) as any[];
+          accountRow = await query("SELECT a.email_verified, a.guest_mode, c.map, c.position, c.is_dead, c.corpse_map, c.corpse_x, c.corpse_y FROM accounts a LEFT JOIN characters c ON c.id = a.active_character_id WHERE a.username = ? LIMIT 1", [username]) as any[];
         } catch {
           accountRow = await query("SELECT email_verified, guest_mode FROM accounts WHERE username = ? LIMIT 1", [username]) as any[];
         }
@@ -585,6 +589,21 @@ const routes = {
     GET: async (req: Request) => handleGetCharacter(req),
     POST: async (req: Request) => handleCreateCharacter(req),
   },
+  // An account's characters (a guest has one, and only picks its class at /api/character).
+  "/api/characters": {
+    GET: profileRoute(handleListCharacters),
+    POST: profileRoute(handleAddCharacter),
+  },
+  "/api/characters/play": {
+    POST: profileRoute(handlePlayCharacter),
+  },
+  // Whether a name can be taken, checked while it is typed on the character page.
+  "/api/characters/name": {
+    POST: profileRoute(handleCheckCharacterName),
+  },
+  "/api/characters/delete": {
+    POST: profileRoute(handleDeleteCharacter),
+  },
   "/api/subscription/checkout": {
     POST: async (req: Request) => handleSubscriptionCheckout(req),
   },
@@ -627,6 +646,13 @@ setInterval(async () => {
     if (removed > 0) log.info(`Removed ${removed} old guest account${removed === 1 ? "" : "s"}`);
   } catch (error) {
     log.warn(`Old guest accounts could not be removed: ${error}`);
+  }
+  // Characters deleted on the character page are removed for good after the grace period.
+  try {
+    const purged = await characters.purgeDeleted(settings.characters.deleteGraceDays * 24 * 60 * MINUTE);
+    if (purged > 0) log.info(`Removed ${purged} deleted character${purged === 1 ? "" : "s"}`);
+  } catch (error) {
+    log.warn(`Deleted characters could not be removed: ${error}`);
   }
 }, 60 * MINUTE);
 
@@ -699,6 +725,10 @@ Bun.serve({
       "/api/profile/2fa-requirements": routes["/api/profile/2fa-requirements"],
       "/api/subscription": routes["/api/subscription"],
       "/api/character": routes["/api/character"],
+      "/api/characters": routes["/api/characters"],
+      "/api/characters/play": routes["/api/characters/play"],
+      "/api/characters/name": routes["/api/characters/name"],
+      "/api/characters/delete": routes["/api/characters/delete"],
       "/api/subscription/checkout": routes["/api/subscription/checkout"],
       "/api/subscription/portal": routes["/api/subscription/portal"],
       "/api/stripe/webhook": routes["/api/stripe/webhook"],
@@ -1176,17 +1206,76 @@ function subscriptionReply(reply: Reply): Response {
 async function handleGetCharacter(req: Request) {
   const auth = await requireAuth(req);
   if (!('username' in auth)) return auth;
-  return new Response(JSON.stringify(await characters.status(auth.username)), { status: 200, headers: { "Content-Type": "application/json" } });
+  // The account's active character (an account made by the sign-up form has none yet: nothing to choose).
+  const active = await characters.activeOf(auth.username);
+  const status = active && active.characterId !== null
+    ? await characters.status(active.accountId, active.characterId)
+    : { needed: false, startsOver: false, username: "", classes: [], spellInfo: {}, itemInfo: {} };
+  return new Response(JSON.stringify(status), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
 async function handleCreateCharacter(req: Request) {
   const auth = await requireAuth(req);
   if (!('username' in auth)) return auth;
   const body = await req.json().catch(() => null) as { classId?: unknown } | null;
-  const made = await characters.create(auth.username, body?.classId);
+  const active = await characters.activeOf(auth.username);
+  if (!active || active.characterId === null) {
+    return new Response(JSON.stringify({ ok: false, message: "Character not found." }), { status: 404, headers: { "Content-Type": "application/json" } });
+  }
+  const made = await characters.create(active.accountId, active.characterId, body?.classId);
   return made.ok
     ? new Response(JSON.stringify({ ok: true, className: made.className }), { status: 200, headers: { "Content-Type": "application/json" } })
     : new Response(JSON.stringify({ ok: false, message: made.error }), { status: made.status, headers: { "Content-Type": "application/json" } });
+}
+
+const jsonReply = (body: unknown, status = 200): Response =>
+  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+
+/** The account behind a request, or the reply that refuses it. */
+async function accountOf(req: Request): Promise<{ accountId: number } | Response> {
+  const auth = await requireAuth(req);
+  if (!('username' in auth)) return auth;
+  const active = await characters.activeOf(auth.username);
+  return active ? { accountId: active.accountId } : jsonReply({ message: "Account not found." }, 404);
+}
+
+async function handleListCharacters(req: Request) {
+  const who = await accountOf(req);
+  if (who instanceof Response) return who;
+  return jsonReply({ ...(await characters.list(who.accountId)), limit: settings.characters.limit });
+}
+
+async function handleAddCharacter(req: Request) {
+  const who = await accountOf(req);
+  if (who instanceof Response) return who;
+  const body = await req.json().catch(() => null) as { name?: unknown; classId?: unknown } | null;
+  const made = await characters.add(who.accountId, body?.name, body?.classId, settings.characters.limit);
+  return made.ok ? jsonReply({ id: made.id }, 201) : jsonReply({ message: made.error }, made.status);
+}
+
+async function handleCheckCharacterName(req: Request) {
+  const who = await accountOf(req);
+  if (who instanceof Response) return who;
+  const body = await req.json().catch(() => null) as { name?: unknown } | null;
+  const problem = await characters.nameProblem(who.accountId, body?.name);
+  return jsonReply(problem ? { free: false, message: problem } : { free: true });
+}
+
+async function handlePlayCharacter(req: Request) {
+  const who = await accountOf(req);
+  if (who instanceof Response) return who;
+  const body = await req.json().catch(() => null) as { id?: unknown } | null;
+  return await characters.play(who.accountId, body?.id)
+    ? jsonReply({ ok: true })
+    : jsonReply({ message: "Character not found." }, 404);
+}
+
+async function handleDeleteCharacter(req: Request) {
+  const who = await accountOf(req);
+  if (who instanceof Response) return who;
+  const body = await req.json().catch(() => null) as { id?: unknown; confirmName?: unknown } | null;
+  const done = await characters.remove(who.accountId, body?.id, body?.confirmName);
+  return done.ok ? jsonReply({ ok: true }) : jsonReply({ message: done.error }, done.status);
 }
 
 async function handleGetSubscription(req: Request) {

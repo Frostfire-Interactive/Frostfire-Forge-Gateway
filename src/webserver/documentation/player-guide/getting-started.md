@@ -93,7 +93,7 @@ Each realm in the list shows:
 
 Select a realm to read its description, then select **Enter Realm**. The list refreshes by itself every few seconds.
 
-If your account has no character yet, you go to **Create Your Character** first. Choose a class and select **Create**, followed by the class name. Each account has one character.
+After you enter a realm you go to your character list, where you play one of your characters or make a new one. See [Characters](#/player-guide/characters). A guest has one character and only chooses its class.
 
 :::tip
 If you have a choice, pick the realm with the lowest latency. The game will feel more responsive.

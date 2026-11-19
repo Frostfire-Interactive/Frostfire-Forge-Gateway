@@ -43,8 +43,69 @@ export async function ensureTokenExpiryColumn(): Promise<boolean> {
   }
 }
 
-// The tables the engine's guest purge empties of a guest's rows (engine src/systems/player.ts, clear).
-const GUEST_ROW_TABLES = ["inventory", "stats", "clientconfig", "quest_log", "currency", "collectables", "equipment", "learned_spells", "permissions", "friendslist"];
+/** A guest to make: the account's name (also its character's), e-mail, and what the sign-up knows of it. */
+interface NewGuest {
+  username: string;
+  email: string;
+  password_hash: string;
+  token: string | null;
+  tokenExpires: number | null;
+  ip: string | null;
+  geo: string | null;
+}
+
+/**
+ * The statements that make guests, to run as ONE transaction: each guest's account, its one character (named as
+ * the account, with `classId`: null for a guest, who picks its class on the character page like any account; 0 for
+ * benchmark guests, who go straight into the game), the account's active character, and the character's starting rows (keyed by the character's id, so
+ * deleting the account removes them all: accounts.id -> characters -> every table of the character).
+ * Names are lowercase and 30 characters at most, the width of characters.name.
+ */
+function newGuestStatements(guests: NewGuest[], classId: number | null): TransactionStatement[] {
+  const multiInsert = (sql: string, perRow: (g: NewGuest) => any[]): TransactionStatement => {
+    const group = `(${perRow(guests[0]).map(() => "?").join(", ")})`;
+    return { sql: `${sql} VALUES ${guests.map(() => group).join(", ")}`, values: guests.flatMap(perRow) };
+  };
+  return [
+    multiInsert(
+      "INSERT INTO accounts (email, username, token, token_expires, password_hash, ip_address, geo_location, map, position, guest_mode, class_id)",
+      (g) => [g.email, g.username, g.token, g.tokenExpires, g.password_hash, g.ip, g.geo, "", "0,0", 1, classId]
+    ),
+    ...firstCharacterStatements(guests.map((g) => g.username), classId),
+  ];
+}
+
+/**
+ * The statements that give each of the accounts named (already inserted, in the same transaction or before) its first
+ * character, named as the account: the character, the account's active character, and the character's starting rows.
+ * Used by guests and by create_admin.
+ */
+export function firstCharacterStatements(names: string[], classId: number | null): TransactionStatement[] {
+  const marks = names.map(() => "?").join(", ");
+  // A row for each of the new characters, found by name.
+  const forEach = (table: string, columns: string, values: any[]): TransactionStatement => ({
+    sql: `INSERT INTO ${table} (character_id${columns ? ", " + columns : ""}) SELECT id${values.map(() => ", ?").join("")} FROM characters WHERE name_key IN (${marks})`,
+    values: [...values, ...names],
+  });
+  return [
+    {
+      sql: `INSERT INTO characters (account_id, name, name_key, class_id, map, position, created_at) SELECT id, username, username, ?, '', '0,0', ? FROM accounts WHERE username IN (${marks})`,
+      values: [classId, Date.now(), ...names],
+      mustChange: true,
+    },
+    {
+      sql: `UPDATE accounts SET active_character_id = (SELECT c.id FROM characters c WHERE c.account_id = accounts.id) WHERE username IN (${marks})`,
+      values: names,
+      mustChange: true,
+    },
+    forEach("stats", "health, max_health, stamina, max_stamina, xp, max_xp, level, stat_critical_damage, stat_critical_chance", [100, 100, 100, 100, 0, 100, 1, 10, 10]),
+    forEach("clientconfig", "fps, music_volume, effects_volume, ambience_volume, weather_volume, muted", [60, 50, 30, 50, 60, 0]),
+    // (Nothing for the quest log: see register, below.)
+    forEach("currency", "copper, silver, gold", [0, 0, 0]),
+    forEach("equipment", "", []),
+    forEach("collectables", "type, item", ["mount", "horse"]),
+  ];
+}
 
 const player = {
   clear: async () => {
@@ -59,19 +120,9 @@ const player = {
       await query("TRUNCATE TABLE parties");
     }
 
-    await query("DELETE FROM stats WHERE username IN (SELECT username FROM accounts WHERE guest_mode = 1)");
-
-    await query("DELETE FROM clientconfig WHERE username IN (SELECT username FROM accounts WHERE guest_mode = 1)");
-
-    await query("DELETE FROM quest_log WHERE username IN (SELECT username FROM accounts WHERE guest_mode = 1)");
-
-    await query("DELETE FROM currency WHERE username IN (SELECT username FROM accounts WHERE guest_mode = 1)");
-
-    await query("DELETE FROM collectables WHERE username IN (SELECT username FROM accounts WHERE guest_mode = 1)");
-
-    await query("DELETE FROM equipment WHERE username IN (SELECT username FROM accounts WHERE guest_mode = 1)");
-
-    await query("DELETE FROM learned_spells WHERE username IN (SELECT username FROM accounts WHERE guest_mode = 1)");
+    // A guest is its account: deleting it deletes its characters and, by the foreign keys, every row of
+    // theirs (stats, bags, mail, quests ...). Only the account's own permissions are keyed by name.
+    await query("DELETE FROM permissions WHERE username IN (SELECT username FROM accounts WHERE guest_mode = 1)");
 
     await query("DELETE FROM accounts WHERE guest_mode = 1");
   },
@@ -82,23 +133,25 @@ const player = {
   purgeOldGuests: async () => {
     const engine = process.env.DATABASE_ENGINE || "mysql";
     const dayAgo = engine === "sqlite" ? "datetime('now', '-24 hours')" : engine === "postgres" ? "NOW() - INTERVAL '24 hours'" : "NOW() - INTERVAL 24 HOUR";
-    const idle = "guest_mode = 1 AND online = 0 AND session_id IS NULL AND party_id IS NULL AND guild_id IS NULL";
+    // A guest in a party or guild is held by the character (characters.party_id, guild_id) as well as by the
+    // account's own columns, and a leader by name in parties and guilds.
+    const idle =
+      "guest_mode = 1 AND online = 0 AND session_id IS NULL AND party_id IS NULL AND guild_id IS NULL" +
+      " AND NOT EXISTS (SELECT 1 FROM characters c WHERE c.account_id = accounts.id AND (c.party_id IS NOT NULL OR c.guild_id IS NOT NULL))" +
+      " AND NOT EXISTS (SELECT 1 FROM characters c WHERE c.account_id = accounts.id AND (c.name_key IN (SELECT LOWER(leader) FROM parties WHERE leader IS NOT NULL) OR c.name_key IN (SELECT LOWER(leader) FROM guilds WHERE leader IS NOT NULL)))";
     const found = (await query(
-      `SELECT username FROM accounts WHERE ${idle} AND last_login IS NOT NULL AND last_login < ${dayAgo}` +
-        " AND username NOT IN (SELECT leader FROM parties) AND username NOT IN (SELECT leader FROM guilds) LIMIT 500"
+      `SELECT username FROM accounts WHERE ${idle} AND last_login IS NOT NULL AND last_login < ${dayAgo} LIMIT 500`
     )) as { username: string }[];
     if (found.length === 0) return 0;
 
     const names = found.map((row) => row.username);
     const marks = names.map(() => "?").join(", ");
     // The account goes first and only while still idle, so a guest who came back in the meantime is
-    // kept; the other rows go only for the names whose account is gone.
+    // kept. Deleting it deletes its characters and, by the foreign keys, every row of theirs; only the
+    // permissions, keyed by the account's name, are removed for the names whose account is gone.
     const results = await transaction([
       { sql: `DELETE FROM accounts WHERE ${idle} AND username IN (${marks})`, values: names },
-      ...GUEST_ROW_TABLES.map((table) => ({
-        sql: `DELETE FROM ${table} WHERE username IN (${marks}) AND username NOT IN (SELECT username FROM accounts)`,
-        values: names,
-      })),
+      { sql: `DELETE FROM permissions WHERE username IN (${marks}) AND username NOT IN (SELECT username FROM accounts)`, values: names },
     ]);
     const removed = results[0];
     return typeof removed?.affectedRows === "number" ? removed.affectedRows : removed?.count ?? 0;
@@ -122,51 +175,12 @@ const player = {
       };
     });
 
-    const multiInsert = (
-      sql: string,
-      perRow: (r: (typeof rows)[number]) => any[]
-    ): TransactionStatement => {
-      const first = perRow(rows[0]);
-      const group = `(${first.map(() => "?").join(", ")})`;
-      const values = rows.map(() => group).join(", ");
-      const params = rows.flatMap(perRow);
-      return { sql: `${sql} VALUES ${values}`, values: params };
-    };
-
     const expires = Date.now() + TOKEN_LIFETIME_MS;
-    // One transaction: no guest is left with an account and not the rows a login reads.
-    await transaction([
-      multiInsert(
-        "INSERT INTO accounts (email, username, token, token_expires, password_hash, ip_address, geo_location, map, position, guest_mode)",
-        (r) => [r.email, r.username, r.token, expires, "guest:benchmark", ip ?? null, geo ?? null, "", "0,0", 1]
-      ),
-      multiInsert(
-        "INSERT INTO stats (username, health, max_health, stamina, max_stamina, xp, max_xp, level, stat_critical_damage, stat_critical_chance)",
-        (r) => [r.username, 100, 100, 100, 100, 0, 100, 1, 10, 10]
-      ),
-      multiInsert(
-        "INSERT INTO clientconfig (username, fps, music_volume, effects_volume, muted)",
-        (r) => [r.username, 60, 50, 50, 0]
-      ),
-      // (Nothing for the quest log: see register, below.)
-      multiInsert(
-        "INSERT INTO currency (username, copper, silver, gold)",
-        (r) => [r.username, 0, 0, 0]
-      ),
-      multiInsert("INSERT INTO equipment (username)", (r) => [r.username]),
-      multiInsert(
-        "INSERT INTO collectables (type, item, username)",
-        (r) => ["mount", "horse", r.username]
-      ),
-    ]);
-
-    // Benchmark clients go straight into the game, past the character page (systems/characters.ts): they are given
-    // a character with no class (0), which the game server lets in. A database without class_id needs none.
-    try {
-      await query(`UPDATE accounts SET class_id = 0 WHERE username IN (${rows.map(() => "?").join(", ")})`, rows.map((r) => r.username));
-    } catch {
-      // no class_id column: characters are off
-    }
+    // One transaction: no guest is left with an account and not the character and rows a login reads.
+    // Benchmark clients go straight into the game, past the character page: class 0, which the game server lets in.
+    await transaction(
+      newGuestStatements(rows.map((r) => ({ username: r.username, email: r.email, password_hash: "guest:benchmark", token: r.token, tokenExpires: expires, ip: ip ?? null, geo: geo ?? null })), 0)
+    );
 
     return rows.map((r) => r.token);
   },
@@ -189,46 +203,34 @@ const player = {
     if (usernameExists && usernameExists.length != 0)
       return { error: "Username already exists" };
 
+    // No login name may equal a character's name (any account's, a deleted one's too: names are never reused).
+    // The engine's nameTaken makes the same check from the other side. Character names are compared in lowercase.
+    const characterNamed = (await query("SELECT id FROM characters WHERE name_key = ? LIMIT 1", [username.toLowerCase()])) as any[];
+    if (characterNamed && characterNamed.length != 0)
+      return { error: "Username already exists" };
+
     const emailExists = (await player.findByEmail(email)) as string[];
     if (emailExists && emailExists.length != 0)
       return { error: "Email already exists" };
 
-    // One transaction: the account and every row it starts with are made together or not at all.
-    // An account without them cannot be played, and its name and e-mail could not be used again.
+    // A guest has one character, made with the account (newGuestStatements), without a class: it picks one on the character page.
+    if (guest) {
+      try {
+        await transaction(newGuestStatements([{ username, email, password_hash, token: null, tokenExpires: null, ip: req.ip ?? null, geo: req.headers?.["cf-ipcountry"] ?? null }], null));
+      } catch (err: any) {
+        log.error(err);
+        return { error: "An unexpected error occurred" };
+      }
+      return username;
+    }
+
+    // The account only: it has no character yet (the character page makes the first one).
     try {
       await transaction([
         {
           sql: "INSERT INTO accounts (email, username, token, password_hash, ip_address, geo_location, map, position, guest_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          values: [
-            email,
-            username,
-            null,
-            password_hash,
-            req.ip,
-            req.headers["cf-ipcountry"],
-            "",
-            "0,0",
-            guest ? 1 : 0,
-          ],
+          values: [email, username, null, password_hash, req.ip, req.headers["cf-ipcountry"], "", "0,0", 0],
         },
-        {
-          sql: "INSERT INTO stats (username, health, max_health, stamina, max_stamina, xp, max_xp, level, stat_critical_damage, stat_critical_chance) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          values: [username, 100, 100, 100, 100, 0, 100, 1, 10, 10],
-        },
-        {
-          sql: "INSERT INTO clientconfig (username, fps, music_volume, effects_volume, muted) VALUES (?, ?, ?, ?, ?)",
-          values: [username, 60, 50, 50, 0],
-        },
-        // Nothing for the quest log: it holds a row for each quest a player has taken (username, quest_id), and a
-        // new account has taken none. The row once written for it here, a name and no quest, is refused by the
-        // table as it is now ("Field 'quest_id' doesn't have a default value"), and being one transaction, the
-        // whole sign-up was undone with it: no account could be made, a guest's included.
-        {
-          sql: "INSERT INTO currency (username, copper, silver, gold) VALUES (?, ?, ?, ?)",
-          values: [username, 0, 0, 0],
-        },
-        { sql: "INSERT INTO equipment (username) VALUES (?)", values: [username] },
-        { sql: "INSERT INTO collectables (type, item, username) VALUES (?, ?, ?)", values: ["mount", "horse", username] },
       ]);
     } catch (err: any) {
       log.error(err);

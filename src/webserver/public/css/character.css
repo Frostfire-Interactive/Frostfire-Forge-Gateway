@@ -88,7 +88,6 @@ body.character-page::before {
     transform-origin: 0 0;
     /* filtered, so it moves between pixels smoothly; js/web/startarea.ts draws it blurred, at half the map's pixels */
     will-change: transform;
-    transition: opacity 1.4s ease;
     user-select: none;
 }
 
@@ -177,7 +176,6 @@ body.character-page::before {
     grid-area: roster;
     align-self: start;
     max-height: 100%;
-    animation: cc-in-left 0.35s ease-out both;
 }
 
 .cc-class-list {
@@ -212,7 +210,6 @@ body.character-page::before {
     font-family: inherit;
     text-align: left;
     cursor: pointer;
-    transition: background-color 0.12s ease;
 }
 
 .cc-class + .cc-class {
@@ -249,7 +246,6 @@ body.character-page::before {
     height: 56px;
     background: url('../img/ui/ui-action-slot.png') center / 100% 100% no-repeat;
     filter: saturate(0.55) brightness(0.8);
-    transition: filter 0.12s ease;
 }
 
 .cc-class:hover .cc-emblem,
@@ -301,7 +297,6 @@ body.character-page::before {
 .cc-info {
     grid-area: info;
     align-self: stretch;
-    animation: cc-in-right 0.35s ease-out both;
 }
 
 .cc-info-scroll {
@@ -425,11 +420,6 @@ body.character-page::before {
     border-radius: 0;
     font-family: inherit;
     cursor: pointer;
-    transition: transform 0.08s ease;
-}
-
-.cc-slot:hover {
-    transform: translateY(-2px);
 }
 
 .cc-slot.picked {
@@ -642,33 +632,148 @@ body.character-page::before {
     gap: 24px;
     min-width: 0;
     padding: 0 max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
-    animation: cc-fade-in 0.3s ease-out both;
+}
+
+.cc-actions-side {
+    grid-column: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 10px;
+    min-width: 0;
+}
+
+.cc-actions-main {
+    grid-column: -2;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
 }
 
 .cc-actions .cc-create {
-    grid-column: -2;
     width: 100%;
 }
 
-/* A button: a flat fill; hover and press change only its colour. */
+.cc-roster[hidden],
+.cc-button[hidden],
+.cc-name-field[hidden],
+.cc-name-input[hidden] {
+    display: none;
+}
+
+/* The name box with its mark (a check: free; a cross: taken) inside its right edge. */
+.cc-name-field {
+    position: relative;
+    display: flex;
+}
+
+.cc-name-field input.cc-name-input {
+    flex: 1;
+    padding-right: 40px;
+}
+
+.cc-name-status {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    font-weight: 700;
+    pointer-events: none;
+}
+
+.cc-name-status.free {
+    color: #7bc96f;
+}
+
+.cc-name-status.taken {
+    color: var(--cc-danger);
+    pointer-events: auto;
+    cursor: help;
+}
+
+/* A button: a flat fill with the panels' thin light edge; hover and press change only its colour. */
 .cc-button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 10px;
     height: 52px;
-    border: 0;
+    border: 1px solid var(--cc-edge-light);
     border-radius: 0;
     font-family: 'Comic Relief', system-ui, sans-serif;
     font-weight: 700;
     white-space: nowrap;
     cursor: pointer;
-    transition: background-color 0.12s ease;
 }
 
 .cc-button:focus-visible {
     outline: 2px solid var(--cc-cream);
     outline-offset: 3px;
+}
+
+/* A secondary button (Back, Delete, Keep): a panel's title plank. After .cc-button, so its look wins. */
+.cc-button.cc-side {
+    padding: 0 22px;
+    background: var(--cc-plank);
+    color: var(--cc-cream);
+    font-size: 0.95rem;
+    text-shadow: 1px 1px 0 var(--cc-bar);
+}
+
+.cc-button.cc-side:hover:not(:disabled) {
+    background: var(--cc-plank-hover);
+}
+
+.cc-button.cc-side:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.cc-warning .cc-button.cc-side {
+    height: 44px;
+}
+
+.cc-button.cc-danger {
+    background: #7a2620;
+}
+
+.cc-button.cc-danger:hover:not(:disabled) {
+    background: #93302a;
+}
+
+/* input.: frontend.css styles input[type="text"] (navy, rounded), which would win over a class alone. */
+input.cc-name-input {
+    height: 44px;
+    min-width: 0;
+    padding: 0 12px;
+    background: var(--cc-well);
+    border: 1px solid var(--cc-edge-light);
+    border-radius: 0;
+    color: var(--cc-cream);
+    font-family: 'Comic Relief', system-ui, sans-serif;
+    font-size: 1rem;
+    box-shadow: none;
+}
+
+input.cc-name-input::placeholder {
+    color: var(--cc-muted);
+}
+
+input.cc-name-input:focus {
+    outline: none;
+    border-color: var(--cc-gold);
+    box-shadow: none;
+}
+
+.cc-warning input.cc-name-input {
+    width: 160px;
+    flex-shrink: 0;
 }
 
 .cc-create {
@@ -677,6 +782,7 @@ body.character-page::before {
     overflow: hidden;
     text-overflow: ellipsis;
     background: var(--cc-gold-deep);
+    border-color: var(--cc-edge);
     color: #2a1608;
     font-size: 1.15rem;
     letter-spacing: 0.02em;
@@ -691,36 +797,12 @@ body.character-page::before {
     background: #c97900;
 }
 
+/* Not ready yet (no name): a plain plank with muted text, the same family as the panels. */
 .cc-create:disabled {
-    background: #5a4636;
-    color: #b09d86;
+    background: var(--cc-plank);
+    border-color: var(--cc-edge-light);
+    color: var(--cc-muted);
     cursor: not-allowed;
-}
-
-/* ---------- Motion ---------- */
-
-.cc-swap {
-    animation: cc-swap 0.2s ease-out;
-}
-
-@keyframes cc-fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
-
-@keyframes cc-in-left {
-    from { opacity: 0; transform: translateX(-28px); }
-    to { opacity: 1; transform: none; }
-}
-
-@keyframes cc-in-right {
-    from { opacity: 0; transform: translateX(28px); }
-    to { opacity: 1; transform: none; }
-}
-
-@keyframes cc-swap {
-    from { opacity: 0.25; }
-    to { opacity: 1; }
 }
 
 /* ---------- Narrower screens: classes and details side by side ---------- */
@@ -736,7 +818,7 @@ body.character-page::before {
     }
 
     .cc-info,
-    .cc-actions .cc-create {
+    .cc-actions .cc-actions-main {
         justify-self: end;
         width: 100%;
         max-width: 560px;
@@ -924,25 +1006,8 @@ body.character-page::before {
         padding: 0 max(12px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
     }
 
-    .cc-actions .cc-create {
+    .cc-actions .cc-actions-main {
         max-width: none;
         font-size: 1.08rem;
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .cc-actions,
-    .cc-roster,
-    .cc-info,
-    .cc-swap {
-        animation: none;
-    }
-
-    .cc-world-picture,
-    .cc-class,
-    .cc-emblem,
-    .cc-slot,
-    .cc-button {
-        transition: none;
     }
 }

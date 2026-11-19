@@ -168,7 +168,7 @@ To close a window, press its key again, select the **✕** at its top right corn
 | Guild | G | Your guild, or the form to create one. See [Guilds](#/player-guide/guilds). |
 | Collectables | K | Your mounts. See [Mounts](#/player-guide/mounts). |
 | Achievements | Y | Your achievements and progress. |
-| Menu | Esc | Settings, Manage Profile (not for guests) and Logout. |
+| Menu | Esc | Settings, Manage Profile and Change character (neither for guests) and Logout. |
 
 ## Notifications
 
@@ -183,10 +183,11 @@ A message about your connection, such as an attempt to reconnect, stays until it
 
 ## Menu and settings
 
-Press **Esc** to open the menu. It has three buttons:
+Press **Esc** to open the menu. It has four buttons:
 
 - **Settings** opens the options below.
 - **Manage Profile** opens your account page in a new tab. See [Account Security](#/player-guide/account-security). A guest account has no profile, so the menu shows this button only to full accounts.
+- **Change character** saves your character, leaves the game and takes you to your characters, where you can pick another one to play. You stay signed in. A guest account has one character, so the menu shows this button only to full accounts.
 - **Logout** leaves the game and returns you to the login screen.
 
 | Setting | What it does | A new character starts at |

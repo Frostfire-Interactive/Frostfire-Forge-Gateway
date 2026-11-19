@@ -353,6 +353,27 @@ function sendRequest(data: any) {
   sendRawFrame(packet.encode(JSON.stringify(data)));
 }
 
+/**
+ * Change character (pause menu): no packet is sent. LOGOUT would end the web login, and DISCONNECT clears the session
+ * id before the node's leave-save, which only runs while the session is held. The transport is closed instead, so the
+ * node's normal onDisconnect save runs with the session held and keeps the token. closeHandled is set first, as for
+ * CHARACTER_REQUIRED, so the close does not start a reconnect or show a notice; the page goes to the character list
+ * when the close completes, or after a second.
+ */
+async function leaveForCharacterList(): Promise<void> {
+  // Slot order not yet sent goes now, while the stream is open (beforeunload would find it closed).
+  flushInventorySlots();
+  closeHandled = true;
+  transportReady = false;
+  try {
+    socket.close({ closeCode: 1000, reason: "Change character" });
+    await Promise.race([socket.closed.catch(() => undefined), new Promise((resolve) => setTimeout(resolve, 1000))]);
+  } catch {
+    // Already closed by the node.
+  }
+  window.location.href = "/character";
+}
+
 // The F2 menu's "Cluster Nodes" box asks the node for the block table through this (core/clusternodes.ts).
 setClusterDebugRequester(() => sendRequest({ type: "CLUSTER_DEBUG", data: {} }));
 
@@ -6336,7 +6357,7 @@ window.addEventListener('beforeunload', () => {
   flushInventorySlots();
 });
 
-export { sendRequest, cachedPlayerId, getIsLoaded, getMovementAllowed, getHandoffGap, getWalkAtSwitch, getGapReports, gapWalkStarted, noteGapFrame, finishGapWalk, gapFrameMs, handoffPace, itemsByName, showNotification };
+export { sendRequest, leaveForCharacterList, cachedPlayerId, getIsLoaded, getMovementAllowed, getHandoffGap, getWalkAtSwitch, getGapReports, gapWalkStarted, noteGapFrame, finishGapWalk, gapFrameMs, handoffPace, itemsByName, showNotification };
 (window as any).itemsByName = itemsByName;
 
 
