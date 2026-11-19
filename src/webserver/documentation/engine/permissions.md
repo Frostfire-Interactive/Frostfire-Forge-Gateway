@@ -102,6 +102,7 @@ Every node name found in the engine source, and where it is checked.
 | `admin.kill` | `/kill` | Yes |
 | `admin.revive` | `/revive` | Yes |
 | `admin.cooldowns` | `/cooldowns`, `/resetcooldowns` | Yes |
+| `admin.speed` | `/speed` | Yes |
 | `admin.respawn` | `/respawn` | Yes |
 | `admin.summon` | `/summon`, `/goto`, `/teleport` | No |
 | `admin.summonadmins` | Needed on top of `admin.summon` to summon a player who is an admin | Yes |

@@ -55,6 +55,7 @@ Most commands take `<username | id>`. A value that is not a number is matched ag
 | `/revive [username \| id]` | none | `admin.revive` or `admin.*` | Revives a dead or ghost player in place |
 | `/respawn [username \| id]` | none | `admin.respawn` or `admin.*` | Sends a player to the default map's spawn at full health |
 | `/cooldowns [username \| id]` | `/resetcooldowns` | `admin.cooldowns` or `admin.*` | Ends every cooldown an online player is waiting on |
+| `/speed <multiplier \| reset>` | none | `admin.speed` or `admin.*` | Sets your own total walk speed |
 | `/summon <username \| id>` | none | `admin.summon` or `admin.*` | Brings an online player to you |
 | `/goto <username \| id>` | `/teleport` | `admin.summon` or `admin.*` | Takes you to an online player |
 | `/permission <mode> <username \| id> [permissions]` | `/permissions` | `admin.permission` or `admin.*`, plus the mode's own permission | Reads or changes a player's permissions |
@@ -241,6 +242,28 @@ The player's home is left as it is, and so are their buffs and debuffs. Their ga
 ```text title="Example"
 /cooldowns
 /cooldowns alice
+```
+
+### /speed
+
+```text title="Syntax"
+/speed <multiplier>
+/speed reset
+```
+
+Sets your own walk speed to a multiple of the base walk speed (180 px a second), from `0.1` to `5`. It takes the place of everything else that changes your speed: a mount, ghost form and slows all leave it as it is. `/speed reset`, `/speed off`, `/speed normal` or `/speed` alone gives you back your normal speed.
+
+The speed is kept in memory on the server you are on, until you log out or move to another server of a cluster. Collision still applies; noclip walks through walls.
+
+| Answer | When |
+|--------|------|
+| `Your speed is set to <multiplier>x` | It was set |
+| `Your speed is back to normal` | It was reset |
+| `Usage: /speed <0.1 to 5 \| reset>` | The value is not a number from 0.1 to 5 |
+
+```text title="Example"
+/speed 3
+/speed reset
 ```
 
 ### /summon and /goto
