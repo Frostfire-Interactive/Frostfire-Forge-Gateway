@@ -1,9 +1,3 @@
-// Spell editor popup. Talks to the game window over postMessage; the game
-// window forwards everything to the server, which validates and persists.
-// The window itself is the shared workbench (tooleditor.ts); this file holds
-// what is the spell editor's own: its fields, the server's rules repeated so a
-// slip is caught before the round trip, the effects of a spell as a list of
-// cards, and its conversation with the server.
 import { EditorShell, type ListRow, type RecordState } from "./tooleditor.js";
 import { FieldRenderer, nameList, setFieldError, type AssetOption, type Field } from "./toolfields.js";
 import { button, card, count, el, empty, forbid, icon, iconButton, listed, noticeDialog, setBusy, shown, tag, thumb, toast } from "./toolkit.js";
@@ -74,11 +68,6 @@ function numberError(value: unknown, rule: NumberRule): string | null {
 /** The names in a comma-separated particle list. */
 const particleList = nameList;
 
-/**
- * The server names what a number is counted in at the end of its label:
- * "Duration (seconds)", "Slow %". Here the unit is written inside the field,
- * so the label is the words before it.
- */
 function unitOf(label: string): { label: string; unit?: string } {
   const worded = /^(.*\S)\s+\((seconds|pixels)\)$/.exec(label);
   if (worded) return { label: worded[1], unit: worded[2] };
@@ -221,8 +210,6 @@ class SpellEditorBridge {
       void noticeDialog(`${asked} was not deleted`, lines);
       return;
     }
-    // The reply names the deleted spell: never adopt it as the open one, and
-    // leave another open spell's unsaved edits alone.
     if (msg.name && msg.name === this.originalName) {
       this.draft = null;
       this.originalName = null;
@@ -242,11 +229,6 @@ class SpellEditorBridge {
     toast(`You learned ${msg.name ?? "the spell"}. It is in your spell book.`);
   }
 
-  /**
-   * Something the server refused that no request here was waiting for. Before
-   * its first answer, that is the editor itself being refused: the page says
-   * so. After, it is said on the open spell, or in the corner.
-   */
   private report(lines: string[]): void {
     if (!this.ready) this.shell.refused(lines, () => this.askForLists());
     else if (this.draft) {
@@ -365,11 +347,6 @@ class SpellEditorBridge {
     return errors;
   }
 
-  /**
-   * The summary at the top of the page: where the marked fields are, or, when
-   * no field is marked, what the server said that is not about one field. It
-   * is worked out again as fields are put right.
-   */
   private problemLines(): string[] {
     const fields = Object.keys(this.fieldErrors);
     if (fields.length === 0) return this.otherProblems;
@@ -398,13 +375,6 @@ class SpellEditorBridge {
 
   // ---------------------------------------------------------------- options
 
-  /**
-   * Icon URL for a stored icon name: the sprite of that name, which is what
-   * the hotbar and the spell book draw (the server sends them
-   * /sprite?name=<icon>). The listed sprites win, but a spell whose icon is not
-   * in the list (different case, an extension, or the list failed to load)
-   * still gets a URL built the same way.
-   */
   private iconFor(name: unknown): string | null {
     const wanted = String(name ?? "").trim();
     if (!wanted) return null;
@@ -447,11 +417,6 @@ class SpellEditorBridge {
     return options;
   }
 
-  /**
-   * The effect types still free for the effect at `index` (or for a new one):
-   * those no other effect of the spell has, counting damage and healing over
-   * time as one.
-   */
   private freeEffectTypes(index = -1): EffectTypeRule[] {
     const others: string[] = (this.draft?.effects ?? []).filter((_: any, i: number) => i !== index).map((e: any) => e.type);
     const periodic = others.some((t) => PERIODIC_TYPES.includes(t));
@@ -860,10 +825,6 @@ class SpellEditorBridge {
     return { min: rule.min, max: rule.max, step: (rule.decimals ?? 0) > 0 ? 0.1 : 1 };
   }
 
-  /**
-   * One form field editing `target[field.key]`, with any problem reported
-   * under `path` shown beneath it. `onChange` runs before the form is told.
-   */
   private field(field: Field, target: any, path: string, onChange?: () => void): HTMLElement {
     const wrap = this.fields.renderField({ ...field, path }, target, () => {
       onChange?.();
@@ -890,10 +851,6 @@ class SpellEditorBridge {
     return this.field({ key, label, type: "number", hint, unit, ...this.limits(this.numberRule(key)) }, this.draft, key);
   }
 
-  /**
-   * A comma-separated list of particle names, shown as removable chips with a
-   * searchable picker of the particles that exist.
-   */
   private particles(label: string, hint: string, target: any, key: string, path: string): HTMLElement {
     const known: string[] = this.data.particles ?? [];
     return this.field({
@@ -979,8 +936,6 @@ class SpellEditorBridge {
   private beginRequest(kind: "save" | "delete" | "learn", packet: string, data: any, name: string): void {
     this.pending = { kind, packet, name, adds: kind === "save" && this.originalName === null };
     if (this.pendingTimer) clearTimeout(this.pendingTimer);
-    // No result ever comes back if the server drops the packet outright:
-    // don't leave the buttons blocked forever.
     this.pendingTimer = setTimeout(() => {
       if (this.pending?.packet !== packet) return;
       this.endRequest();

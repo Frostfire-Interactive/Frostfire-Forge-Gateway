@@ -2,8 +2,6 @@ import query, { transaction, type TransactionStatement } from "../controllers/sq
 import { verify, randomBytes, verifyGuestPassword } from "../modules/hash";
 import log from "../modules/logger";
 
-// An account token lasts this long from when it was issued, then a new password login is needed. Kept in the
-// account row (token_expires, epoch ms), which the engine checks too. A token with no expiry has expired.
 export const TOKEN_LIFETIME_MS = (Number(process.env.TOKEN_LIFETIME_HOURS) || 24 * 7) * 60 * 60 * 1000;
 
 /** Whether an account row's token is still within its lifetime. */
@@ -24,10 +22,6 @@ async function hasAccountsColumn(name: string): Promise<boolean> {
   return Number(rows[0]?.count) > 0;
 }
 
-/**
- * Start-time step: accounts.token_expires, added if missing (the engine does the same; whichever starts first
- * does the work). Every login reads it, so it must be there before the first one. Never throws.
- */
 export async function ensureTokenExpiryColumn(): Promise<boolean> {
   try {
     if (await hasAccountsColumn("token_expires")) return true;
@@ -54,13 +48,6 @@ interface NewGuest {
   geo: string | null;
 }
 
-/**
- * The statements that make guests, to run as ONE transaction: each guest's account, its one character (named as
- * the account, with `classId`: null for a guest, who picks its class on the character page like any account; 0 for
- * benchmark guests, who go straight into the game), the account's active character, and the character's starting rows (keyed by the character's id, so
- * deleting the account removes them all: accounts.id -> characters -> every table of the character).
- * Names are lowercase and 30 characters at most, the width of characters.name.
- */
 function newGuestStatements(guests: NewGuest[], classId: number | null): TransactionStatement[] {
   const multiInsert = (sql: string, perRow: (g: NewGuest) => any[]): TransactionStatement => {
     const group = `(${perRow(guests[0]).map(() => "?").join(", ")})`;
@@ -75,11 +62,6 @@ function newGuestStatements(guests: NewGuest[], classId: number | null): Transac
   ];
 }
 
-/**
- * The statements that give each of the accounts named (already inserted, in the same transaction or before) its first
- * character, named as the account: the character, the account's active character, and the character's starting rows.
- * Used by guests and by create_admin.
- */
 export function firstCharacterStatements(names: string[], classId: number | null): TransactionStatement[] {
   const marks = names.map(() => "?").join(", ");
   // A row for each of the new characters, found by name.
@@ -120,21 +102,13 @@ const player = {
       await query("TRUNCATE TABLE parties");
     }
 
-    // A guest is its account: deleting it deletes its characters and, by the foreign keys, every row of
-    // theirs (stats, bags, mail, quests ...). Only the account's own permissions are keyed by name.
     await query("DELETE FROM permissions WHERE username IN (SELECT username FROM accounts WHERE guest_mode = 1)");
 
     await query("DELETE FROM accounts WHERE guest_mode = 1");
   },
-  // The engine removes every guest when it starts (its player.clear). This removes, while it runs, the
-  // guests nobody can be playing: offline with no session, a day past their last login, and in no party
-  // or guild (the engine keeps those in memory). The rest wait for the engine's next start. Answers
-  // with the number removed.
   purgeOldGuests: async () => {
     const engine = process.env.DATABASE_ENGINE || "mysql";
     const dayAgo = engine === "sqlite" ? "datetime('now', '-24 hours')" : engine === "postgres" ? "NOW() - INTERVAL '24 hours'" : "NOW() - INTERVAL 24 HOUR";
-    // A guest in a party or guild is held by the character (characters.party_id, guild_id) as well as by the
-    // account's own columns, and a leader by name in parties and guilds.
     const idle =
       "guest_mode = 1 AND online = 0 AND session_id IS NULL AND party_id IS NULL AND guild_id IS NULL" +
       " AND NOT EXISTS (SELECT 1 FROM characters c WHERE c.account_id = accounts.id AND (c.party_id IS NOT NULL OR c.guild_id IS NOT NULL))" +
@@ -146,9 +120,6 @@ const player = {
 
     const names = found.map((row) => row.username);
     const marks = names.map(() => "?").join(", ");
-    // The account goes first and only while still idle, so a guest who came back in the meantime is
-    // kept. Deleting it deletes its characters and, by the foreign keys, every row of theirs; only the
-    // permissions, keyed by the account's name, are removed for the names whose account is gone.
     const results = await transaction([
       { sql: `DELETE FROM accounts WHERE ${idle} AND username IN (${marks})`, values: names },
       { sql: `DELETE FROM permissions WHERE username IN (${marks}) AND username NOT IN (SELECT username FROM accounts)`, values: names },
@@ -156,13 +127,6 @@ const player = {
     const removed = results[0];
     return typeof removed?.affectedRows === "number" ? removed.affectedRows : removed?.count ?? 0;
   },
-  // Bulk-provision N guest accounts for load testing. A normal guest signup is
-  // ~15 serialised SQL round-trips (2 dup-check SELECTs + 7 child INSERTs +
-  // login SELECT/UPDATEs); at benchmark ramp rates that saturates the DB worker
-  // pool and clients time out. Guests use CSPRNG usernames so dup checks are
-  // pointless, and the child rows are identical templates - so this does one
-  // multi-row INSERT per table (7 queries total for the whole batch) and mints
-  // the tokens directly instead of going through login().
   registerGuestBulk: async (count: number, ip?: string, geo?: string) => {
     const n = Math.max(1, Math.min(2000, Math.floor(count)));
     const rows = Array.from({ length: n }, () => {
@@ -176,8 +140,6 @@ const player = {
     });
 
     const expires = Date.now() + TOKEN_LIFETIME_MS;
-    // One transaction: no guest is left with an account and not the character and rows a login reads.
-    // Benchmark clients go straight into the game, past the character page: class 0, which the game server lets in.
     await transaction(
       newGuestStatements(rows.map((r) => ({ username: r.username, email: r.email, password_hash: "guest:benchmark", token: r.token, tokenExpires: expires, ip: ip ?? null, geo: geo ?? null })), 0)
     );
@@ -203,8 +165,6 @@ const player = {
     if (usernameExists && usernameExists.length != 0)
       return { error: "Username already exists" };
 
-    // No login name may equal a character's name (any account's, a deleted one's too: names are never reused).
-    // The engine's nameTaken makes the same check from the other side. Character names are compared in lowercase.
     const characterNamed = (await query("SELECT id FROM characters WHERE name_key = ? LIMIT 1", [username.toLowerCase()])) as any[];
     if (characterNamed && characterNamed.length != 0)
       return { error: "Username already exists" };

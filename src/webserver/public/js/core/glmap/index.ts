@@ -1,9 +1,3 @@
-// WebGL2 tilemap renderer. Tile layers are drawn straight from per-chunk
-// tile-id textures and a shared tile atlas, so loading or editing a chunk is a
-// small texture upload instead of a Canvas2D bake. Each pass renders into a
-// hidden GL canvas and is copied into the 2D canvas it belongs to, which keeps
-// the existing canvas stack (entities, ghosts, lights, weather) unchanged.
-
 import { getGL, beginCanvasPass, type GLState } from "./context.js";
 import { getMapResources, getChunkTexture, sweepChunks, updateAnimations, type MapResources } from "./resources.js";
 import { MAX_SLICES_PER_DRAW, MAX_BLUR_TAPS, MAX_OCCLUDERS } from "./shaders.js";
@@ -30,8 +24,6 @@ export interface MapPassOptions {
   chunkAlpha: (key: string) => number;
   // Editor layer visibility; null outside the editor.
   isLayerVisible: ((name: string) => boolean) | null;
-  // On-screen characters for y-sorting, nearest first, in world px: sprite box
-  // minX, minY, maxX, maxY, then the feet line.
   occluders: Array<[number, number, number, number, number]>;
   now: number;
 }
@@ -63,8 +55,6 @@ const SHADOW_WEIGHTS = (() => {
 })();
 
 let shadowMaxOffset = 14;
-// SHADOW_MAX_OFFSET lives in shadows.ts; it's passed in to keep this module free
-// of game imports.
 export function setShadowMaxOffset(value: number): void {
   shadowMaxOffset = value;
 }
@@ -149,17 +139,12 @@ function drawChunkSlices(s: GLState, chunk: any, originX: number, originY: numbe
   }
 }
 
-// Draw one chunk's y-sorted layers (tile program bound, occluders set). mode 1
-// draws the pixels characters stand in front of (the 'below' pass), mode 2 the
-// pixels covering a character standing behind the object (the 'above' pass).
 function drawYSortLayers(s: GLState, res: MapResources, c: { data: any; x: number; y: number },
   slices: number[], mode: 1 | 2, alpha: number): void {
   const mapData = window.mapData;
   const gl = s.gl;
   const p = s.tile;
   const chunkPixelSize = mapData.chunkSize * mapData.tilewidth;
-  // Objects can continue into the chunk below; bind it so the base search can
-  // follow the stack across the edge.
   const below = mapData.loadedChunks.get(`${c.x}-${c.y + 1}`);
   let belowGPU = null;
   if (below) {
@@ -227,10 +212,6 @@ function bindTarget(s: GLState, fbo: WebGLFramebuffer, width: number, height: nu
   gl.scissor(0, 0, width, height);
 }
 
-// Render one shadow cut: silhouettes of the shadow layers at shadowZ, eroded at
-// the base, blurred, then composited into the canvas pass as translucent black
-// at the sun offset. Mirrors the old per-chunk bake, but in screen space, so
-// shapes crossing chunk borders need no special handling.
 function renderShadowCut(s: GLState, res: MapResources, opts: MapPassOptions, canvasT: Transform,
   shadowZ: number, shadow: ShadowParams, chunks: Array<{ key: string; data: any; x: number; y: number }>): void {
   const mapData = window.mapData;
@@ -238,9 +219,6 @@ function renderShadowCut(s: GLState, res: MapResources, opts: MapPassOptions, ca
   if (!names || names.length === 0) return;
   const shadowNames = new Set(names.map((n) => n.toLowerCase()));
 
-  // Visible world rect plus a margin wide enough for the sun offset, base trim
-  // and blur, at one texel per world pixel (so the blur matches the old look
-  // regardless of devicePixelRatio).
   const bottomTrim = shadowMaxOffset + 2;
   const pad = bottomTrim + 4;
   const worldLeft = -canvasT.translateX / canvasT.scaleX;
@@ -272,8 +250,6 @@ function renderShadowCut(s: GLState, res: MapResources, opts: MapPassOptions, ca
     drawChunkSlices(s, c.data, c.x * chunkPixelSize, c.y * chunkPixelSize, res, slices, 1, true);
   }
   if (!any) {
-    // Nothing to shadow: leave the offscreen framebuffer and restore the canvas
-    // pass state, or every later draw in this pass would land offscreen.
     beginCanvasRegion(s, canvasT.width, canvasT.height);
     useTileProgram(s, res, canvasT, opts.clip);
     return;
@@ -349,8 +325,6 @@ function copyToTarget(s: GLState, target: CanvasRenderingContext2D, sw: number, 
   target.restore();
 }
 
-// Render the 'below' (under entities) or 'above' (over entities) map pass and
-// draw it onto opts.target.
 export function renderMapPass(opts: MapPassOptions): void {
   const s = getGL();
   const mapData = window.mapData;
@@ -395,13 +369,8 @@ export function renderMapPass(opts: MapPassOptions): void {
     flipY: -1,
   };
 
-  // Layers at PLAYER_Z_INDEX (the player cut sits 0.5 below it) are y-sorted
-  // against characters: split per pixel between the end of the 'below' pass and
-  // the start of the 'above' pass instead of always covering characters.
   const ySortZ = playerCutIndex < cuts.length ? cuts[playerCutIndex].key + 0.5 : null;
 
-  // Per chunk: which layer slices fall into each segment of this pass, and the
-  // y-sorted layer slices.
   const perChunkSegments: Array<Map<number, number[]>> = [];
   const perChunkYSort: number[][] = [];
   for (const c of chunks) {
@@ -450,8 +419,6 @@ export function renderMapPass(opts: MapPassOptions): void {
 
   let drew = false;
   for (let segment = startSegment; segment <= endSegment; segment++) {
-    // Over characters: the y-sorted layer is the lowest layer of the first
-    // 'above' segment.
     if (opts.phase === "above" && segment === startSegment && drawYSorted(2)) drew = true;
     for (let ci = 0; ci < chunks.length; ci++) {
       const slices = perChunkSegments[ci].get(segment);
@@ -474,10 +441,6 @@ export function renderMapPass(opts: MapPassOptions): void {
   if (drew) copyToTarget(s, target, width, height, 0, 0, width, height, true);
 }
 
-// Draw every tile layer of the loaded chunks covering the world rect onto the
-// minimap buffer. Rendered at one pixel per world pixel and scaled into the
-// destination by the 2D context (with its smoothing), like the old chunk
-// canvases were.
 export function renderMinimapMap(target: CanvasRenderingContext2D, worldLeft: number, worldTop: number,
   worldWidth: number, worldHeight: number, dx: number, dy: number, dw: number, dh: number,
   isLayerVisible: ((name: string) => boolean) | null): void {
@@ -524,7 +487,5 @@ export function renderMinimapMap(target: CanvasRenderingContext2D, worldLeft: nu
   }
 
   gl.disable(gl.SCISSOR_TEST);
-  // The rendered region is rounded up to whole pixels, so it covers slightly
-  // more world than requested; scale the destination to match.
   if (drew) copyToTarget(s, target, width, height, dx, dy, dw * (width / worldWidth), dh * (height / worldHeight), false);
 }

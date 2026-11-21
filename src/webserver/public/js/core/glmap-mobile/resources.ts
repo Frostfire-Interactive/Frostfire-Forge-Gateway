@@ -327,9 +327,6 @@ export function updateAnimations(s: any, res: any, now: any) {
 export function invalidateChunk(chunk: any) {
   chunkVersions.set(chunk, (chunkVersions.get(chunk) ?? 0) + 1);
 }
-// A chunk's tile ids as the GPU takes them, and which tiles it uses. The same for every surface (the ground, what is
-// over the players, the minimap), so it is worked out for the first of them that asks and handed to the others:
-// each used to walk every cell of every layer again for itself. Let go of once every surface has taken it.
 function chunkTilesFor(s: any, chunk: any, version: any, width: any, height: any, layers: any) {
   let held = chunkTiles.get(chunk);
   if (!held || held.version !== version || held.width !== width || held.height !== height || held.layerCount !== layers.length) {
@@ -369,12 +366,6 @@ export function chunkNeedsUpload(s: any, chunk: any) {
     return false;
   return !chunkEntryIsCurrent(resourcesFor(s).chunks.get(chunk), chunkVersions.get(chunk) ?? 0, width, height, layers.length);
 }
-// The chunk's texture on this surface. Putting a chunk there is the dear part of a frame (its tiles are read back
-// from a canvas, which Safari is slow at), and walking into new ground brings a row of chunks at once, on every
-// surface: all in one frame, that was a stutter (USER REPORT 2026-10-07: "Map rendering is a bit laggy on mobile
-// safari", "Just while walking into a new area"). So a pass puts one chunk there at most (index.ts says which, with
-// `mayUpload`): without it, a chunk that is not there yet is not drawn this frame, and one that has changed is drawn
-// as it was.
 export function getChunkTexture(s: any, chunk: any, mayUpload = true) {
   const width = chunk.width | 0;
   const height = chunk.height | 0;

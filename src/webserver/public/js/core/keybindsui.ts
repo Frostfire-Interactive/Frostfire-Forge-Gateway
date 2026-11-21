@@ -1,6 +1,3 @@
-// The Hotkeys screen of the options menu: every action with a keyboard shortcut and its key. Click a key, press the new
-// one. Escape leaves without changing. A key another action has is swapped with it (keybinds.ts).
-
 import { ACTIONS, actionsShown, codeLabel, getKey, onBindingsChange, resetBindings, setKey, type Action, type ActionId } from "./keybinds.js";
 import { cachedPlayerId } from "./socket.js";
 import Cache from "./cache.js";
@@ -168,8 +165,6 @@ if (menu && list) {
     resetBindings();
     say("All hotkeys are back to their defaults.");
   });
-  // However the options menu is hidden (its X, Escape, the pause menu), the Hotkeys screen is left too, so the menu
-  // opens on Settings next time.
   if (container) {
     new MutationObserver(() => {
       if (container.style.display !== "block" && menu.classList.contains("hotkeys-open")) close();

@@ -1,10 +1,3 @@
-// Chooses the map rendering path once, at startup.
-//
-// Desktop uses glmap/ (one hidden WebGL canvas, copied into the 2D canvases).
-// Mobile uses glmap-mobile/ (one WebGL canvas per surface placed in the page,
-// no canvas->canvas copies, smaller atlas pages) which iOS Safari needs.
-//
-// Override for testing: ?renderer=mobile or ?renderer=desktop
 function detectMobileRenderer(): boolean {
   try {
     const override = new URLSearchParams(window.location.search).get("renderer");
@@ -22,6 +15,3 @@ function detectMobileRenderer(): boolean {
 
 export const MOBILE_RENDERER: boolean = detectMobileRenderer();
 
-export function isMobileRenderer(): boolean {
-  return MOBILE_RENDERER;
-}

@@ -2,8 +2,6 @@ import { sendRequest, leaveForCharacterList, getIsLoaded, getMovementAllowed, ca
 import { teleportsHome } from "./consumables.js";
 import { isSelfDead, isSelfActionLocked } from "./death.js";
 import Cache from "./cache.js";
-// (no longer used here, but kept: the modules start in the order they are imported, and ui.ts is in a cycle that
-// breaks with any other order: "Cannot read properties of undefined (reading 'addEventListener')")
 import "./renderer.js";
 const cache = Cache.getInstance();
 import { chatInput, pauseMenu, optionsMenu, fpsSlider, musicSlider, effectsSlider, ambienceSlider, weatherSlider, mutedCheckbox, autoLootCheckbox, canvas, ctx, friendsList } from "./ui.js";
@@ -37,8 +35,6 @@ import { applyWorldTransform, installWorldZoom, screenToWorld } from "./worldzoo
 import { actionFor, defaultCodeOf, type ActionId } from "./keybinds.js";
 import "./keybindsui.js";
 
-/** Walking: the bound key of each direction, as the default key it was before (pressedKeys, and the walk code that
- *  reads it, know the directions by those). */
 const MOVE_ACTIONS: ReadonlySet<ActionId> = new Set<ActionId>(["moveUp", "moveLeft", "moveDown", "moveRight"]);
 
 /** Closes in on the nearest target (the Target Closest key). */
@@ -196,11 +192,6 @@ window.addEventListener("gamepadjoystick", (e: CustomEventInit) => {
     : stickAngle >= 60 && stickAngle < 120 ? "DOWN" : stickAngle >= 120 && stickAngle < 150 ? "DOWNLEFT" : stickAngle >= 150 || stickAngle < -150 ? "LEFT"
     : stickAngle >= -150 && stickAngle < -120 ? "UPLEFT" : stickAngle >= -120 && stickAngle < -60 ? "UP" : "UPRIGHT");
   if (!getIsLoaded() || !getMovementAllowed()) {
-    // A map is loading (a warp): the server has stopped the player, and nothing is sent to it until the map is in.
-    // What was last sent no longer holds, and is forgotten: a direction is only sent when it differs from the last,
-    // so a stick held the same way through the warp, or let go during it and pushed the same way again, sent nothing
-    // and the player stood still. USER REPORT 2026-10-07: "When warping on mobile, the whole screen becomes
-    // un-interactable".
     setLastSentDirection("");
     return;
   }
@@ -224,9 +215,6 @@ window.addEventListener("gamepadjoystick", (e: CustomEventInit) => {
 
   const angle = Math.atan2(y, x) * (180 / Math.PI);
 
-  // Cardinal-biased sectors: LEFT/RIGHT/UP/DOWN each span 60deg (+/-30deg around
-  // the axis), diagonals 30deg. An even 45deg split made "walk straight" hard on
-  // a phone.
   let direction = "";
   if (angle >= -30 && angle < 30) {
     direction = "RIGHT";
@@ -281,10 +269,6 @@ chatInput.addEventListener("input", () => {
   }, 1000);
 });
 
-/**
- * The menu or its Settings (with Hotkeys) is open: game keys do nothing then but Escape, so keys pressed while
- * choosing settings or a new key do not attack, cast or open windows.
- */
 function menuOpen(): boolean {
   return pauseMenu.style.display === "block" || optionsMenu.style.display === "block";
 }
@@ -331,9 +315,6 @@ window.addEventListener("keydown", async (e) => {
   );
   if (isTypingInInput && !["Enter", "Escape"].includes(e.code)) return;
 
-  // Ignore OS key auto-repeat for everything except movement: holding an
-  // action key must not re-fire its handler. (Placed after the input guard
-  // so chat typing still repeats normally.)
   if (e.repeat && !(action && MOVE_ACTIONS.has(action))) return;
 
   if (action === "targetClosest") {
@@ -416,8 +397,6 @@ window.addEventListener("keyup", (e) => {  const activeElement = document.active
 
   const action = actionFor(e.code);
 
-  // With the menu or Settings open a key let go does not interact or open a chest (the key that set a new binding is
-  // let go there too). A loot or chest hold begun before it opened is dropped; movement keys are still let go.
   if (menuOpen() && (action === "interact" || action === "openChest")) {
     lootKeyDownTime = null;
     lootHolding = false;
@@ -440,8 +419,6 @@ window.addEventListener("keyup", (e) => {  const activeElement = document.active
       (window as any)._lootPickupProgress = 0;
       return;
     }
-    // No loot pickup armed: E loots the corpse beside the player, or talks to the nearest NPC instead, or opens the
-    // mailbox the player stands at.
     if (isSelfActionLocked()) return;
     if (lootNearestCorpse()) return;
     import("./quest.js").then((m) => {
@@ -528,10 +505,6 @@ function updateViewportMetrics() {
   updateOrientationClass();
 }
 
-// Re-assigning canvas.width/height wipes the backing store and resets the
-// context transform the renderer relies on. Guard against no-op resizes so the
-// game canvas isn't blanked for a frame on every iOS viewport event (which
-// flickers once WebKit stops promoting the canvas to its own compositing layer).
 function resizeGameCanvas() {
   const rawDpr = window.devicePixelRatio || 1;
   const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
@@ -552,10 +525,6 @@ function resizeGameCanvas() {
   const prevWidth = canvas.width;
   const prevHeight = canvas.height;
 
-  // Snapshot the current frame before resizing. Reassigning canvas.width/height
-  // clears the backing store, so without this the canvas's black CSS background
-  // shows through for a frame before the render loop repaints - seen as black
-  // flicker while dragging to resize on PC.
   let snapshot: HTMLCanvasElement | null = null;
   if (ctx && prevWidth > 0 && prevHeight > 0) {
     snapshot = document.createElement("canvas");
@@ -573,8 +542,6 @@ function resizeGameCanvas() {
   if (ctx) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-    // Bridge the one-frame gap with the previous frame stretched to the new size
-    // until the next animation frame redraws everything crisply.
     if (snapshot) {
       ctx.drawImage(snapshot, 0, 0, prevWidth, prevHeight, 0, 0, targetWidth, targetHeight);
     }
@@ -594,8 +561,6 @@ window.addEventListener("resize", handleViewportResize);
 window.visualViewport?.addEventListener("resize", handleViewportResize);
 window.addEventListener("viewframe", resizeGameCanvas);
 
-// Scroll never changes the canvas size, so only refresh lightweight metrics.
-// Touching canvas.width here would blank the canvas on every iOS scroll tick.
 window.visualViewport?.addEventListener("scroll", updateViewportMetrics);
 
 window.addEventListener("orientationchange", () => {
@@ -605,14 +570,6 @@ window.addEventListener("orientationchange", () => {
   }, 100);
 });
 
-// The game's page is never meant to be scrolled: everything on it is placed on the screen itself. A phone's browser
-// can still leave it moved: coming back to this tab from another (a tool window) with the phone turned the other
-// way, the page is laid out for the old way up and what is seen of it is shifted, so the joystick, the buttons and
-// the hotbar all stood too high, until the phone was turned upright and back (USER REPORT 2026-10-07: "the whole
-// touch interface gets moved upwards after closing the control panel or player attributes while in portrait mode").
-// So whenever the page is shown again, is given the keyboard's attention again or is turned, it is put back where it
-// belongs and measured again: at once, and a few times after, because the browser is still settling its own bars
-// and the turn's animation when it tells of it.
 function settleViewport() {
   const active = document.activeElement;
   // (a field with the keyboard up is where the browser moved the page to on purpose: left alone)
@@ -671,8 +628,6 @@ changeCharacterButton?.addEventListener("click", () => {
   void leaveForCharacterList();
 });
 
-// A guest account has no profile and one character, so the menu leaves out Manage Profile and Change character for
-// one. Checked each time the menu opens, as the player's own data may come after the page.
 if (profileButton || changeCharacterButton) {
   new MutationObserver(() => {
     if (pauseMenu.style.display !== "block") return;
@@ -752,10 +707,6 @@ weatherSlider.addEventListener("input", () => {
   });
 });
 
-// On a touch screen there is no right-click, which is how an item in the bags is offered in a trade or sold to a
-// vendor (the contextmenu handler below). Two taps on the item do the same there. Heard before the bag slot's own
-// two-tap handler (which equips or uses the item) and kept from it: while a trade or a vendor is open, the item goes
-// to them.
 let lastBagTap: { slot: Element; at: number } | null = null;
 document.addEventListener("touchend", (event) => {
   const bagSlot = (event.target as HTMLElement | null)?.closest?.("#inventory .slot") as HTMLElement | null;
@@ -865,8 +816,6 @@ document.addEventListener("contextmenu", (event) => {
   // the world under the cursor, at the world zoom (worldzoom.ts)
   const { x: worldX, y: worldY } = screenToWorld(screenX, screenY);
 
-  // Corpses cannot be targeted. Ghosts can be targeted and interacted with,
-  // except while their graveyard teleport is still pending (not rendered).
   const clickedPlayer = playerAt(worldX, worldY, (player) => !player.isDead && !(player.isGhost && player.ghostTeleportPending));
 
   if (clickedPlayer) {
@@ -932,9 +881,6 @@ canvas.addEventListener("touchmove", (e) => {
   }
 });
 
-// Single tap on a quest NPC (touch only) talks to them. The E badge is
-// desktop-only, so touch gets tap-to-talk instead. Short and still only:
-// drags, long-presses and UI taps fall through to their normal handlers.
 let npcTapStartX = 0;
 let npcTapStartY = 0;
 let npcTapStartAt = 0;
@@ -968,8 +914,6 @@ canvas.addEventListener("touchend", (e) => {
   const screenY = touch.clientY - rect.top;
   const { x: worldX, y: worldY } = screenToWorld(screenX, screenY);
   import("./quest.js").then((m) => {
-    // A tap on a mailbox opens it, when it is not a tap on an NPC; the server says when it is too far.
-    // While the mailbox editor is open, a tap on a mailbox picks it.
     if ((window as any).mailboxEditorTap?.(worldX, worldY, TOUCH_TARGET_SLOP)) return;
     if (m.tryTapInteractNpcAt(worldX, worldY)) return;
     // A tap on a gathering node gathers it; the server says when it is too far.
@@ -1025,11 +969,6 @@ installWorldZoom();
 // Holding the mouse button or a finger down reels a fish in (fishing.ts).
 installFishingInput();
 
-// Ctrl + W closes the tab. USER REQUEST 2026-10-15: "Prevent control + w because that closes the tab". The browser keeps
-// that key for itself (Chrome and Firefox close the tab before the page is told), so no key handler can stop it.
-// Instead, while Ctrl is held, leaving the page asks first ("Leave site?"): Ctrl + W, and Ctrl + R too, close or reload
-// nothing unless that is confirmed. The game's own moves to another page are never made with Ctrl held, so they are
-// not asked about. Where the browser does pass the key on, it is simply stopped.
 let ctrlHeld = false;
 const followCtrl = (event: KeyboardEvent | MouseEvent) => { ctrlHeld = event.ctrlKey; };
 window.addEventListener("keydown", (event) => {
@@ -1182,8 +1121,6 @@ document.addEventListener("click", (event) => {
     return;
   }
 
-  // A click on water casts a line there; with a fish on, the press was the reel. The server says when it is too far.
-  // A tap is the touch handler's (above).
   if (!isTouch && !isSelfActionLocked() && fishingClick(worldX, worldY)) return;
 
   // Players are picked server-side; `touch` asks for the wider touch area.
@@ -1258,10 +1195,6 @@ document.addEventListener("click", (e) => {
     return;
   }
 });
-
-// A tap off a window does not close it: only its X or Close button does (and Escape, and its own key, on a keyboard).
-// USER REQUEST 2026-10-16: "Keep all UI elements open when tapping off of them. Only allow the x or close buttons to
-// close them from now on". Until then a tap outside the open panels closed them all on a touch screen.
 
 // Allow dropping items from inventory/equipment onto the game world (canvas)
 canvas.addEventListener("dragover", (e: DragEvent) => {

@@ -2,8 +2,6 @@ import { expect, test } from "bun:test";
 import { doneSend, doneFacing, walkAtSwitch, RESUME_ECHO_MS } from "../webserver/public/js/core/resumesend";
 import { heldDirection } from "../webserver/public/js/core/handoffwalk";
 
-// What the client sent at HANDOFF_DONE before the walk was known to be resumed (socket.ts): a stick at once, a key let go
-// in the gap as ABORT if a walk was under way at the SWITCH, a held key left to the renderer's next frame.
 function before(keyPressed: boolean, stick: string, walkedAtSwitch: boolean) {
   if (!keyPressed && stick) return { send: stick, lastSent: stick, keyResumed: null };
   if (walkedAtSwitch && !keyPressed) return { send: "ABORT", lastSent: null, keyResumed: null };
@@ -60,8 +58,6 @@ test("doneSend: where no walk is known it is exactly what the client sent before
 });
 
 test("doneSend: after a skip the last sent direction is the direction the node walks, for the next real change", () => {
-  // The renderer sends a key when it differs from what it holds as sent, and aborts a released key when it holds one;
-  // input.ts does the same for the stick. Marked as sent, a held direction is not sent again, a change and a release are.
   const rendererSends = (held: string, lastSent: string) => (held && held !== lastSent ? held : held === "" && lastSent !== "" ? "ABORT" : null);
   const skip = doneSend({ atSwitch: "right", keyPressed: true, keyDirection: "right", stick: "", facing: "right", walkedAtSwitch: true });
   expect(skip.keyResumed).toBe("RIGHT");
@@ -112,8 +108,6 @@ test("socket.ts: HANDOFF_DONE sends what doneSend says and marks a skipped direc
   expect(src).toContain("if (send.send !== null) sendRequest({ type: \"MOVEXY\", data: send.send });");
   expect(src).toContain("if (send.lastSent !== null) setLastSentDirection(send.lastSent);");
   expect(src).toContain("if (send.keyResumed !== null) setDirection(send.keyResumed);");
-  // The key path is the renderer's, unchanged: it sends a held key that differs from what it holds as sent, and aborts a
-  // released one while it holds one, so the direction set at DONE is the base for the next change.
   const renderer = await text("renderer.ts");
   expect(renderer).toContain("if (dir && dir !== lastDirection) {");
   expect(renderer).toContain("if (lastDirection !== \"\") sendRequest({ type: \"MOVEXY\", data: \"ABORT\" });");

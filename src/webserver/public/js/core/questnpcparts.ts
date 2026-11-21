@@ -1,27 +1,3 @@
-// What the quest editor and the NPC editor share and no other tool has: a
-// field that holds several picks out of a list. A quest has the quests that
-// come before it and the NPCs that give and take it; an NPC has its quests and
-// its particles. The picks are shown as chips (the kit's .tl-chips), each with
-// its own way out, and a button opens a dialog where all that can be picked is
-// listed to tick. Styles: css/questnpcparts.css (classes qn-*). It is one
-// implementation for its two editors and stays here, under its own names,
-// until a third tool needs it.
-//
-// ------------------------------ how to use ------------------------------
-//
-//   grid.appendChild(manyField({
-//     path: "prerequisites", label: "Prerequisites", noun: "quest",
-//     hint: "Quests that must be completed before this one is offered.",
-//     choices: () => [{ value: 3, label: "A Rat Problem", mark: "#3", note: "#3" }],
-//     get: () => quest.prerequisites,
-//     set: (next) => { quest.prerequisites = next; markChanged(); },
-//     error: problems.prerequisites,
-//   }));
-//
-// `set` is called at every tick in the dialog and at every chip removed, as
-// the pickers of the old editors did. A pick that is not among the choices
-// (a deleted quest, an NPC that no longer gives quests) is still shown, marked,
-// and can be removed. pickMany() opens the dialog on its own.
 import { button, el, empty, icon, num, openDialog, searchBox } from "./toolkit.js";
 import { setFieldError } from "./toolfields.js";
 
@@ -55,11 +31,6 @@ export interface ManyField<T extends number | string> {
   onDone?(): void;
 }
 
-/**
- * The dialog: everything that can be picked, each with a tick box, and a
- * search field. A tick is passed on at once; Done, Escape and a click outside
- * close it.
- */
 export function pickMany<T extends number | string>(
   title: string,
   choices: Choice<T>[],

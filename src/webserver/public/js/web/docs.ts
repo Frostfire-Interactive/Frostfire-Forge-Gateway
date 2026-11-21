@@ -1,10 +1,3 @@
-// Documentation site client (/docs). Content arrives pre-rendered from
-// /api/docs (src/services/docs.ts): a manifest up front, then each page and
-// the search index on demand. This script handles hash routing
-// (#/section/page/heading), navigation, search, and the code block, tab and
-// table helpers. Routing stays in the hash because the reverse proxy rejects
-// unknown paths and blacklists some path segments.
-
 type Heading = { id: string; text: string; level: number };
 type Page = { id: string; title: string; description: string; headings: Heading[] };
 type Section = { id: string; title: string; description: string; icon: string; locked: boolean; pages: Page[] };
@@ -20,8 +13,6 @@ const FILTER_MIN_ROWS = 10;
 const MAX_RESULTS = 40;
 const MAX_RESULTS_PER_PAGE = 4;
 
-// Shell elements are looked up once, before any page content exists, because
-// heading ids inside a page may repeat these ids.
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const view = el("view");
 const nav = el("nav");
@@ -494,8 +485,6 @@ function onScroll() {
 
 /* Search */
 
-// The index is one row per part of a page: [page id, heading id, heading, text].
-// Locked pages are not in it, so they are added by title only.
 function loadSearchIndex(): Promise<void> {
   searchLoading ??= fetch("/api/docs?search", { credentials: "same-origin" })
     .then((response) => {
@@ -542,8 +531,6 @@ function runSearch(query: string): { hits: SearchEntry[]; terms: string[] } {
       const inTitle = title.includes(term);
       const inHeading = heading.includes(term);
       const inText = entry.lower.includes(term);
-      // A section only matches on its own heading or text; the page title
-      // alone would list every section of a matching page.
       if (!(inHeading || inText || (isPageEntry && inTitle))) {
         score = -1;
         break;
@@ -701,8 +688,6 @@ function onClick(event: MouseEvent) {
 
   const tab = target.closest<HTMLElement>(".tab");
   if (tab?.dataset.tab) {
-    // Matching tab groups switch together; keep the clicked tab where it is
-    // on screen while groups above it change height.
     const before = tab.getBoundingClientRect().top;
     const label = tab.dataset.tab;
     save("docs-tab", label);

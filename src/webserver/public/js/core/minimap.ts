@@ -15,14 +15,6 @@ import { zoneAt, zonesList } from "./zonelogic.js";
 const cache = Cache.getInstance();
 
 const MINIMAP_SIZE = 250;
-/**
- * USER REQUEST 2026-10-03 ("minimap should use the baked image too and update the zoom mechanics"): the minimap draws
- * the map's baked image (bakedmap.ts, one pixel per tile), so it can zoom far out. Zoom goes in fixed steps of minimap
- * pixels per tile (whole or simple fractions, so the tile blocks stay even): 8 = ~31 tiles across, 0.5 = ~500. The
- * wheel steps through them; the choice is remembered. While the tile editor is open (its edits are not baked yet) or
- * when the map has no baked image, the live tile render of the loaded chunks is drawn instead, at most LIVE_MAX_ZOOM
- * world px per minimap px (it can only show loaded chunks).
- */
 const ZOOM_LEVELS = [8, 6, 4, 3, 2, 1.5, 1, 0.75, 0.5];
 const ZOOM_DEFAULT = 3;
 const ZOOM_STORE = "minimapZoomLevel";
@@ -129,13 +121,8 @@ function renderMinimap() {
   const playerY = currentPlayer.renderPosition?.y ?? currentPlayer.position.y;
 
   const tw = window.mapData.tilewidth || 16, th = window.mapData.tileheight || 16;
-  // USER REQUEST 2026-10-06 ("ensure the minimap is zoomed all the way in" indoors): the closest level, whatever
-  // was chosen outside
   const pxPerTile = window.mapData.interior ? ZOOM_LEVELS[0]! : ZOOM_LEVELS[zoomIndex]!;
   const editing = !!(window as any).tileEditor?.isActive;
-  // A world's image is several tiles to a pixel (bakedmap.ts scale): close in, the live render shows more than it
-  // could, so that is drawn; zoomed out past what the live render reaches (LIVE_MAX_ZOOM), the image is drawn with
-  // its full-detail pieces over it (USER FEEDBACK 2026-10-05: "I can't zoom the minimap out anymore" on a world).
   const bakedNow = bakedMap(), bakedScale = bakedNow.scale;
   const baked = editing || (bakedScale !== 1 && tw / pxPerTile <= LIVE_MAX_ZOOM) ? null : bakedNow.image;
   // the overlays' scale; the live render can only cover the loaded chunks, so it stops at LIVE_MAX_ZOOM
@@ -149,8 +136,6 @@ function renderMinimap() {
   if (baked) {
     // the baked image is drawn straight onto the minimap below (no live render)
   } else if (MOBILE_RENDERER) {
-    // Mobile: glmap-mobile renders the map into #minimap-map, a WebGL canvas
-    // placed under minimapCanvas; this canvas only draws the overlays.
     const tileEditor = (window as any).tileEditor;
     renderMinimapMapMobile(minimapCanvas, worldLeft, worldTop, worldViewWidth, worldViewHeight,
       tileEditor?.isActive ? (name: string) => tileEditor.isLayerVisible(name) : null);
@@ -176,8 +161,6 @@ function renderMinimap() {
     bufferCtx.rect(mapBufX, mapBufY, mapBufW, mapBufH);
     bufferCtx.clip();
 
-    // Tile layers of the loaded chunks, rendered on the GPU at world resolution
-    // and scaled into the buffer (glmap).
     const tileEditor = (window as any).tileEditor;
     renderMinimapMap(bufferCtx, worldLeft, worldTop, worldViewWidth, worldViewHeight, 0, 0, BUFFER_SIZE, BUFFER_SIZE,
       tileEditor?.isActive ? (name: string) => tileEditor.isLayerVisible(name) : null);
@@ -198,8 +181,6 @@ function renderMinimap() {
   ctx.clip();
 
   if (baked) {
-    // the baked image (one pixel per tile) round the player: whole blocks when zoomed in, smoothed below 1 px per tile;
-    // beyond the map's edge the dark void
     ctx.fillStyle = "#0a0a0a";
     ctx.fillRect(0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
     const span = MINIMAP_SIZE / pxPerTile;
@@ -275,10 +256,6 @@ function renderMinimap() {
     }
   }
 
-  // Inns and caves: a pin on each, over the player dots. The mark is the top of the house's door or the cave's
-  // mouth, where the pin's point stands, its head above. Markers of a map the player has since left are not drawn.
-  // USER FEEDBACK 2026-10-06 ("The house icon is barely visible"): an icon alone was lost on the ground, so each
-  // is drawn on a pale pin (mappin.ts).
   const markedMap = (window as any).mapData?.name;
   for (const kind of PINNED) {
     for (const marker of markersOfKind(kind, markedMap)) {
@@ -292,8 +269,6 @@ function renderMinimap() {
     }
   }
 
-  // Own corpse: skeleton icon when inside the minimap, clamped to the rim
-  // when outside so the direction is always visible.
   const corpse = getCorpseMarkerTarget();
   if (corpse) {
     const corpseImg = getCachedImage(getSkeletonSpriteUrl());
@@ -358,8 +333,6 @@ function renderMinimap() {
   ctx.lineWidth = 1;
   ctx.stroke();
 
-  // Signal a completed draw pass (reached only past all early-returns above).
-  // hideLoadingScreen waits on this alongside the main canvas first frame.
   (window as any).__minimapRendered = true;
 }
 

@@ -1,8 +1,3 @@
-// Binary CREATURE_MOVE datagrams (the server's socket/creature_move_codec.ts has the same layout):
-//   [u8 0x04][u16 count, little endian] then per creature 13 bytes:
-//   [u32 id][i32 x][i32 y][u8 flags]      flags: bits 0-2 the direction, bit 3 moving
-// Each entry decodes to the [id, x, y, dir, moving] the JSON packet carries, so applyCreatureMove takes either.
-
 export const CREATURE_MOVE_HEADER = 0x04;
 const HEADER_BYTES = 3;
 const ENTRY_BYTES = 13;

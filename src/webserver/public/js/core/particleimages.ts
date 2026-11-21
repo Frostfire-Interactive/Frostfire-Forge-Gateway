@@ -1,11 +1,5 @@
 import { config } from "../web/global.js";
 
-/**
- * The images particles emit in place of their round dot (USER REQUEST 2026-10-04: "Allow particles to choose an image
- * to emit rather than a particle"). A particle's `image` names a sprite of the asset server (assets/sprites, served by
- * /sprite?name=). Each is fetched once; until it has loaded, and when the asset server has no sprite by that name, the
- * particle is drawn as its dot.
- */
 const images = new Map<string, HTMLImageElement | null>();
 
 /** The asset server's URL of a sprite. */

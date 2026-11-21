@@ -1,20 +1,6 @@
 import Cache from "./cache.js";
 import { setSoundAt, fadeSoundsExcept } from "./audio.js";
 
-/**
- * Sound NPCs (USER REQUEST 2026-10-16): an NPC marked as one in the NPC editor draws nothing and plays its `sound`, on a
- * loop, to a player within `sound_radius` pixels of where it stands. A hidden one is not heard. Called every frame
- * (renderer.ts updateCamera) with where the listener is: the player, or the tile editor's camera.
- *
- * The circle has a middle, CENTER_SHARE of its radius (USER REQUEST 2026-10-16: "the center audio area is too small
- * and also needs to be visible blue as a debug area so I can see where the player will hear the audio in both ears"):
- * inside it the sound is at its full level and in both ears alike. Outside it, the sound fades on a quarter sine to
- * silence at the edge (USER REPORT 2026-10-16, "It sounds extremely quiet": a smoothstep from the middle was -16 dB
- * three quarters of the way out; the sine is -8 dB there and -3 dB halfway), and moves to its side: from both ears
- * alike at the middle's edge to wholly from where it is SPREAD_SHARE of the way to the edge (smoothstep), through
- * audio.ts setSoundAt's spread (USER REPORT 2026-10-16, "There's no fade, it just suddenly switches from center audio
- * to right/left"). The NPC editor draws the middle blue and the whole circle purple (renderer.ts drawSoundRanges).
- */
 const cache = Cache.getInstance();
 /** The middle of a sound NPC's circle, as a share of its radius: heard at full level in both ears. */
 const CENTER_SHARE = 0.3;

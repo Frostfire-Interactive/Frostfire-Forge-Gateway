@@ -1,7 +1,3 @@
-// Game-window half of the server control panel: owns the popup window and
-// relays its messages to the server. The panel stands in for the admin chat
-// commands and opens from /cp (or /controlpanel). It has no in-world tools of
-// its own.
 import { sendRequest } from "./socket.js";
 
 /** The size the dashboard is laid out for, where the screen has the room. */
@@ -18,8 +14,6 @@ class ControlPanel {
 
   constructor() {
     window.addEventListener("message", (e) => this.onBridgeMessage(e));
-    // The game page is going away (refresh, close, navigation): take the
-    // popup with it, since the reloaded page has no link back to it.
     window.addEventListener("pagehide", () => {
       try {
         if (this.panelWindow && !this.panelWindow.closed) this.panelWindow.close();
@@ -98,9 +92,6 @@ class ControlPanel {
   private onBridgeMessage(event: MessageEvent): void {
     const msg = event.data;
     if (!msg?.type) return;
-    // Every admin window posts to this same window. Only the control panel's
-    // own popup is listened to, or each request of an editor would be sent
-    // to the server a second time from here.
     if (!this.panelWindow || event.source !== this.panelWindow) return;
     switch (msg.type) {
       case "bridgeReady":
@@ -108,8 +99,6 @@ class ControlPanel {
         for (const queued of this.queue.splice(0)) this.panelWindow.postMessage(queued, "*");
         break;
       case "request":
-        // Only control panel packets leave from here; the server checks who
-        // is asking, and each action's own permission, on every one of them.
         if (typeof msg.packet === "string" && msg.packet.startsWith("CONTROL_PANEL_")) {
           sendRequest({ type: msg.packet, data: msg.data });
         }

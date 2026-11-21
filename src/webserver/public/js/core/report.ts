@@ -1,7 +1,3 @@
-// The window a player reports another from: a reason picked from a few, and
-// room to say what happened. The server files it, attaches what the reported
-// player said that reached this one, and tells the admins who handle reports.
-// The reported player is never told.
 import { sendRequest } from "./socket.js";
 
 /** The reasons a report can give: what the server calls each, and what it is called here. */

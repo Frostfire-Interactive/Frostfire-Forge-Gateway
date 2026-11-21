@@ -1,17 +1,8 @@
-// Runs a list of statements as one transaction: all of them are kept, or none. Kept apart from the
-// worker so it can be tested against a database without the worker pool.
-
 import { sqlWrapper } from "./sqlescape";
 
 export interface TransactionStatement {
   sql: string;
   values?: any[];
-  /**
-   * The transaction is undone if this statement changes no rows. For a write whose WHERE holds the
-   * check ("copper >= ?"): the check and the write are then one step no other write can come between.
-   * MySQL does not count a row that already held the values written, so the statement must be one
-   * that changes what it finds ("copper = copper - ?"), never one that may write the same value back.
-   */
   mustChange?: boolean;
 }
 
@@ -48,10 +39,6 @@ function inTime<T>(work: Promise<T>, left: number, timeoutMs: number): Promise<T
   return Promise.race([work, late]).finally(() => clearTimeout(timer));
 }
 
-/**
- * One result for each statement, as `unsafe` gives them, once all are kept. Throws once none are:
- * a statement failed, a `mustChange` statement changed nothing, or `timeoutMs` ran out.
- */
 export async function runTransaction(db: any, statements: TransactionStatement[], engine: DatabaseEngine, timeoutMs = 15000): Promise<any[]> {
   if (statements.length === 0) return [];
 
@@ -72,8 +59,6 @@ export async function runTransaction(db: any, statements: TransactionStatement[]
   };
 
   try {
-    // SQLite takes its write lock at the start, where it waits its turn: taking it at the first
-    // write, after another connection has written, fails at once instead.
     return await (engine === "sqlite" ? db.begin("immediate", work) : db.begin(work));
   } catch (error: any) {
     if (!started) throw new NotStartedError(error?.message || String(error));

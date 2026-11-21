@@ -1,5 +1,3 @@
-// Game-window half of the quest editor: owns the popup window and relays its
-// messages to the server. Mirrors itemeditor.ts.
 import { sendRequest } from "./socket.js";
 import { config } from "../web/global.js";
 
@@ -17,8 +15,6 @@ class QuestEditor {
 
   constructor() {
     window.addEventListener("message", (e) => this.onBridgeMessage(e));
-    // The game page is going away (refresh, close, navigation): take the
-    // popup with it, since the reloaded page has no link back to it.
     window.addEventListener("pagehide", () => {
       try {
         if (this.editorWindow && !this.editorWindow.closed) this.editorWindow.close();
@@ -36,8 +32,6 @@ class QuestEditor {
   private open(): void {
     this.isActive = true;
     const url = window.location.origin + "/quest-editor";
-    // The size the editor's workbench is laid out for, where the screen allows, in the middle of the screen
-    // and two steps down and right of the item editor, so one does not open exactly over another.
     const area = window.screen as Screen & { availLeft?: number; availTop?: number };
     const width = Math.min(EDITOR_WIDTH, area.availWidth - 40);
     const height = Math.min(EDITOR_HEIGHT, area.availHeight - 80);

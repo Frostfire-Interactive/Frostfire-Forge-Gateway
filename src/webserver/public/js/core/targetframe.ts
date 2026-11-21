@@ -1,19 +1,9 @@
-// Unit frames: the ui-nameplate.png panel. One at the top left shows the player
-// themselves (USER REQUEST 2026-10-20: "Show my current stats in a target frame
-// at the top left and move the actual targets frame to the right side of self
-// target. Same thing mobile has."); the other, beside it, shows whatever the
-// player has targeted (another player or a creature). Both are read-only views
-// of state the rest of the client already tracks.
 import Cache from "./cache.js";
 import { creatures, parseCreatureTarget, levelColor } from "./creature.js";
 import { getLayerStillFrame } from "./layeredAnimation.js";
 
 const cache = Cache.getInstance();
 
-/**
- * Part of a 64px head frame used as the portrait. Starting the crop lower than
- * the top of the head lifts the head up inside the circle.
- */
 const PORTRAIT_CROP = { x: 16, y: 12, w: 32, h: 32 };
 
 /** Layers that make up a humanoid portrait, drawn in this order. */
@@ -76,11 +66,6 @@ class UnitFrame {
     return true;
   }
 
-  /**
-   * A still portrait: humanoids show their head and helmet, facing down, from
-   * the idle pose - never animated. Static-sprite creatures show their image.
-   * Returns false when nothing could be drawn yet (sheet still loading).
-   */
   private drawPortrait(view: UnitView): boolean {
     if (!this.portrait || !this.portraitCtx) return true;
     const ctx = this.portraitCtx;

@@ -1,5 +1,3 @@
-// Quest log book panel (#quest-log-container): zone-grouped list on the left,
-// selected quest details on the right. Opened with L.
 import { sendRequest } from "./socket.js";
 import {
   getQuest,

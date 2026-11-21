@@ -1,10 +1,3 @@
-// Achievement editor popup (/achievements). Talks to the game window over postMessage; the game window forwards the
-// requests to the server (engine src/systems/achievements/editor.ts), which checks every field and saves. The window
-// itself is the shared workbench (tooleditor.ts). Design: engine repo,
-// docs/superpowers/specs/2026-10-17-achievements-design.md.
-//
-// A record is one achievement: what counts toward it, how many, and what it gives. There are few, so the list is
-// searched here, at every key.
 import { EditorShell, type ListRow, type RecordState } from "./tooleditor.js";
 import { FieldRenderer, setFieldError, type AssetOption, type Field } from "./toolfields.js";
 import { button, card, count, el, noticeDialog, shown, tag, thumb, toast } from "./toolkit.js";

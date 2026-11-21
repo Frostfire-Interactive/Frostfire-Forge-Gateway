@@ -16,8 +16,6 @@ import { screenToWorld } from "./worldzoom.js";
 import { closeAchievements, isAchievementsOpen, toggleAchievements } from "./achievements.js";
 let userHasInteracted: boolean = false;
 let lastSentDirection = "";
-// The direction the joystick (gamepad or touch stick) points in, upper case, or "" when it is let go. Kept even while
-// moves are held back (a node handoff), so the walk can be told to the new node.
 let stickDirection = "";
 
 let toggleInventory = false;
@@ -66,8 +64,6 @@ function closeOtherPanels(_except: string) {
   }
 }
 
-// Opens the achievements window as Y does, the other windows closing: for a link to an achievement in chat
-// (achievements.ts focusAchievement), which cannot import this file without a cycle.
 (window as any).openAchievementsWindow = () => {
   closeOtherPanels("achievements");
   if (!isAchievementsOpen()) toggleAchievements();
@@ -221,8 +217,6 @@ function cast(hotbar_index: number) {
       return;
     }
     if (Date.now() < cache.spellLockoutUntil) return;
-    // A spell that needs you to stand still does nothing while moving: no
-    // cast bar, no "interrupted", nothing sent (the server ignores it too).
     const pressedSpell = cache.spells[hotbarSlots[hotbar_index]?.dataset?.spellName || ""];
     if (pressedSpell && !pressedSpell.can_move && !pressedSpell.ground_aoe && isLocallyMoving()) return;
     selectHotbarSlot(hotbar_index);
@@ -348,8 +342,6 @@ function handleEscapeKey() {
     return; // Don't open pause menu
   }
 
-  // Windows that are open close, and that is all this press does: the menu opens on the next one. With the menu
-  // itself open, the press closes the menu (below).
   if (pauseMenu.style.display !== "block" && closeOpenWindows()) return;
 
   const isPauseMenuVisible = pauseMenu.style.display === "block";
@@ -503,8 +495,6 @@ async function handleEnterKey() {
     return;
   }
 
-  // On a touch screen the field keeps the keyboard for the next message (mobilechat.ts): bringing it up again for
-  // each one is slow there. It is put away by the X beside the field, or by sending nothing (above).
   if (!window.matchMedia("(hover: none) and (pointer: coarse)").matches) chatInput.blur();
   chatInput.value = "";
 
@@ -792,10 +782,6 @@ function closeAllPanels(): boolean {
 /** The character sheet, which opens on the left and is not one of the panels above. */
 const statScreen = () => document.getElementById("stat-screen");
 
-/**
- * Closes every window the player has open: the panels, and the character sheet. Whether any was.
- * USER REQUEST 2026-10-06: "Allow esc to close any UI open like character sheet, spell book etc".
- */
 function closeOpenWindows(): boolean {
   let closed = closeAllPanels();
   if (statScreen()?.style.display === "block") {
@@ -806,9 +792,6 @@ function closeOpenWindows(): boolean {
   return closed;
 }
 
-// An X on each window, at its top right corner, that closes it. Each closes its window the way its key does, so
-// what the game knows of which windows are open stays right. USER REQUEST 2026-10-06: "add an X on these UIs to
-// close them manually". (The character sheet has its own, in the page.)
 const CLOSABLE: Array<[element: HTMLElement | null, close: () => void]> = [
   [inventoryUI, () => { if (toggleInventory) toggleInventory = toggleUI(inventoryUI, toggleInventory, -350); }],
   [spellBookUI, () => { if (toggleSpellBook) toggleSpellBook = toggleUI(spellBookUI, toggleSpellBook, -450); }],

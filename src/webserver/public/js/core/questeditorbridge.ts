@@ -1,10 +1,3 @@
-// Quest editor popup. Talks to the game window over postMessage; the game
-// window forwards everything to the server, which validates and persists.
-// The window itself is the shared workbench (tooleditor.ts); this file holds
-// what is the quest editor's own: its fields, the objectives and the item
-// rewards of a quest as lists of cards, the quest said in plain words as a
-// player meets it, and its conversation with the server. Quests are edited by
-// search: the editor never holds the whole quest table.
 import { EditorShell, type ListRow, type RecordState } from "./tooleditor.js";
 import { coins, FieldRenderer, setFieldError, type AssetOption, type Field } from "./toolfields.js";
 import { button, card, count, el, empty, icon, iconButton, listed, noticeDialog, num, shown, tag, thumb, toast, words, type IconName } from "./toolkit.js";
@@ -47,12 +40,6 @@ interface Problem {
   said: string;
 }
 
-/**
- * The server reports what is wrong with a quest as lines of text ("Objective
- * 2: target is required."). Each is shown as it is; this works out which
- * field a line is about, so the field can be marked and its tab can say how
- * many problems it has. A line it does not know stays in the summary only.
- */
 function placeOf(line: string): Problem {
   const part = /^(Objective|Reward) (\d+): (.*)$/.exec(line);
   if (part) {
@@ -119,9 +106,6 @@ class QuestEditorBridge {
   /** The page was not drawn again because a dialog was open over it; it is once the dialog has closed. */
   private stale = false;
 
-  // A second save while one is on its way would interleave delete and insert
-  // cycles on the server and duplicate every objective and reward. The result
-  // does not name its request, so the one that is waiting is remembered.
   private pending: Asked | null = null;
   private pendingTimer: ReturnType<typeof setTimeout> | null = null;
   /** A request given up on after 15 seconds: its answer may still come. */
@@ -156,10 +140,6 @@ class QuestEditorBridge {
     this.shell.connect((msg) => this.onMessage(msg));
   }
 
-  /**
-   * The game window asks for the lists the fields pick from when it opens the
-   * editor. This asks again, from the page that says the server is not answering.
-   */
   private askForLists(): void {
     this.shell.send({ type: "request", packet: "QUEST_EDITOR_DATA", data: null });
   }
@@ -179,8 +159,6 @@ class QuestEditorBridge {
       this.results = Array.isArray(msg.data?.quests) ? msg.data.quests : [];
       this.truncated = Number(msg.data?.truncated) || 0;
       this.searched = true;
-      // A save runs the search again; go on editing the quest as it came back.
-      // Not under an open picker: what is picked there goes into the draft it was opened on.
       if (this.editingId !== null && !this.dirty && !document.querySelector("dialog[open]")) {
         const fresh = this.results.find((q: any) => Number(q.id) === this.editingId);
         if (fresh) {
@@ -252,11 +230,6 @@ class QuestEditorBridge {
     this.runSearch();
   }
 
-  /**
-   * Something the server refused that no request here was waiting for. Before
-   * its first answer, that is the editor itself being refused: the page says
-   * so. After, it is said on the open quest, or in the corner.
-   */
   private report(lines: string[]): void {
     if (!this.ready) this.shell.refused(lines, () => this.askForLists());
     else if (this.draft) {
@@ -284,11 +257,6 @@ class QuestEditorBridge {
     return this.problems.find((p) => p.path === path)?.said;
   }
 
-  /**
-   * The summary at the top of the page: how many things the server found
-   * wrong and on which tabs, then its own lines. It is worked out again as
-   * fields are put right.
-   */
   private problemLines(): string[] {
     if (this.problems.length === 0) return [];
     const lines = this.problems.map((p) => p.line);
@@ -402,8 +370,6 @@ class QuestEditorBridge {
     return (this.data.items ?? []).map((entry: unknown) => {
       const name = this.itemNameOf(entry);
       const iconName = typeof entry === "string" ? null : ((entry as any)?.icon ?? null);
-      // No quality from the server (an older server build) leaves the icon unframed
-      // rather than showing every item as common.
       const quality = typeof entry === "string" ? null : ((entry as any)?.quality ?? null);
       return { value: name, label: name, image: iconName ? this.iconUrlFor(iconName) : null, quality };
     });
@@ -459,8 +425,6 @@ class QuestEditorBridge {
     draft.objectives = draft.objectives || [];
     draft.rewards = draft.rewards || [];
     draft.prerequisites = (draft.prerequisites || []).map(Number);
-    // NPC links are edited alongside the quest but loaded lazily: keep
-    // whatever the draft carries, defaulting to empty.
     draft.givers = draft.givers || [];
     draft.enders = draft.enders || [];
     return draft;
@@ -754,8 +718,6 @@ class QuestEditorBridge {
     const d = this.draft;
     d.rewards = d.rewards || [];
     const rewards: any[] = d.rewards;
-    // XP and money are rewards, not quest metadata: they live here next to
-    // the item rewards so authors set the whole payout in one place.
     const payout = this.section(main, "Experience and money", "What every player who turns the quest in is given");
     payout.appendChild(this.field({ key: "xp_reward", label: "XP reward", type: "number", min: 0, step: 1, unit: "XP" }, d, "xp_reward"));
     payout.appendChild(this.field({ key: "copper_reward", label: "Money reward", type: "money", hint: "Gold, silver and copper." }, d, "copper_reward"));
@@ -954,10 +916,6 @@ class QuestEditorBridge {
     return grid;
   }
 
-  /**
-   * One form field editing `target[field.key]`, with any problem reported
-   * under `path` shown beneath it. `onChange` runs before the form is told.
-   */
   private field(field: Field, target: any, path: string, onChange?: () => void): HTMLElement {
     const wrap = this.fields.renderField({ ...field, path }, target, () => {
       onChange?.();
@@ -981,10 +939,6 @@ class QuestEditorBridge {
     return wrap;
   }
 
-  /**
-   * The item an objective collects: its name as free text, as the server
-   * keeps it, with the items that match listed under the field to pick from.
-   */
   private itemField(objective: any, path: string, label: string): HTMLElement {
     const id = `qe-item-${++comboIds}`;
     const wrap = el("div", "tl-field");
@@ -1153,8 +1107,6 @@ class QuestEditorBridge {
 
   private async select(id: number): Promise<void> {
     if (!(await this.mayLeave())) return;
-    // A search still waiting on the typing is forgotten: its results would
-    // redraw the list in the middle of the click.
     this.shell.takeQuery();
     const quest = this.results.find((q: any) => Number(q.id) === id) ?? (this.data.quests ?? []).find((q: any) => Number(q.id) === id);
     if (!quest) return;
@@ -1208,8 +1160,6 @@ class QuestEditorBridge {
     this.pending = asked;
     this.late = null;
     if (this.pendingTimer) clearTimeout(this.pendingTimer);
-    // No result ever comes back if the server rejects the packet outright
-    // (permissions, for one): do not leave the buttons blocked forever.
     this.pendingTimer = setTimeout(() => {
       if (this.pending !== asked) return;
       this.late = asked;

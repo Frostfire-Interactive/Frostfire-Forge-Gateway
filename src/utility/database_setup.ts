@@ -100,8 +100,6 @@ const setupDatabase = async () => {
     await createBlockedIpsTable();
     await insertLocalhost();
     await addTwoFactorColumns();
-    // Player subscriptions: the accounts columns and two tables. Logs a warning, never fails the setup,
-    // when accounts does not exist yet (the engine's setup creates it).
     await ensureSubscriptionSchema();
 };
 

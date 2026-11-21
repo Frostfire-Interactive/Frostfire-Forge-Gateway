@@ -1,12 +1,3 @@
-// GPU copies of the current map's data:
-//  - the tile atlas: every tileset tile, scaled to the map tile size, packed
-//    into the cells of a texture array (built once per map);
-//  - the remap table: tile gid -> 1 + atlas cell currently shown for it (0 =
-//    no tile). Animated tiles have their entry rewritten when the frame
-//    changes, so animation costs nothing per drawn tile;
-//  - one R32UI texture array per loaded chunk (one slice per layer) holding
-//    the raw Tiled gids, flip bits included.
-
 import { getGL, getGeneration, type GLState } from "./context.js";
 
 interface AnimationFrame { tileid: number; duration: number }
@@ -73,8 +64,6 @@ function buildMapResources(s: GLState): MapResources | null {
   const tw = mapData.tilewidth;
   const th = mapData.tileheight;
 
-  // Every drawable tile, in gid order. A later tileset overwrites an earlier
-  // one on overlapping gids, as the Canvas2D lookup map did.
   const tiles: Array<{ gid: number; source: CanvasImageSource; sx: number; sy: number; sw: number; sh: number }> = [];
   let maxGid = 0;
   for (let i = 0; i < mapData.tilesets.length; i++) {
@@ -118,8 +107,6 @@ function buildMapResources(s: GLState): MapResources | null {
   gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-  // Pack each page on a CPU canvas (nearest-neighbour scaling to the map tile
-  // size, like the old drawRotatedTile path), then upload it premultiplied.
   const pageCanvas = document.createElement("canvas");
   pageCanvas.width = pageW;
   pageCanvas.height = pageH;
@@ -196,8 +183,6 @@ function buildMapResources(s: GLState): MapResources | null {
   };
 }
 
-// Called by loadMap once the tilesets are decoded. `sources` is parallel to
-// mapData.tilesets (null for a tileset whose image failed to load).
 export function setMap(mapData: any, sources: Array<CanvasImageSource | null>): void {
   const s = getGL();
   freeMapResources(s);
@@ -214,8 +199,6 @@ export function getMapResources(s: GLState): MapResources | null {
   return mapResources;
 }
 
-// Advance animated tiles to the frame for `now` (ms), uploading only entries
-// whose frame changed.
 export function updateAnimations(s: GLState, res: MapResources, now: number): void {
   if (res.animated.length === 0) return;
   const gl = s.gl;
@@ -235,8 +218,6 @@ export function updateAnimations(s: GLState, res: MapResources, now: number): vo
   }
 }
 
-// Mark a chunk's tile data as changed (editor paint, undo, restored snapshot);
-// it is re-uploaded the next time it is drawn.
 export function invalidateChunk(chunk: object): void {
   chunkVersions.set(chunk, (chunkVersions.get(chunk) ?? 0) + 1);
 }
@@ -288,9 +269,6 @@ export function getChunkTexture(s: GLState, chunk: any): ChunkGPU | null {
   return entry;
 }
 
-// Free textures of chunks that are no longer in loadedChunks. loadedChunks is
-// mutated from many places (unload, map change, RELOAD_CHUNKS, editor), so the
-// GPU side reconciles against it instead of relying on unload hooks.
 export function sweepChunks(s: GLState, loadedChunks: Map<string, any> | undefined): void {
   if (chunkGPU.size === 0) return;
   const live = new Set<object>(loadedChunks ? loadedChunks.values() : []);

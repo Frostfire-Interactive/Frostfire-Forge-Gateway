@@ -1,8 +1,3 @@
-// Gathering nodes in the world (engine src/systems/gathering). USER REQUEST 2026-10-17: "Add a gathering system".
-// The server sends the nodes near the player (GATHER_NODE_SPAWN, GATHER_NODE_DESPAWN); LOAD_MAP clears them and the
-// server sends them again. Each node is its item's icon, standing among the characters. A click or a tap on one, or E
-// beside one, asks the server to gather it (GATHER): the server checks, casts for 1 s, and answers with a notice or
-// the bags. While the gathering editor shows a preview, its circle and the spots nodes would take are drawn too.
 import { sendRequest, cachedPlayerId } from "./socket.js";
 import Cache from "./cache.js";
 import { canvasDpr, worldToScreen, worldZoom } from "./worldzoom.js";
@@ -126,10 +121,6 @@ export function gatherNearest(): boolean {
 
 const TOUCH = window.matchMedia?.("(hover: none) and (pointer: coarse)").matches ?? false;
 
-/**
- * The Interact key's badge over the node that key would gather, in screen space, as a mailbox's and an NPC's are (mail.ts
- * renderMailboxHint). Not when the key talks to an NPC or opens a mailbox instead, and not on a touch screen (a tap gathers).
- */
 export function renderGatherHint(ctx: CanvasRenderingContext2D, npcNear: boolean): void {
   hintedId = null;
   if (npcNear || TOUCH || nearMailbox()) return;

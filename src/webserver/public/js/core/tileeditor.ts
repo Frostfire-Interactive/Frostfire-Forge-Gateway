@@ -135,10 +135,6 @@ class TileEditor {
   private isShiftHeld = false;
   private lastPlacedTilePos: { x: number, y: number } | null = null;
 
-  // The zone map window (/zone-map), opened by the map editor window: the whole map zoomed out, to draw zones on.
-  // Zones are drawn and edited there only (USER REQUEST 2026-11-18: "Disable the in-world zone editing, it should
-  // always be the popup version"); this window keeps them, their undo steps and their save.
-  // Its zones are sent again after every change (once a task), its player marker every half second when he moved.
   private zoneMapWindow: Window | null = null;
   private zoneMapQueued = false;
   private zoneMapTimer: ReturnType<typeof setInterval> | null = null;
@@ -186,10 +182,6 @@ class TileEditor {
     await this.openEditor();
   }
 
-  /**
-   * Raised by every open and every close. An open waits for the server (waitForSyncReady): one that finds this
-   * changed when it is answered was closed, or closed and opened again, while it waited, and goes no further.
-   */
   private openRun = 0;
 
   private async openEditor() {
@@ -203,8 +195,6 @@ class TileEditor {
     this.showSyncNotification();
     sendRequest({ type: 'EDITOR_OPEN', data: null });
 
-    // Open external editor window. The map is painted in the game window, so, like the NPC editor, this one
-    // opens against the right edge of the screen at the size it is laid out for, where the screen allows.
     const url = window.location.origin + '/map-editor';
     const area = window.screen as Screen & { availLeft?: number; availTop?: number };
     const width = Math.min(1350, area.availWidth - 40);
@@ -230,8 +220,6 @@ class TileEditor {
     }, 500);
 
     await this.waitForSyncReady();
-    // Closed while it waited (the player walked into a warp, or shut the window): the close has put everything
-    // back, and a later open is its own.
     if (run !== this.openRun || !this.isActive) return;
     this.hideSyncNotification();
 
@@ -387,10 +375,6 @@ class TileEditor {
     if (this.bridgeReady && this.editorWindow) this.editorWindow.postMessage({ type: 'createMapFailed', message }, '*');
   }
 
-  /**
-   * The Fishing tab's data from the server (FISHING_EDITOR_DATA): the fishable tiles with their catches and the items
-   * that fish them, the material items, and the weapons.
-   */
   public fishingData(data: any) {
     if (this.bridgeReady && this.editorWindow) {
       this.editorWindow.postMessage({ type: 'fishingUpdate', tiles: data?.tiles ?? {}, tools: data?.tools ?? {}, items: data?.items ?? [], weapons: data?.weapons ?? [] }, '*');
@@ -660,8 +644,6 @@ class TileEditor {
         window.mapData.warps = warpsObj;
       }
 
-    // Zones by name too (none: an empty set to draw into). Every key a zone has is kept; its box is made when missing
-    // and its holes are filled.
     if (Array.isArray(window.mapData.zones) || !window.mapData.zones) {
       const zonesObj: Record<string, ClientZone> = {};
       (window.mapData.zones || []).forEach((z: any) => {
@@ -688,8 +670,6 @@ class TileEditor {
         this.layerVisibility.set(layer.name, true);
       }
 
-      // Always read lock state from chunk layer data (authoritative server state),
-      // falling back to unlocked when no lock data is present
       if (typeof layer.locked === 'boolean') {
         this.layerLocked.set(layer.name, layer.locked);
       } else if (!this.layerLocked.has(layer.name)) {
@@ -1116,8 +1096,6 @@ class TileEditor {
           newY = this.resizingWarp.startWarpY + deltaY;
         }
 
-        // Apply boundary constraints
-        // Clamp position to map boundaries
         newX = Math.max(0, Math.min(newX, mapMaxWidth));
         newY = Math.max(0, Math.min(newY, mapMaxHeight));
 
@@ -1125,8 +1103,6 @@ class TileEditor {
         newWidth = Math.max(1, Math.min(newWidth, mapMaxWidth - newX));
         newHeight = Math.max(1, Math.min(newHeight, mapMaxHeight - newY));
 
-        // Update position and size
-        // Note: x and y are destination coordinates from properties - do NOT update them during resize
         if (!warpData.position) {
           warpData.position = {};
         }
@@ -1340,8 +1316,6 @@ class TileEditor {
           }
         }
       } else if (this.selectedObject === 'Warps') {
-        // First check if clicking on a corner to resize
-        // Only allow if layer is visible and selected
         if (!this.isObjectLayerVisible('Warps')) {
           return;
         }
@@ -1603,10 +1577,6 @@ class TileEditor {
 
   // ------------------------------------------------------------------ the zone map window
 
-  /**
-   * A message from the zone map window (/zone-map). Only a window of this site that the map editor window opened is
-   * listened to, and only while the map editor is open.
-   */
   private onZoneMapMessage(e: MessageEvent) {
     if (e.origin !== window.location.origin || !this.isActive || !window.mapData) return;
     const source = e.source as Window | null;
@@ -1669,12 +1639,6 @@ class TileEditor {
     return { x: me.position.x / (window.mapData.tilewidth || 16), y: me.position.y / (window.mapData.tileheight || 16) };
   }
 
-  /**
-   * An edit made in the zone map window: the zone `oldName` (null: a new zone) becomes `zone` (null: it is deleted).
-   * It is one undo step of the map editor, and the Zones layer is marked unsaved. A zone that lies partly over another
-   * zone is snapped to that zone's edge first (fitZoneEdit). One the server would refuse is not made; the window is told
-   * why and sent the zones as they are.
-   */
   private applyZoneMapEdit(oldName: string | null, zone: ClientZone | null) {
     if (!window.mapData.zones || Array.isArray(window.mapData.zones)) window.mapData.zones = {};
     const zones = window.mapData.zones as Record<string, ClientZone>;
@@ -1721,10 +1685,6 @@ class TileEditor {
     this.postZoneMap({ type: 'zoneMapZones', map, zones: this.zoneMapZones(), unsaved: this.unsavedLayers.has('Zones') });
   }
 
-  /**
-   * Every half second while the zone map is open: the player's place when the player moved, and the zones when the map's
-   * zones were put back whole (the map loaded again after someone's save) rather than changed here, or were saved.
-   */
   private startZoneMapTimer() {
     if (this.zoneMapTimer) return;
     this.zoneMapTimer = setInterval(() => {
@@ -2430,8 +2390,6 @@ class TileEditor {
     this.sendTileEdits([{ chunkX, chunkY, layerName: this.selectedLayer as string, x: localTileX, y: localTileY, tileId: this.copiedTile as number }]);
   }
 
-  // Push edited cells to the GPU: the chunk's tile data is re-uploaded on the
-  // next frame (a few KB, so the whole chunk is sent rather than single cells).
   private redrawCells(chunkX: number, chunkY: number, cells: Array<{ x: number; y: number }>) {
     if (!window.mapData || cells.length === 0) return;
     const chunkKey = `${chunkX}-${chunkY}`;
@@ -2600,15 +2558,11 @@ class TileEditor {
     })));
   }
 
-  // Broadcast tile edits to other admins editing the same map so concurrent edits
-  // stay in sync (best-effort relay; persistence still happens on Save).
   private sendTileEdits(edits: Array<{ chunkX: number; chunkY: number; layerName: string; x: number; y: number; tileId: number }>) {
     if (!this.isActive || !window.mapData || edits.length === 0) return;
     sendRequest({ type: 'EDITOR_TILE_EDIT', data: { mapName: window.mapData.name, edits } });
   }
 
-  // Apply tile edits received live from another editor. Remote edits are not pushed
-  // onto the local undo stack and are not re-broadcast.
   public applyRemoteEdits(data: { mapName: string; edits: Array<{ chunkX: number; chunkY: number; layerName: string; x: number; y: number; tileId: number }> }) {
     if (!this.isActive || !window.mapData || !data || data.mapName !== window.mapData.name || !Array.isArray(data.edits)) return;
 
@@ -3429,8 +3383,6 @@ class TileEditor {
 
     const chunks = Array.from(chunkChanges.values());
 
-    // Editor extent for server-side growth / origin re-base. minTileX/minTileY are
-    // <= 0 when the map was expanded left/up. Clamp to 0 to disable left/up expansion.
     const saveMinTileX = window.mapData.minTileX ?? 0;
     const saveMinTileY = window.mapData.minTileY ?? 0;
     const shiftTilesX = -Math.min(0, saveMinTileX);
@@ -3444,8 +3396,6 @@ class TileEditor {
       infinite: window.mapData.infinite === true,
     };
 
-    // For left/up expansion the origin re-bases on save, so shift object positions
-    // to match before sending (the server shifts the object-group layers itself).
     if (didShift) {
       const dpx = shiftTilesX * window.mapData.tilewidth;
       const dpy = shiftTilesY * window.mapData.tileheight;
@@ -3462,8 +3412,6 @@ class TileEditor {
       }
     }
 
-    // Count objects being saved
-    // Convert graveyards and warps from objects to arrays for saving
     const graveyardsArray = window.mapData?.graveyards
       ? Object.entries(window.mapData.graveyards).map(([name, data]: [string, any]) => ({
           name,
@@ -3741,8 +3689,6 @@ class TileEditor {
       };
       ul.appendChild(deleteItem);
     } else if (this.selectedObject && this.isObjectLayerVisible(this.selectedObject)) {
-      // Show create option for empty area based on selected object layer
-      // Only show if the selected layer is visible
       const createItem = document.createElement("li");
       createItem.innerText = "Create";
       createItem.onclick = (e) => {
@@ -4433,8 +4379,6 @@ class TileEditor {
     nameInput.focus();
   }
 
-  // One tile of a multi-tile pick, with its outline. False while the tile's
-  // tileset image is still loading.
   private drawSelectedTilePreview(target: CanvasRenderingContext2D, tileId: number, x: number, y: number): boolean {
     const tw = window.mapData.tilewidth;
     const th = window.mapData.tileheight;
@@ -4556,8 +4500,6 @@ class TileEditor {
 
     if (this.currentTool === 'paint' && this.selectedTiles.length > 0) {
       try {
-        // Baked once per pick instead of drawn tile by tile every frame, which
-        // a large pick cannot afford (see tilepreviewcache.ts).
         this.selectedTilesPreview.draw(
           ctx,
           this.selectedTiles,

@@ -12,8 +12,6 @@ export function getCachedImage(src: string): HTMLImageElement {
   }
 
   const img = new Image();
-  // The asset server is another origin: drawn without this, one picture marks the game's canvas as unreadable, and the
-  // cutscene tool can then neither record it nor save a frame of it.
   img.crossOrigin = "anonymous";
   img.src = src;
   imageCache.set(src, img);
@@ -25,9 +23,6 @@ export async function createCachedImage(src: string): Promise<HTMLImageElement> 
 
   // For Asset Server icon requests that return direct PNG files
   if (src && src.includes("/icon?")) {
-    // An icon is put on the page, and the same one can be wanted in two places at once (a bag in its bag slot and
-    // the spare one of it in the bags): an element can only be in one place, so each caller is given one of its own.
-    // The image kept is only copied from, and its picture is already loaded for every copy.
     const ownCopy = (kept: HTMLImageElement) => kept.cloneNode(false) as HTMLImageElement;
 
     // Check cache first
@@ -114,10 +109,6 @@ export async function createCachedImage(src: string): Promise<HTMLImageElement> 
 
   // For regular URLs and data URLs, use cache
   return getCachedImage(src);
-}
-
-export function clearImageCache(): void {
-  imageCache.clear();
 }
 
 export { npcImage };

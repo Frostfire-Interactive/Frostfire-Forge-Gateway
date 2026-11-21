@@ -1,7 +1,3 @@
-// Edge swipe (left-to-right) to go back, with a finger-following animation.
-// For App view (touch devices): drag in from the left edge and the page
-// follows; release past the threshold and it slides away, then navigates.
-// Touch devices only; inert everywhere else.
 (() => {
   const container = document.querySelector('.container') as HTMLElement;
   const backButton = document.querySelector('.home-button') as HTMLElement;
@@ -84,8 +80,6 @@
     const dx = e.touches[0].clientX - startX;
     const dy = e.touches[0].clientY - startY;
     if (!claimed) {
-      // Vertical scrolling (and pull-to-refresh) keep gestures that
-      // move mostly up/down; taps pass through untouched.
       if (dx < 0 || Math.abs(dy) > Math.abs(dx)) {
         active = false;
         return;

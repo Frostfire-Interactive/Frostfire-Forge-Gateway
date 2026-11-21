@@ -1,11 +1,3 @@
-// Records a cutscene to a file on this computer, from the Capture tab of the cutscene editor. A recording runs in real
-// time, as the game draws: the scene plays, and each frame is either composed here from the game's own layers, at the
-// size asked for and with nothing of the interface in it, or taken from the browser tab as it stands.
-//
-// The game is a stack of canvases and CSS layers that the browser blends. Composing a frame means blending them again
-// on one canvas, in the same order and with the same operations (game.css); paintFrame says which. It has to happen
-// right after the game draws, in the same frame, so the renderer calls captureFrame at the end of its loop. The game is
-// laid out for the file while it does (cutsceneframe.ts), so the layers come at the file's size.
 import { aboveCanvas, ambience, ambienceCool, canvas, ghostCanvas, lightCanvas, lightDodgeCanvas, sunFlare, weatherCanvas } from "./ui.js";
 import { getAmbiencePaint } from "./ambience.js";
 import { setClipsAtFullLevel, tapSound } from "./audio.js";
@@ -308,11 +300,6 @@ const EBML_SEGMENT = 0x18538067, EBML_INFO = 0x1549a966, EBML_TIMECODE_SCALE = 0
 /** The head of a recording: every element before the first frame is in it. */
 const WEBM_HEAD = 65536;
 
-/**
- * A browser writes a WebM as it goes and cannot know how long it will be, so a player shows no length for the file and
- * none can be seeked by its bar. The length goes in the file's Info element, near the start. Any file this cannot read
- * is given back as it came.
- */
 async function withDuration(file: Blob, seconds: number): Promise<Blob> {
   const part = new Uint8Array(await file.slice(0, WEBM_HEAD).arrayBuffer());
   const element = (at: number) => {
@@ -345,11 +332,6 @@ async function withDuration(file: Blob, seconds: number): Promise<Blob> {
   return new Blob([part.subarray(0, info.end), duration, part.subarray(info.end), file.slice(part.length)], { type: file.type });
 }
 
-/**
- * A window nobody can see (minimised, or covered by the editor) is given no animation frames and its timers are slowed,
- * but a worker's are not. Its beat draws a frame when the browser has stopped giving them, so a recording runs on behind
- * other windows. `document.hidden` does not say so: a covered window can go without frames and still read as visible.
- */
 function startBeat(fps: number): Worker {
   const url = URL.createObjectURL(new Blob([`setInterval(() => postMessage(0), ${1000 / fps});`], { type: "text/javascript" }));
   const beat = new Worker(url);
@@ -531,8 +513,6 @@ function arm(t: Take, now: number, viewLoaded: () => boolean): void {
     if (now - t.armedAt > ARM_LIMIT_MS) fail(t, "The scene did not start. Is the game on its map?");
     return;
   }
-  // A preview waits at the take's first frame for the ground round it, which may be more than the window ever showed.
-  // A saved scene is under way and cannot wait.
   if (wanted === "preview") {
     if (!t.placedAt) {
       t.placedAt = now;
@@ -582,10 +562,6 @@ function roll(t: Take, now: number): void {
   }
 }
 
-/**
- * The renderer's last word on each frame. `viewLoaded` says whether the ground in view has come. Whatever goes wrong
- * here ends the take and not the game: a throw out of this leaves the next frame unasked for.
- */
 export function captureFrame(viewLoaded: () => boolean): void {
   paintStill(viewLoaded);
   const t = take;

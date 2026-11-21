@@ -1,10 +1,3 @@
-// The cutscene document and what a moment of it looks like. Everything here works out the state of a scene at a time t
-// from the document alone, with nothing remembered from the moment before, so a scene plays, scrubs and jumps the same.
-// No DOM and no game state: the editor's popup uses it as well as the game window (cutscene.ts).
-//
-// The document is described in docs/superpowers/specs/2026-10-31-cutscene-tool-design.md; the server checks every field
-// of it when it is saved (the engine's systems/cutscenes.ts).
-
 export type Ease = "linear" | "smooth" | "in" | "out" | "hold";
 export type Dir = "up" | "down" | "left" | "right";
 export type Point = { x: number; y: number };
@@ -131,10 +124,6 @@ export function envelope(t: number, start: number, length: number, fadeIn: numbe
   return Math.min(fadeIn > 0 ? clamp01(into / fadeIn) : 1, fadeOut > 0 ? clamp01(left / fadeOut) : 1);
 }
 
-/**
- * A document made ready to read many times a frame: the live tracks' items gathered by kind and put in time order, so a
- * muted track simply is not there.
- */
 export interface Plan {
   keys: CameraKey[];
   shakes: ShakeClip[];
@@ -241,13 +230,6 @@ export interface Shot { x: number; y: number; zoom: number }
 const curve = (a: number, b: number, c: number, d: number, p: number) =>
   0.5 * (2 * b + (c - a) * p + (2 * a - 5 * b + 4 * c - d) * p * p + (3 * b - a - 3 * c + d) * p * p * p);
 
-/**
- * Where the camera is at time t; null when the scene sets no camera (it stays on the player).
- *
- * The camera runs on one curve through its keys, so a path bends rather than turning at each key. A key's `ease` says
- * how it arrives: "linear" keeps its speed and runs on through the key, "smooth" slows into it, "hold" cuts to it.
- * Zoom is eased by ratio, so going from 1 to 2 feels the same as going from 2 to 3. `where` finds what a key follows.
- */
 export function shotAt(plan: Plan, t: number, where: (who: string) => Point | null): Shot | null {
   const keys = plan.keys;
   if (!keys.length) return null;

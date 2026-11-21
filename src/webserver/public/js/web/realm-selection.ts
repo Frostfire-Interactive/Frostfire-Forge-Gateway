@@ -191,9 +191,6 @@ function renderServers(): void {
                 }
             }
 
-            // Reveal the details panel (on mobile it only appears after a
-            // selection) and bring it into view on small screens. Joining
-            // always goes through the Enter Realm button.
             document.body.classList.add('has-selection');
             const detailsWrapper = document.querySelector('.realm-details-wrapper');
             if (detailsWrapper && window.matchMedia('(max-width: 768px)').matches) {
@@ -204,8 +201,6 @@ function renderServers(): void {
     });
 }
 
-// When the realm's Log In lock needs a subscription and this account has none (and is not an admin), the
-// game would refuse it at login with no reason shown. Say it here instead.
 let isGuestAccount = false;
 async function showSubscriptionNeeded(): Promise<boolean> {
     const notice = document.getElementById('subscription-needed');
@@ -244,14 +239,9 @@ async function continueToGame(serverId: string | null): Promise<void> {
 
         localStorage.removeItem('selectedServerId');
     }
-    // A full account picks which of its characters to play (the character list); a guest has its one character and
-    // goes straight in, unless it has still to choose its class.
     window.location.href = !isGuestAccount || await characterNeeded() ? '/character' : '/game';
 }
 
-// USER REQUEST 2026-10-14 ("At realm selection, we should pre-load the chunks"): for an account that makes its
-// character next, the realm's start area is read and drawn here (js/web/startarea.ts keeps the picture), so the
-// character page shows it at once. Once per realm; nothing is asked for an account that has its character.
 let characterNeededOnce: Promise<boolean> | null = null;
 function preloadStartArea(serverId: string | null | undefined): void {
     const prepare = (window as any).startAreaPrepare as ((id: string) => Promise<unknown>) | undefined;
@@ -260,8 +250,6 @@ function preloadStartArea(serverId: string | null | undefined): void {
     void characterNeededOnce.then((needed) => { if (needed) void prepare(serverId); });
 }
 
-// USER REQUEST 2026-10-14: an account with no character makes one first (/character, src/systems/characters.ts).
-// Not knowing is not a reason to keep a player out: the game asks again at login (CHARACTER_REQUIRED).
 async function characterNeeded(): Promise<boolean> {
     try {
         const response = await fetch('/api/character', { headers: { 'Authorization': `Bearer ${token}` }, cache: 'no-store' });

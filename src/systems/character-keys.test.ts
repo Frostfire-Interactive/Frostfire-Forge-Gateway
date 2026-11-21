@@ -1,15 +1,3 @@
-// Ratchet for the move from "one character per account (character = accounts.username)" to
-// "many characters per account, keyed by characters.id".
-//
-// Heuristic: per source file, find string and template literals that contain a CHARACTER_TABLES
-// table name as a whole word AND the word `username`. That is how SQL on a character table keyed
-// by the account name looks in this code base. A file with such a literal must be in PENDING.
-// Scanned: src/**/*.ts. Skipped: *.test.ts, *.d.ts, node_modules, any tests/ directory
-// and public/js/web/*.js (not .ts). Limits: a statement split over several literals, or built
-// from ${table}, is not seen.
-//
-// Later tasks migrate a file and delete it from PENDING; the list only shrinks. Task 11 asserts
-// it is empty.
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "fs";
 import { join, relative, sep } from "path";
@@ -22,10 +10,6 @@ const CHARACTER_TABLES: readonly string[] = [
 
 const SRC = join(import.meta.dir, "..");
 
-/** Files still holding SQL that keys a character table by `username`. */
-// Empty since Task 10: the Gateway keys every character table by character_id (guests and sign-ups in
-// systems/player.ts, the class pick in systems/characters.ts). No Gateway file stays: its own setup
-// (utility/database_setup.ts) has no character tables, the engine makes them.
 const PENDING: readonly string[] = [];
 
 function listFiles(dir: string, out: string[] = []): string[] {

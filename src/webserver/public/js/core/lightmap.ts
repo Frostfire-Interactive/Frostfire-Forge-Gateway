@@ -33,8 +33,6 @@ function getLightTexture(color: string): HTMLCanvasElement {
   return c;
 }
 
-// The light layers are the game canvas's twins: same backing size and CSS size, drawn with the same transform (device
-// pixel ratio, and on touch devices the 0.85 zoom), so a light lands exactly on its particle on every device.
 function matchGameCanvas(game: HTMLCanvasElement, target: HTMLCanvasElement) {
   if (target.width !== game.width || target.height !== game.height) {
     target.width = game.width;
@@ -60,24 +58,11 @@ function parseColor(color: string): { r: number; gr: number; b: number } {
   return { r: 255, gr: 255, b: 255 };
 }
 
-// ---------------------------------------------------------------- emissive tiles
-// Tiles that give off light: Tiled custom tile properties on the map's tilesets (emissive_color, emissive_intensity,
-// emissive_radius = how far past the tile the light reaches, in px), e.g. the underworld's lava and glow pools.
-// One continuous light field over the darkened scene (light-dodge canvas, colour-dodge at alpha 1: a gain on what the
-// ambience darkened, 1 where no light reaches): full on the emissive tiles, which show at their own daylight colours, then fading with the distance past
-// their edge, white at the edge and turning to the light's colour further out. One field, so the light has no step
-// anywhere (USER FEEDBACK 2026-10-03, "Still seeing a hard edge": measured across a lava edge, the emissive tiles,
-// redrawn apart from the floor light, were lit 1.12 against 0.85 on the floor pixel next to them, a dark line where the
-// floor light had been cut out under the tiles).
 interface Emissive { color: string; intensity: number; radius: number }
 const GID_MASK = 0x1fffffff;
 let emissiveFor: { tilesets: any[] | null; table: Map<number, Emissive> } = { tilesets: null, table: new Map() };
 /** A chunk's emissive tiles: index in the chunk (y * width + x) -> what the tile gives off. */
 const chunkEmissive = new WeakMap<object, Map<number, Emissive>>();
-/** The light a chunk's tiles receive, per tile (the chunk plus a one-tile margin, so scaling it up blends into the
- * neighbouring chunks' light): amount 0..1, how far it has turned from white to its colour (0..1) and the emissive tile
- * it comes from. Built from the emissive tiles of the chunk and its 8 neighbours, so the light crosses chunk borders
- * without seams; rebuilt when a neighbour (un)loads. */
 type SpillField = { amount: Float32Array; tint: Float32Array; from: (Emissive | null)[]; w: number; h: number };
 type ChunkSpill = { neighbours: unknown[]; field: SpillField | null; level: string; light: HTMLCanvasElement | null };
 const chunkSpill = new WeakMap<object, ChunkSpill>();
@@ -87,10 +72,6 @@ const SPILL_SCALE = 0.5;
 const SPILL_WHITE = 0.25;
 /** tiles past the edge over which the light turns from white (the emissive tile's own daylight) to its colour */
 const SPILL_TINT_TILES = 2;
-/** How bright an emissive tile of emissive_intensity 3 gets, between the darkness (0) and its daylight colours (1); other
- * intensities in proportion, up to the daylight colours (3 / EMISSIVE_PEAK, about 3.5); its light past it starts there
- * too (USER FEEDBACK 2026-10-03: at full daylight "they are too bright"; at 0.65 "little bit brighter"; at 0.75
- * "brighter"; pools, then capped at intensity 3, "brighter" again). */
 const EMISSIVE_PEAK = 0.85;
 /** the light on an emissive tile itself, 0..1 */
 const ownLight = (e: Emissive) => Math.min(1, EMISSIVE_PEAK * e.intensity / 3);
@@ -154,10 +135,6 @@ function neighboursOf(chunk: any): unknown[] {
   return out;
 }
 
-/** The light each tile of a chunk receives: full on emissive tiles; past them, fading with the distance from the edge
- * of the nearest emissive tile (its own or a neighbour's) to nothing at that tile's emissive_radius. Its brightness is
- * the tile's emissive_intensity (3 = EMISSIVE_PEAK, about 3.5 = daylight colours). null when no light reaches the
- * chunk. */
 function spillField(chunk: any, neighbours: unknown[], table: Map<number, Emissive>, tw: number): SpillField | null {
   const w = Number(chunk.width) || 0, h = Number(chunk.height) || 0, o = chunkOrigin(chunk);
   let reach = 0;
@@ -203,16 +180,9 @@ function spillField(chunk: any, neighbours: unknown[], table: Map<number, Emissi
   return lit ? { amount, tint, from, w: fw, h: fh } : null;
 }
 
-/** The light canvas of a spill field for the current ambience level A (what the ambience overlay leaves of the scene):
- * per tile a colour-dodge colour at alpha = the light's amount, lifting the darkened scene to A + amount x (1 - A) x
- * tint, i.e. back to its daylight colours on emissive tiles (amount 1, white), less and more coloured further out.
- * Scaled up smoothly in floats and written as opaque pixels (spilllight.ts: a canvas scaling it loses the faint end). */
 function spillCanvas(field: SpillField, level: [number, number, number], tw: number, th: number): HTMLCanvasElement {
   const { w, h } = field, texels = new Float32Array(w * h * 4);
   const A = level.map((v) => Math.max(0.05, Math.min(0.95, v)));
-  // Per kind of emissive tile and channel: a factor on its light (within half an 8-bit step: 2.5 % at gain 12) that
-  // makes the gain on the tile itself, 1 + its own amount x G, one a pixel holds exactly, so the emissive tiles are lit
-  // evenly, without the dither their light past them gets (spilllight.ts).
   const exact = new Map<Emissive, number[]>();
   for (let i = 0; i < w * h; i++) {
     const e = field.from[i], amount = field.amount[i]!;
@@ -239,8 +209,6 @@ function spillCanvas(field: SpillField, level: [number, number, number], tw: num
   return out;
 }
 
-/** A chunk's light canvas (chunk plus a one-tile margin), or null when no light reaches it. Cached; rebuilt when a
- * neighbouring chunk (un)loads or the ambience level changes. */
 function spillOf(chunk: any, table: Map<number, Emissive>, tw: number, th: number, level: [number, number, number]): HTMLCanvasElement | null {
   const neighbours = neighboursOf(chunk), key = level.map((v) => Math.round(v * 64)).join(",");
   let hit = chunkSpill.get(chunk);
@@ -253,8 +221,6 @@ function spillOf(chunk: any, table: Map<number, Emissive>, tw: number, th: numbe
 }
 
 let lastFrame = { spillDrawn: 0, glowsQueued: 0, particlesDrawn: 0 };
-// Console switches for finding which light source draws what: window.__lightLayers.spill / .npcWash / .particles =
-// false hides that source (all on by default).
 const lightLayers = { spill: true, npcWash: true, particles: true };
 (window as any).__lightLayers = lightLayers;
 // Console diagnostic: window.__lightDebug() -> what the light layer sees right now.
@@ -269,9 +235,6 @@ const lightLayers = { spill: true, npcWash: true, particles: true };
   return { version: 5, lastFrame, spillChunks, map: window.mapData?.name, night: getNightFactor(), ambientLevel: getAmbientLevel(), emissiveTiles: table.size, loadedChunks: chunks, tilesets, lightCanvas: { w: lightCanvas.width, h: lightCanvas.height, css: lightCanvas.style.width } };
 };
 
-// Draw the light map. Lights come from emissive tiles and from glowing particles on NPCs and entities
-// (glow_intensity > 0). Only active at night; scales with darkness so glow "emits light" once the ambience overlay
-// darkens the scene.
 export function renderLightMap(game: HTMLCanvasElement, base: DOMMatrix, offsetX: number, offsetY: number) {
   // this frame's glowing particle draws, taken (emptied) even when the night is off so the queue never grows
   const glows = takeGlows();
@@ -299,8 +262,6 @@ export function renderLightMap(game: HTMLCanvasElement, base: DOMMatrix, offsetX
   const tl = inv.transformPoint(new DOMPoint(0, 0)), br = inv.transformPoint(new DOMPoint(game.width, game.height));
   const viewL = tl.x - offsetX, viewT = tl.y - offsetY, viewR = br.x - offsetX, viewB = br.y - offsetY;
 
-  // emissive tiles of the loaded chunks (lava, glow pools, ...) and the light they cast: one field per chunk, drawn
-  // cropped to the chunk (its margin only blends it into the neighbours)
   let spillDrawn = 0;
   const table = emissiveTable();
   if (lightDodgeCtx && lightLayers.spill && table.size && window.mapData?.loadedChunks) {
@@ -322,17 +283,12 @@ export function renderLightMap(game: HTMLCanvasElement, base: DOMMatrix, offsetX
   lastFrame = { spillDrawn, glowsQueued: glows.length, particlesDrawn: 0 };
 
   const sources: Array<{ src: any; offX: number; offY: number }> = [];
-  // NPC particles render centered at position + (16, 24) (see npc.ts). Match
-  // that offset so the glow lines up with the particles.
   for (const npc of cache.npcs) sources.push({ src: npc, offX: 16, offY: 24 });
 
   const now = performance.now();
   if (lightLayers.npcWash) for (const { src, offX, offY } of sources) {
     if (!src.particles || !src.position) continue;
 
-    // One light per emitter (not per particle) so many particles don't stack
-    // into a blown-out blob. Use the strongest glowing particle config shown this frame (npc.ts: its time window or
-    // visible flag).
     let best: any = null;
     for (const particle of src.particles) {
       const glow = particle.glow_intensity || 0;
@@ -344,16 +300,11 @@ export function renderLightMap(game: HTMLCanvasElement, base: DOMMatrix, offsetX
     const glow = best.glow_intensity || 0;
     const size = best.size || 5;
 
-    // Skip small / weak-glow emitters (e.g. fireflies) so they stay crisp and
-    // are not washed out by a halo. Only larger, strongly glowing particles
-    // cast a subtle night light.
     if (size < 6 || glow < 1) continue;
 
     const sx = src.position.x + offX;
     const sy = src.position.y + offY;
 
-    // The light reaches as far as the particle's glow (its Radius setting, else twice its size, as npc.ts glowReach)
-    // plus its size; Intensity only makes it brighter.
     const reach = Number(best.glow_radius) > 0 ? Number(best.glow_radius) : Math.max(6, size);
     const radius = size + reach * 2;
     // (an NPC's light fades in with it, npc.ts)
@@ -368,10 +319,6 @@ export function renderLightMap(game: HTMLCanvasElement, base: DOMMatrix, offsetX
     lightCtx.drawImage(tex, sx - radius, sy - radius, radius * 2, radius * 2);
   }
 
-  // The glowing particles themselves, again, on this overlay: the game canvas they are drawn on sits under the
-  // ambience overlay (a multiply darkening), so at night their glow was darkened with the scene. Drawn here (screen
-  // blend, above the ambience) they shine over it, more the darker it is: every glowing sprite any renderer drew this
-  // frame (glowqueue.ts), with the transform it was drawn with, at the alpha it was drawn at.
   let particlesDrawn = 0;
   if (lightLayers.particles) for (const g of glows) {
     lightCtx.setTransform(g.m);

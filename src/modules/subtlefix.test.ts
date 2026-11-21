@@ -2,15 +2,8 @@ import { expect, test, mock } from "bun:test";
 import { sampleTime, pushSample, pushPredicted, pushEcho, getLateness, interpolationDelay, renderTime, lastRenderTime, renderHeadroom, getClockOffset, positionAt, seedSamples, needsPositionSample, resetMovementClock, resetClockEpoch, setServerTickRate } from "../webserver/public/js/core/movementsmoothing";
 import { advanceSelf, gapDirection, applyEase, startEase, gapSampleTime, gapStepMs, stepWalkMs, planHandoffDone, hasAnchor, HandoffSettle, HandoffPace, planPaceArm, planStopPace, HANDOFF_PACE_RAMP_PER_MS, HANDOFF_PACE_LEAD_PX, HANDOFF_PACE_WINDOW_MS, HANDOFF_PACE_STALL_MS, HANDOFF_PACE_WAIT_MS, KeptWalkDating, keptWalkShift, HANDOFF_SNAP_PX, HANDOFF_KEEP_PX, HANDOFF_KEEP_WALK_PX, HANDOFF_KEEP_LEAD_MS, SETTLE_MS, KEPT_SHIFT_MAX_MS, KEPT_HEADROOM_SLACK_MS, KEPT_LEAD_SHIFT_MAX_MS, KEPT_CATCHUP_SPEED, KEPT_CATCHUP_LEAD_MAX_MS, keptWalkCover, clearHeld, HOLD_MAX_MS, releaseHeld, madeUpPoint, HANDOFF_CATCH_UP_MAX_MS, atMountSpeed } from "../webserver/public/js/core/handoffwalk";
 
-// The walk across a node border, driven through the real smoothing and handoff-walk code (no DOM): the player walks
-// right at 180 px/s, the old node's last echo comes `lastEchoAgo` ms before the SWITCH, HANDOFF_DONE comes
-// `doneAfterSwitch` ms after it, and the new node's first echo 4 ms after that. "old" is the client before the fix:
-// predicted steps dated last.t + 0.01, and at DONE the position and samples are rewritten and a 120 ms ease started.
-// "new" dates the predicted steps with gapSampleTime and keeps position and samples at DONE (planHandoffDone).
 type Variant = "old" | "new";
 
-// `lag` is how much later than the old node's echoes the new node's arrive beyond the least-delayed one (clock offset or
-// jitter): they are dated that much older, which the running lateness then learns. Capped so the first stays after the old node's last.
 function cross(variant: Variant, lastEchoAgo: number, doneAfterSwitch: number, frameMs: number, lag = 0) {
   resetMovementClock();
   setServerTickRate(30);
@@ -94,10 +87,6 @@ const GAPS = [5, 15, 25, 35, 50];
 const DONES = [16, 39];
 const RATES = [1000 / 60, 1000 / 145];
 
-// At 60 Hz the crossing stays within 1.35 x the steady step. At 145 Hz one frame is 7 ms, short enough to show the
-// 2.6 px of REAL server time lost at the node switch: the new node steps a tick after the old one, the walk was predicted
-// from the SWITCH, so its first step lands that far ahead of the prediction. That is the server's own timeline, not a
-// dating error, so the 145 Hz bound is 2.3 x (up to 5.2 x before the fix) and the draw never steps back.
 const SPIKE_LIMIT: Record<string, number> = { "16.7": 1.35, "6.9": 2.3 };
 
 test("after the fix a border crossing has no back-step, no spike beyond the limit, and no drift, at every gap, DONE time and frame rate", () => {
@@ -220,9 +209,6 @@ test("settle: after SETTLE_MS with no echo the node's point is taken by an ease 
 });
 
 test("settle: every cancel path stops it (new switch, socket close, new gap, a real echo)", () => {
-  // The socket calls cancel() from switchNode (a new switch, which also starts the new gap), handleSocketClose,
-  // stopSwitching and the local player's MOVEXY echo: each is one cancel() on the same object. The calls themselves are
-  // wiring and not exercised here.
   for (const path of ["new switch", "socket close", "new gap", "real echo"]) {
     const t = fakeTimers();
     const settle = new HandoffSettle(t.schedule, t.clear, t.now);
@@ -278,8 +264,6 @@ test("planHandoffDone keeps the walk only when predicting, still moving and with
   expect(planHandoffDone(true, true, null, server)).toBe("reseed");
 });
 
-// The live creep: a 59 ms gap left the walked head 14 px past the point the node stood the player at, past HANDOFF_KEEP_WALK_PX,
-// so the walk was reseeded and drawn at 0.65 times the walk until the node's echoes, which made the gap up, passed it.
 test("madeUpPoint moves HANDOFF_DONE's point on along the walk by the catch-up, so a long gap keeps the walk", () => {
   const server = { x: 110484, y: 93000 };
   const head = { position: { x: 110470, y: 93000 }, lastDirection: "left" };
@@ -304,8 +288,6 @@ test("socket.ts weighs the kept walk at HANDOFF_DONE against the point the catch
   expect(src).toContain("planHandoffDone(predicting, moving, self, target, hasAnchor(self.moveSamples)) === \"keep\"");
 });
 
-// The live stand: the walk was reseeded because the drawn point (one playback delay behind the walked head, about 8 px
-// at 180 px/s) was measured against the node's point, 8.1 px apart, over HANDOFF_KEEP_PX. The head decides.
 test("planHandoffDone decides from the walked head, not the drawn point a playback delay behind it", () => {
   const server = { x: 500, y: 300 };
   // Walked 3 px past the node's point in the gap; drawn 8.5 px behind the head (5.5 px behind the point, then 8.5 px).
@@ -321,8 +303,6 @@ test("planHandoffDone decides from the walked head, not the drawn point a playba
   expect(planHandoffDone(true, true, off, server)).toBe("reseed");
   const offDiagonal = { position: { x: 507, y: 307 }, renderPosition: { x: 500, y: 300 } };
   expect(planHandoffDone(true, true, offDiagonal, server)).toBe("reseed");
-  // The node's point ahead of the head by more than HANDOFF_KEEP_LEAD_MS of walk (a step of a slow tick never received):
-  // reseed, though within HANDOFF_KEEP_PX. Behind the head, or ahead within the lead, keeps.
   const lead = HANDOFF_KEEP_LEAD_MS * 0.18;
   expect(planHandoffDone(true, true, { position: { x: 500 - lead - 1, y: 300 }, lastDirection: "right" }, server)).toBe("reseed");
   expect(planHandoffDone(true, true, { position: { x: 500 - lead + 0.5, y: 300 }, lastDirection: "right" }, server)).toBe("keep");
@@ -426,10 +406,6 @@ test("overlay: a kept grid is still not drawn on another map, and an answer for 
   expect(d.fills.length).toBeGreaterThan(0);
 });
 
-// Nodes of a cluster do not share a clock: the new node's send times differ from the old one's by about 1.5 s (live:
-// the offset moved 1462 ms at a crossing). The offset estimator keeps the smallest offset seen, so a node whose times
-// lag it reads as that much lateness, which decays by 0.5% an echo and holds the draw delay at its 250 ms cap, past the
-// span of the kept samples (16 x 17 ms): the draw then falls off the oldest sample and follows the raw echoes.
 function clockSwitchRun(skews: number[], reset: boolean, frameMs: number) {
   resetMovementClock();
   setServerTickRate(57);
@@ -529,11 +505,6 @@ function keysFor(direction: string): Set<string> {
   return keys;
 }
 
-// The frames just after HANDOFF_DONE on the keep path, as socket.ts runs it (live: 60 Hz node, 3 px a tick, 144 Hz
-// screen). The server stands the player from the SWITCH until the new node resumes the walk; the client walks on, so
-// the new node's first echo is a point the predicted samples already passed, dated later. `fix` dates the echoes with
-// KeptWalkDating (armed at a kept DONE); without it they are dated as they come and the draw stands at the newest
-// predicted sample until they pass it. `held` false is a crossing standing still: no gap walk, the reseed path.
 function keepCross(o: { dir: string; ago: number; done: number; phase: number; startFrame: number; fix: boolean; held?: boolean; hz?: number; jitter?: number; ahead?: number; byDrawn?: boolean; frameHz?: number; gaps?: number[]; stall?: { from: number; until: number }; echoes?: number; oldGap?: boolean; oldPlan?: boolean; pace?: boolean; stick?: boolean; keyUp?: number; release?: number; mounted?: boolean; turn?: { after: number; dir: string; keyBefore: number }; endMs?: number; walkedOn?: boolean; lastLate?: number; dropLate?: boolean; echoAhead?: number }) {
   const held = o.held !== false;
   const frameMs = 1000 / (o.frameHz ?? 144);
@@ -575,8 +546,6 @@ function keepCross(o: { dir: string; ago: number; done: number; phase: number; s
     else echo(at0(k), sent + late(k), late(k), false);
   }
   const D = S + o.done;
-  // The new node's point: where the server stood the player through the gap, `ahead` steps past the last echo the client
-  // got (steps sent by the old node but lost to the switch).
   const ahead = held ? o.ahead ?? 0 : 0;
   const point = at0(lastK + ahead);
   let gap = false;
@@ -590,8 +559,6 @@ function keepCross(o: { dir: string; ago: number; done: number; phase: number; s
     const shown = { x: player.renderPosition.x, y: player.renderPosition.y };
     headGap = Math.hypot(player.position.x - point.x, player.position.y - point.y);
     shownGap = Math.hypot(shown.x - point.x, shown.y - point.y);
-    // byDrawn: the choice as it was made before round 2 (the drawn point, a playback delay behind the head, within
-    // HANDOFF_KEEP_PX of the node's point).
     plan = o.byDrawn
       ? (predicting && held && shownGap <= HANDOFF_KEEP_PX ? "keep" : "reseed")
       : o.oldPlan && Math.hypot(player.position.x - point.x, player.position.y - point.y) > HANDOFF_KEEP_PX ? "reseed" : planHandoffDone(predicting, held, player, point, hasAnchor(player.moveSamples));
@@ -609,8 +576,6 @@ function keepCross(o: { dir: string; ago: number; done: number; phase: number; s
     player.moveSamples = seedSamples(point.x, point.y, D);
     if (predicting) startEase(player, shown, point, D);
   } });
-  // The new node resumes the walk from the handoff point; its first step comes `phase` ms after DONE.
-  // `gaps`: the send gaps of the first echoes after DONE (the live burst: the 2nd and 3rd echoes 4-6 ms apart), then the tick.
   let sendAt = D + o.phase;
   // `echoAhead`: the steps the first echo makes up, counted when it is sent (the point's `ahead` is counted at DONE).
   let cur = at0(K + (held ? o.echoAhead ?? ahead : 0));
@@ -654,8 +619,6 @@ function keepCross(o: { dir: string; ago: number; done: number; phase: number; s
     out.push({ held: !!(last && last.held), rel: now - S, at: at - S, step: along(p) - prev, err: Math.hypot(p.x - ref.x, p.y - ref.y), pos: { x: p.x, y: p.y } });
     prev = along(p);
   }
-  // From the frame the draw is past the SWITCH (before it are the old node's samples and the gap's first step, the
-  // start of the walk, not this hold) to 300 ms after DONE.
   const window = out.filter((r) => r.at > 8 && r.rel <= o.done + 300);
   let stalls = 0;
   for (let i = 1; i < window.length; i++) if (window[i].step < 0.05 && window[i - 1].step < 0.05) stalls++;
@@ -694,9 +657,6 @@ test("keep path, 60 Hz node, 144 Hz: no two frames in a row on the same point, n
   }
 });
 
-// The live stand (round 2): the node's point one 60 Hz step past the last echo the client got. The drawn point, one
-// playback delay behind the head, is then 6-11 px from it, around HANDOFF_KEEP_PX, so a choice made from it reseeds
-// some crossings and keeps others; the walked head is within 3 px in all of them.
 test("live state at 60 Hz: the head keeps every crossing the drawn point would have reseeded, and they draw clean", () => {
   let drawnReseeds = 0, total = 0;
   for (const jitter of [0, 4, 8]) for (const dir of KEEP_DIRS) for (const done of KEEP_DONES) for (const phase of KEEP_PHASES) for (const startFrame of KEEP_STARTS) {
@@ -728,9 +688,6 @@ test("keep path without the dating: the draw stands at the newest predicted samp
   expect(stood).toBeGreaterThan(total / 4);
 });
 
-// Live (cluster test stack, 2026-10-29): the new node's catch-up step came 5 ms before a tick, which the resumed walk sits out
-// (registered under half a tick before it), and the next tick ran 10 ms late: the second echo was sent 32 ms after the
-// first, the third 7 ms after that. The second echo, dated as sent, drew one step in 32 ms: three frames at 0.6-0.7 x.
 test("kept crossing, the new node's second step 1.5 ticks plus a late tick after its first: no frame under 0.85 x", () => {
   const bad: string[] = [];
   for (const frameHz of [72, 144]) for (const gaps of [[32, 7], [35, 4], [28, 11]]) for (const phase of [2, 5, 8]) for (const done of KEEP_DONES) for (const startFrame of KEEP_STARTS) {
@@ -743,8 +700,6 @@ test("kept crossing, the new node's second step 1.5 ticks plus a late tick after
   expect(bad).toEqual([]);
 });
 
-// The checks a held walk's frames must pass after HANDOFF_DONE: the steps drawn wholly at or after DONE's time (before
-// it are the gap's own predicted samples, rounded to whole px, which this does not change).
 function afterDone(r: ReturnType<typeof keepCross>, done: number) {
   const w = r.window.filter((x, i, all) => i > 0 && all[i - 1].at >= done);
   let stalls = 0;
@@ -752,18 +707,6 @@ function afterDone(r: ReturnType<typeof keepCross>, done: number) {
   return { stalls, min: Math.min(...w.map((x) => x.step)), max: Math.max(...w.map((x) => x.step)) };
 }
 
-// ---- The walk begun at HANDOFF_BEGIN
-//
-// The old node stops stepping the player at the drain, then takes the lock, releases, saves and only then sends the
-// SWITCH. Live on the test stack (node-3 to node-2): drained +35, saved +143, SWITCH at 193 ms. `S` in keepCross is the
-// start of the gap walk: the SWITCH before HANDOFF_BEGIN (the last echo `ago` = the whole drain and save before it), the
-// BEGIN now (the last echo a tick or less before it, DONE the drain, save and switch after it).
-
-/**
- * The steps the new node makes up past the old node's last one (arrival.ts, round(idle / tick) - 1 on top of the first),
- * as `point` and `echoAhead` of keepCross: DONE's catchUpMs is counted when DONE is sent, the first echo's when the MOVEXY
- * runs right after it (`phase` later).
- */
 function engineAhead(o: { done: number; phase: number; ago: number; hz?: number }): { ahead: number; echoAhead: number } {
   const tick = 1000 / (o.hz ?? 60);
   const steps = (ms: number) => Math.max(0, Math.round((ms + o.ago + 1) / tick) - 1);
@@ -875,12 +818,6 @@ test("taken as it comes, an echo 30 ms after HANDOFF_BEGIN sets the walked head 
   expect(reseeds).toBeGreaterThan(0);
 });
 
-// Every tick rate a node may run at for this walk (60, 30, 20 Hz: 3, 6, 9 px a tick) and arrival spread 0, 4 or 8 ms,
-// the new node's first step from a few ms to one tick after DONE. One assertion for every case: each check (no two
-// frames in a row on one point, none under 0.25 x, none over 1.5 x, none backward) is met, or it is already failed
-// without the dating and the dating is no worse on it (a stand longer than the render headroom, which the dating leaves:
-// KEPT_HEADROOM_SLACK_MS). `ahead`: the node's point is 0 or 1 step past the last echo the client got (the live state
-// is 1 at 60 Hz); a lead over HANDOFF_KEEP_LEAD_MS is reseeded, in both runs.
 test("keep path at 60, 30 and 20 Hz with 0, 4 and 8 ms arrival spread: each check met, or no worse than without the dating; no drift", () => {
   const counts: Record<string, { cases: number; fixed: number; baseFailed: number }> = {};
   for (const hz of [60, 30, 20]) for (const jitter of [0, 4, 8]) for (const ahead of [0, 1]) {
@@ -1007,15 +944,11 @@ test("KeptWalkDating: a drop of the clock offset after the first echo is taken i
   d.arm(40);
   // The first echo came 6 ms later than the next: the new clock was learned from it, offset 100.
   expect(d.date(samples, 103, 0, 40, 40, { ...CLOCK, offset: 100 }, "right", false)).toBeCloseTo(17, 6);
-  // The next echo lowers the offset to 94: sampleTime dates it 6 ms earlier than the first one's clock would. Taken
-  // into the shift (23 - 6, less 1 ms of fall-away), it lands one tick after the first, not 6 ms short of one.
   const next = d.date(samples, 106, 0, 50.67, 56.67, { ...CLOCK, offset: 94 }, "right", false);
   expect(next).toBeCloseTo(50.67 - (23 - 6 - 1.667), 2);
   expect(next - 17).toBeGreaterThan(16);
 });
 
-// The kept walk's newest predicted sample is 103 at 17; an echo of 113 sent at 25 (10 px ahead) is dated 72.6, where the
-// walk reaches it (47.6 ms later).
 const aheadSamples = () => [
   { t: 0, x: 100, y: 0 },
   { t: 10, x: 101, y: 0, predicted: true },
@@ -1029,8 +962,6 @@ test("KeptWalkDating: a stalled echo during a later dating is dated after the la
   const first = d.date(samples, 113, 0, 25, 25, CLOCK, "right", false);
   expect(first).toBeCloseTo(17 + 10 / 0.18, 6);
   expect(pushEcho(samples, 113, 0, first)).toBe(true);
-  // The next echo is sent one tick later but arrives 250 ms later (a stalled stream), and is the last one: the player
-  // stopped there. Falling by the arrival gap (25 ms) it would be dated 64.2, before 72.6, and dropped by pushEcho.
   const tick = 1000 / 60;
   const second = d.date(samples, 116, 0, 25 + tick, 25 + 250, CLOCK, "right", false);
   expect(second).toBeGreaterThan(first);
@@ -1060,8 +991,6 @@ test("KeptWalkDating: a later dating is never more than KEPT_LEAD_SHIFT_MAX_MS a
   d.arm(25);
   const first = d.date(aheadSamples(), x, 0, 25, 25, { ...CLOCK, offset: 100 }, "right", false);
   expect(first - 25).toBeCloseTo(58, 6);
-  // The next comes on time: offset 85, so its time is 15 ms earlier than the first one's clock would give. The drop
-  // added to the shift would date it 71 ms after its arrival.
   const t = 25 + 1000 / 60 - 15;
   const next = d.date(aheadSamples(), x + 3, 0, t, t, { ...CLOCK, offset: 85 }, "right", false);
   // Not at the cap and a 4.5 x burst (3 px in the 3.7 ms left to it): past it only as far as playing no faster than the catch-up speed needs.
@@ -1089,10 +1018,6 @@ test("socket.ts: LOAD_MAP cancels the kept-walk dating, HANDOFF_DONE arms it wit
   expect(src).toContain("planHandoffDone(predicting, moving, self, target, hasAnchor(self.moveSamples))");
 });
 
-// The node's point behind the walked head (stick/key step, finding B): the client walked the gap and the head is 5, 7 or 8
-// px (28, 39 or 42 ms of walk) ahead of where the server stood the player, inside HANDOFF_KEEP_PX. The first echo is
-// inside the predicted run, dated later than the walk reached its point by more than the render headroom allows
-// (keptWalkShift gave up), so the samples after its point stayed and the draw ran on to them, then back to the echo.
 const BEHIND_DONES = [28, 39, 42];
 const BEHIND_DIRS = ["right", "left"];
 
@@ -1121,8 +1046,6 @@ test("kept crossing with the node's point behind the head at 60, 30 and 20 Hz: n
     const a = afterDone(r, done);
     const b = afterDone(keepCross({ ...run, fix: false }), done);
     const label = `hz=${hz} jitter=${jitter} dir=${dir} done=+${done} phase=${f}T start=${startFrame}`;
-    // A back-step never, with or without spread (a draw past the first echoes' point waits at its spot: KeptWalkDating
-    // point). A step over 1.5 x steady never, or no worse than without the dating (the base's seam at 30/20 Hz).
     const back = a.min >= -1e-9;
     const fast = a.max <= 1.5 * STEADY_144 || a.max <= b.max + 1e-9;
     const stand = a.stalls <= b.stalls;
@@ -1164,8 +1087,6 @@ test("keptWalkCover: a first echo inside the predicted run that keptWalkShift ca
   expect(positionAt(drawn, 15)).toEqual(before);
   pushEcho(drawn, 103, 0, 46);
   for (let i = 1; i < drawn.length; i++) expect(drawn[i].x).toBeGreaterThanOrEqual(drawn[i - 1].x);
-  // The draw already past where the walk reached the point (at 17, drawn at 20): the drawn spot is kept as a sample, so the
-  // draw does not jump, and what is after the point goes.
   const past = run();
   const there = positionAt(past, 20)!;
   keptWalkCover(past, 103, 0, 60, 20, headroom, "right", false);
@@ -1211,8 +1132,6 @@ test("KeptWalkDating: a first echo behind the walked head is dated at the headro
 });
 
 test("keptWalkCover: the draw already past the echo's point with the shift within the bound still removes the samples after the point", () => {
-  // Predicted run every 14 ms at 0.18 px/ms to t=100; the walk reached 113.5 at 75; the echo is dated 105 (shift 30, bound
-  // 32.3 at 60 Hz) and the last frame drew at 80, past the point: keptWalkShift gives up, the samples used to stay.
   const run = () => {
     const out: { t: number; x: number; y: number; predicted?: boolean }[] = [{ t: 0, x: 100, y: 0 }];
     for (let t = 14; t <= 98; t += 14) out.push({ t, x: 100 + 0.18 * t, y: 0, predicted: true });
@@ -1357,10 +1276,6 @@ test("renderer.ts calls needsPositionSample for the position step, socket.ts lea
   expect(src.split("keptWalkDating.cancel()").length - 1).toBe(1);
 });
 
-// The live burst (60 Hz node, 3 px a step): the new node resumes the walk with its own mover, so its first echoes are not
-// on the tick cadence: the 2nd and 3rd are sent 4-6 ms apart (the 1st-2nd gap is a long one). Dated by send time, 3 px
-// plays in 4-7 ms and one frame steps 1.7-1.9 x the steady step. The dating holds each echo to the walking time after the
-// one before it (less the slew), so the draw never plays a segment faster than the walk.
 const BURST_GAPS = [[16.7, 4], [21, 6], [25, 10], [14, 5], [30, 4]];
 
 test("kept crossing with a short gap between the 2nd and 3rd echo: no frame above 1.5 x the steady step at 144 and 72 Hz, none backward, none stood", () => {
@@ -1387,8 +1302,6 @@ test("KeptWalkDating: two echoes 5 ms apart for 3 px are dated the walking time 
   send.forEach((t, k) => { dated.push(dating.date(samples, 110 + 3 * k, 0, t, t + 1, clock, "right", false)); });
   // 3 px at 180 px/s is 16.67 ms; the floor is 90% of it.
   expect(dated[2] - dated[1]).toBeCloseTo(15, 6);
-  // The lateness this added falls away: every gap is at least the floor, none shorter than the walk less the slew, and the
-  // dated time ends within a ms of the send time's own shift.
   for (let k = 1; k < dated.length; k++) expect(dated[k] - dated[k - 1]).toBeGreaterThanOrEqual(15 - 1e-9);
   expect(dated[dated.length - 1] - dated[3]).toBeLessThan(send[8] - send[3] + 1e-9 + 0.1 * (send[8] - send[3]));
   // Mounted walks 1.35 x as fast: the floor is shorter. A diagonal moves the same px on both axes: twice the progress.
@@ -1433,11 +1346,6 @@ test("KeptWalkDating: the floor is only in the window after a kept DONE (SETTLE_
   expect(far).toBeLessThanOrEqual(1006 + KEPT_CATCHUP_LEAD_MAX_MS + 1e-9);
 });
 
-// The jump after a hold (the 12.4 px frame, live): a draw past the first echo's point stands at a spot (KeptWalkDating
-// hold) dated at the draw's time when the hold began. When the link stalls (the echoes of 30-110 ms come together) the
-// hold ends with the next echo ahead of the spot, and the chord from the spot, dated that long ago, had the draw part way
-// along it at once. The spot now leaves at the draw's time (never earlier), and the echo is dated no earlier than the
-// walking time after it. 60 Hz node whose first echo comes late (a hold needs the draw past it), node's point 3 px behind the head.
 test("kept crossing with a hold and a stall of the link of 30 to 90 ms: the draw leaves the held spot at the walk's pace, no jump above the plain stall's", () => {
   let held = 0, cases = 0;
   for (const frameHz of [72, 144]) for (const dir of ["right", "left"]) for (const done of [39, 42, 48]) for (const startFrame of [0.3, 4]) for (const jitter of [0, 8]) for (const len of [30, 60, 90]) {
@@ -1450,8 +1358,6 @@ test("kept crossing with a hold and a stall of the link of 30 to 90 ms: the draw
     cases++;
     if (r.plan !== "keep" || r.heldFrames === 0) continue;
     held++;
-    // 16 px of walk (90 ms) cannot be played in one frame, but at 3.5 x steady at most (the walk's own pace is 1 x), and a
-    // 60 ms stall (11 px) within 1.5 x: the draw leaves the spot when the walk would, not part way along.
     expect({ label, back: a.min >= -1e-9, ok: a.max <= (len <= 60 ? 1.5 : 3.5) * steady && a.max <= b.max + 1e-9 })
       .toEqual({ label, back: true, ok: true });
   }
@@ -1467,8 +1373,6 @@ test("KeptWalkDating: a held spot's chord leaves at the draw's time when the hol
     expect(first.pt.held).toBe(true);
     return { samples, d, push };
   };
-  // The echo comes 250 ms later (a stall), 18 px on: 8 px past the keep radius from the spot, ahead of it. Dated at its
-  // send time it would be 150 ms before the draw; the spot (at 105 in the list) is not left at 105.
   const { samples, d } = setup();
   const spot = samples[samples.length - 1];
   const at = d.date(samples, 131.5, 0, 355, 355, clock, "right", false);
@@ -1493,8 +1397,6 @@ test("KeptWalkDating: a held spot's chord leaves at the draw's time when the hol
   expect(t.d.date(t.samples, 400, 0, 355, 355, clock, "right", false)).toBe(355);
 });
 
-// Fix round 1 (burst review I-2): a hold that ends by heldUntil (the key was let go, no echo past the spot) used to push the
-// real position at last.t + 0.01, an instant step back of the overshoot (3-8 px). It is now reached at the walking speed.
 test("a hold that times out by heldUntil with a 3-8 px overshoot: no back-step faster than the walk, none forward, at 144 and 72 Hz", () => {
   for (const frameHz of [144, 72]) for (const overshoot of [3, 5, 8]) for (const mounted of [false, true]) {
     const walk = (0.18 * (mounted ? 1.35 : 1));
@@ -1524,8 +1426,6 @@ test("renderer.ts takes the position of a timed-out held spot through releaseHel
   expect(src).toContain("releaseHeld(samples, player.position.x, player.position.y, at, atMountSpeed(player));");
 });
 
-// Fix round 2: a warp onto a timed-out held spot is not an overshoot to ease (the eased date would be seconds ahead and
-// refuse the echoes after it): it goes in as before and snaps.
 test("a warp far beyond HANDOFF_KEEP_PX onto a timed-out held spot snaps at once, and the next echoes are accepted and drawn", () => {
   for (const jump of [HANDOFF_KEEP_PX + 1, 50, 99, 500, 5000]) {
     const samples: any[] = [{ t: 0, x: 150, y: 0 }, { t: 100, x: 200, y: 0, held: true, heldUntil: 300 }];
@@ -1541,11 +1441,6 @@ test("a warp far beyond HANDOFF_KEEP_PX onto a timed-out held spot snaps at once
   }
 });
 
-// Resid: what was left after the burst fix. The live echo pattern after a kept DONE (60 Hz node, 3 px a step): the first echo
-// 1-23 ms after the last gap step, the 2nd 18-21 ms after it, the 3rd 4-6 or 13-16 ms after that, then the tick. Frames of
-// 1.36-1.53 x the walk came 1-2 frames after DONE (the gap walk's first step: a whole frame of walk from the last echo,
-// which the player left up to a tick before, dated at the frame's time: a 3 px chord in 6 ms) followed by 0.5-0.75 x
-// (a late 2nd echo played at the slew's pace, the 5 ms one floored) and ~150 ms of 0.9 x.
 const LIVE_GAPS = [[18, 5], [21, 4], [19, 6], [18, 14], [20, 16], [21, 13]];
 const sinceDone = (r: ReturnType<typeof keepCross>, done: number, ms: number) => r.all.filter((x) => x.rel >= done && x.rel <= done + ms);
 
@@ -1595,14 +1490,9 @@ test("gapSampleTime dates a predicted step no earlier than its walking time afte
   expect(gapStepMs(6.9, false, 1010, undefined, 1)).toBe(6.9);
 });
 
-// The live dip: the old node drained a tick before the switch, the echo was 36.6 ms old at the first gap frame, and the
-// step was cut to two frames (27.8 ms): the gap walk fell 1.6 px short and was drawn at 0.74 times the walk for 3 frames.
 test("gapStepMs walks all the time since the echo when the walk at the switch is still held, as the new node makes it up", () => {
   expect(gapStepMs(13.9, false, 1040, { t: 1000 }, 3.4, true)).toBeCloseTo(36.6, 6);
   expect(gapStepMs(13.9, false, 1040, { t: 1000 }, 3.4)).toBeCloseTo(27.8, 6);
-  // Live (cluster test stack, 2026-10-29): the old node's last step was 62 ms old at the first gap frame. Walked for a
-  // frame only, the gap walk fell 9 px short, drew at 0.2-0.3 x for 5 frames and the head missed the node's point (a reseed).
-  // Held, the walk goes on for all of it, up to the most the new node makes up (HANDOFF_CATCH_UP_MAX_MS).
   expect(gapStepMs(13.9, false, 1062, { t: 1000 }, 0, true)).toBeCloseTo(62, 6);
   expect(gapStepMs(13.9, false, 1100, { t: 1000 }, 3.4, true)).toBeCloseTo(96.6, 6);
   expect(gapStepMs(13.9, false, 1000 + HANDOFF_CATCH_UP_MAX_MS + 1, { t: 1000 }, 0, true)).toBe(13.9);
@@ -1627,9 +1517,6 @@ test("socket.ts dates a ghost's echoes at the mounted speed, as the engine steps
   expect(src).toContain("player.lastDirection, atMountSpeed(player))");
 });
 
-// The live mounted crossing: the player mounted with Q, the client's `mounted` stayed false (only the spawn set it), so
-// the gap walked at foot speed (0.75 of the mount's) and the pace after DONE was capped at 1.11 of foot speed (0.83 of
-// the mount's) while the node stepped at the mount's speed: the drawn player fell behind until it stopped or snapped.
 test("atMountSpeed: the engine steps a mounted player and a ghost at the mounted speed", () => {
   expect(atMountSpeed({ mounted: true })).toBe(true);
   expect(atMountSpeed({ isGhost: true })).toBe(true);
@@ -1691,10 +1578,6 @@ test("KeptWalkDating: after a floored pair, the lateness (dated less sent) shrin
   expect(late[late.length - 1]).toBeLessThan(late[2] / 2);
 });
 
-// Issue 3 (burst review I-1): the echoes of a stall of the link right after DONE came together; those past the 60 ms lead cap
-// were dated 0.01 ms apart, a stand and then 7-18 px in one frame. Now the draw leaves the point it stands at, at the draw's
-// time, and plays the catch-up at the walking time of each step less the slew; where that would pass the cap, no faster than
-// KEPT_CATCHUP_SPEED, and never more than KEPT_CATCHUP_LEAD_MAX_MS after the arrival.
 test("kept crossing with a stall of the link of 90 to 200 ms right after DONE: no frame above 1.5 x walking speed, none backward, the draw at the last echo within 200 ms", () => {
   let cases = 0, worst = 0, slowest = 0;
   for (const frameHz of [72, 144]) for (const len of [90, 110, 140, 200]) for (const from of [20, 40]) for (const startFrame of [0.3, 4]) for (const gaps of [[18, 5], [20, 14]]) for (const done of [19, 39]) {
@@ -1712,8 +1595,6 @@ test("kept crossing with a stall of the link of 90 to 200 ms right after DONE: n
     cases++;
   }
   expect(cases).toBe(2 * 4 * 2 * 2 * 2 * 2);
-  // The bound: the newest echo is dated at most KEPT_CATCHUP_LEAD_MAX_MS after it arrives, so the draw (the playback delay behind) is on it
-  // within 200 ms of the batch, 194 ms measured at the longest stall.
   expect(slowest).toBeLessThanOrEqual(200);
   expect(worst).toBeLessThanOrEqual(1.5);
 });
@@ -1747,8 +1628,6 @@ test("KeptWalkDating: 14 echoes of a stall that arrive together are dated from t
   expect(positionAt(samples, dated[dated.length - 1] + 1)!.x).toBeCloseTo(152, 6);
 });
 
-// Issue 4 (burst review, minor): an echo that came while releaseHeld eases the draw back (at most 44 ms) was dated before the end
-// of the ease, and pushEcho dropped it and with it the server's point (socket.ts then leaves the position as it was).
 test("an echo that arrives during releaseHeld's ease takes the place of the end of the ease: kept, dated after the draw's time, no step back", () => {
   for (const frameHz of [144, 72]) for (const overshoot of [3, 5, 8]) for (const echoAhead of [2, 3, 6]) for (const dt of [4, 12, 25, 40]) {
     const walk = 0.18, frameMs = 1000 / frameHz;
@@ -1787,8 +1666,6 @@ test("an echo that arrives during releaseHeld's ease takes the place of the end 
 
 // Resid fix round 1.
 
-// M-1 of the resid review: the first gap step walks the time since the last echo, but at most two frames (25 ms at least): a key
-// let go and pressed again within 60 ms of the echo has not walked all that time, the head must not overshoot by 10.8 px.
 test("gapStepMs: the first step is at most two frames (25 ms at least) long, a longer wait is one frame", () => {
   expect(gapStepMs(13.9, false, 1030, { t: 1000 }, 0)).toBeCloseTo(27.8, 6);
   expect(gapStepMs(13.9, false, 1055, { t: 1000 }, 0)).toBeCloseTo(27.8, 6);
@@ -1798,11 +1675,6 @@ test("gapStepMs: the first step is at most two frames (25 ms at least) long, a l
   expect(gapStepMs(6.9, false, 1061, { t: 1000 }, 0)).toBe(6.9);
 });
 
-// I-1 of the resid review: the gap walk's first step and dates changed for every crossing, those that end in reseed too. A
-// crossing that walks through the gap and whose head is far from the node's point (planHandoffDone: more than HANDOFF_KEEP_PX)
-// is reseeded. Guard: against the gap walk as it was (oldGap: a frame for the first step, dated at the frame's time), the ease
-// starts from a shown spot no more than 1.5 px farther from the point, no frame steps back by more than the old gap did (the ease
-// back to the node's point is the reseed's own), and the keep/reseed choice flips for few crossings.
 test("a walking crossing that ends in reseed: the ease starts no worse than with the old gap walk, the keep/reseed boundary moved for few crossings", () => {
   let runs = 0, flips = 0, both = 0, shownWorst = 0, stepWorst = 0, newWorse = 0, newBack = 0, oldBack = 0;
   for (const hz of [60, 30]) for (const frameHz of [72, 144]) for (const done of [16, 28, 39, 42, 48]) for (const ahead of [-3, -2, -1, 0, 1, 2]) for (const phase of [8, 20]) for (const startFrame of [0.3, 4]) for (const dir of ["right", "downright"]) {
@@ -1822,17 +1694,12 @@ test("a walking crossing that ends in reseed: the ease starts no worse than with
   }
   expect(runs).toBe(2 * 2 * 5 * 6 * 2 * 2 * 2);
   expect(both).toBeGreaterThan(400);
-  // Measured: the boundary moved for 20 of 960 (14 keep -> reseed, 6 reseed -> keep, all within 2 steps of HANDOFF_KEEP_PX),
-  // the shown spot is up to 1.33 px farther in 38 crossings (the worst shown gap of all fell 28.3 -> 27.2 px), the ease back is 0.15 steady steps deeper at most.
   expect(flips).toBeLessThanOrEqual(40);
   expect(shownWorst).toBeLessThanOrEqual(1.5);
   expect(stepWorst).toBeLessThanOrEqual(0.2);
   expect(newBack).toBeLessThanOrEqual(oldBack);
 });
 
-// I-2 of the resid review: the 30 Hz hold + stall coverage. At 30 Hz a hold needs the first echo to be late (1.5 to 2 ticks after
-// DONE): the gap walk no longer overshoots, so the 1-tick setup does not hold. Includes the echo that comes after releaseHeld's
-// ease is over, dated before its end (the stall's raw times are in the past): it used to be dropped (4.6 px in one frame).
 test("30 Hz node, late first echo, a hold and a stall of the link of 30 to 90 ms: the draw leaves the held spot at the walk's pace", () => {
   let held = 0, cases = 0, worst = 0, back = 0;
   for (const frameHz of [72, 144]) for (const dir of ["right", "left"]) for (const done of [28, 39, 42, 48]) for (const startFrame of [0.3, 4]) for (const jitter of [0, 8]) for (const phase of [50, 67]) for (const len of [30, 60, 90]) {
@@ -1855,12 +1722,6 @@ test("30 Hz node, late first echo, a hold and a stall of the link of 30 to 90 ms
   expect(worst).toBeLessThanOrEqual(1.5);
 });
 
-// I-3 of the resid review: the known-bad corner, pinned. The first echo about 20 ms after DONE, DONE 39-42 ms after the switch,
-// 144 Hz frames, a 2nd echo 19-21 ms later: the draw reaches the walked head (the node's point, the same px) before the first
-// echo is due and has nothing to play. The first echo is dated at most the render headroom plus KEPT_HEADROOM_SLACK_MS early
-// (a longer shift stands later, when the 2nd echo is late: slack 0 gave 55 bad runs of 1152 instead of 22). One frame (7 ms) stands:
-// the bound below is what it is today (0.08 x the steady step, 66 of 138 keep runs under 0.6 x at 20 ms, none above 1.15 x); a
-// change that widens it fails here.
 test("the known-bad corner (first echo 20 ms after DONE, 144 Hz, DONE 39-42): the worst frame stays inside today's bound", () => {
   let keep = 0, under = 0, lo = Infinity, hi = 0;
   for (const dir of KEEP_DIRS) for (const done of [39, 42]) for (const [g1, g2] of LIVE_GAPS) for (const startFrame of [0.3, 2, 4, 9]) {
@@ -1879,8 +1740,6 @@ test("the known-bad corner (first echo 20 ms after DONE, 144 Hz, DONE 39-42): th
   expect(under).toBeLessThanOrEqual(70);
 });
 
-// Fix round 2 (resid re-review N-1): the ease join had no bound, so a standing player's ease mark stayed on the newest sample and
-// a later warp was dated its walking time after the draw (500 px: 2.8 s ahead), refusing every echo until then.
 test("a warp or a long wait after releaseHeld's ease is not joined to it: dated as it comes, the next echoes are accepted", () => {
   for (const jump of [HANDOFF_KEEP_PX + 1, 100, 500, 5000]) for (const wait of [400, 3000]) {
     const samples: any[] = [{ t: 0, x: 150, y: 0 }, { t: 100, x: 200, y: 0, held: true, heldUntil: 300 }];
@@ -1899,13 +1758,6 @@ test("a warp or a long wait after releaseHeld's ease is not joined to it: dated 
   }
 });
 
-// longgap: a crossing whose handoff took over 44 ms (SWITCH to HANDOFF_DONE) while the player walked. The walked head is then more
-// than HANDOFF_KEEP_PX (8 px, 44 ms of walk) ahead of the node's point and planHandoffDone reseeded: the samples of the walk went,
-// the draw stood at the point with the ease running back (about 0.1 px a frame, a back-step) until the first echo's chord, then
-// played the burst of the 2nd and 3rd echoes (4-6 ms apart) raw: 1.3-2.9 x. On a 60 Hz or faster node the walk is kept up to
-// HANDOFF_KEEP_WALK_PX, so the pacing, the cover and the hold take it as they take a shorter gap. What stays is a stand: the head is
-// further ahead than the shift (the render headroom plus 4 ms) covers, so with the first echo late the draw reaches the head and has
-// nothing to play (a frame or two at 0 x, never backward). `oldPlan` is the plan before: reseed over HANDOFF_KEEP_PX.
 const LONG_DONES = [15, 20, 30, 37, 44, 50, 55, 60, 64, 66, 68, 70, 72, 74, 76, 78, 85, 90, 100, 105, 111, 120, 135, 150];
 function longRun(o: { hz: number; frameHz: number; dir: string; done: number; ahead: number; pf: number; startFrame: number; gaps?: number[]; stop?: number; oldPlan?: boolean }) {
   const r = keepCross({ dir: o.dir, ago: 6, done: o.done, phase: o.pf * (1000 / o.hz), startFrame: o.startFrame, fix: true, ahead: o.ahead, frameHz: o.frameHz, hz: o.hz, gaps: o.gaps, oldPlan: o.oldPlan, ...(o.stop ? { echoes: o.stop } : {}) });
@@ -1916,8 +1768,6 @@ function longRun(o: { hz: number; frameHz: number; dir: string; done: number; ah
   return { plan: r.plan, min: Math.min(...steps), max: Math.max(...steps), standRun, retreat: steps.filter((s) => s < 0).reduce((a, b) => a + b, 0) };
 }
 
-// The sweep: 60, 30 and 20 Hz nodes, 72 and 144 Hz frames, straight and diagonal, SWITCH to DONE 15-150 ms, the node's point at the last
-// echo or one step past it, the first echo early, middle or late, 3 frame phases, 2 live echo patterns at 60 Hz.
 function longSweep(visit: (key: string, now: ReturnType<typeof longRun>, old: ReturnType<typeof longRun>) => void, stop = 0) {
   let cases = 0;
   for (const hz of [60, 30, 20]) for (const frameHz of [72, 144]) for (const dir of ["right", "downright"]) for (const done of LONG_DONES) for (const ahead of [0, 1]) for (const pf of [0.1, 0.5, 0.95]) for (const startFrame of [0.3, 4, 9]) for (const gaps of hz === 60 ? [[18, 5], [21, 13]] : [undefined]) {
@@ -1984,11 +1834,6 @@ test("hasAnchor: a list of nothing but predicted samples (a gap longer than the 
   setServerTickRate(30);
 });
 
-// longhand: a walking crossing whose handoff took long (SWITCH to HANDOFF_DONE 37-150 ms). The node stood the player through the
-// gap, the client walked the draw on, so the node's draw is behind it by the time the handoff took: a kept walk stands (the draw
-// reaches the data it has, 2-4 frames at 0.00 x), a reseeded one steps back to the node's point and plays the first echoes in a
-// burst (-0.2 x, then 1.4-1.7 x). HandoffPace plays the draw at the walking pace along the held direction (0.65 to 1.11 x) until the
-// node's draw passes it. `pace: false` is the draw as it was (the snapshot's).
 const PACE_DONES = [37, 45, 50, 60, 72, 75, 90, 110, 150];
 function paceRun(o: { hz: number; frameHz: number; dir: string; done: number; ahead: number; phase: number; startFrame: number; gaps?: number[]; stick?: boolean; pace: boolean; keyUp?: number; echoes?: number; ms?: number; mounted?: boolean; release?: number; endMs?: number }) {
   const r = keepCross({ dir: o.dir, ago: 6, done: o.done, phase: o.phase, startFrame: o.startFrame, fix: true, ahead: o.ahead, frameHz: o.frameHz, hz: o.hz, gaps: o.gaps, pace: o.pace, stick: o.stick, keyUp: o.keyUp, echoes: o.echoes, mounted: o.mounted, release: o.release, endMs: o.endMs });
@@ -2253,8 +2098,6 @@ test("a crossing standing still is drawn exactly as before, with HandoffPace in 
   }
 });
 
-// A turn after DONE (right, then up or down), with the echoes: the key turns `keyBefore` ms before the node steps the new way. Backward is
-// against the old direction on x (the node stops going right) and against the new one on y, summed over the 900 ms after DONE.
 function turnRun(o: { hz: number; frameHz: number; to: string; done: number; ahead: number; pf: number; startFrame: number; after: number; keyBefore: number; pace: boolean }) {
   const tick = 1000 / o.hz;
   const r = keepCross({ dir: "right", ago: 6, done: o.done, phase: o.pf * tick, startFrame: o.startFrame, fix: true, ahead: o.ahead, frameHz: o.frameHz, hz: o.hz, gaps: o.hz === 60 ? [18, 5] : undefined, pace: o.pace, turn: { after: o.after, dir: o.to, keyBefore: o.keyBefore }, endMs: 2200 });
@@ -2272,8 +2115,6 @@ function turnRun(o: { hz: number; frameHz: number; to: string; done: number; ahe
 }
 
 test("a turn after DONE (right, then up or down, the key 0 or 25 ms before the node turns): no step over 1.11 x; the way back is no longer than before, except in a few percent of the runs", () => {
-  // Measured (steady steps longer than reseeding): 60 Hz mean -0.24, worst 1.8, 0.3% over 1.5; 30 Hz mean -0.10, worst 2.5, 1.3% over;
-  // 20 Hz mean 0.08, worst 4.4, 4.9% over. The worst are reseeds of 90-110 ms (the draw crept to the 16 px lead before the key turned).
   const limits: Record<number, { over: number; worst: number }> = { 60: { over: 0.01, worst: 2.0 }, 30: { over: 0.02, worst: 2.7 }, 20: { over: 0.06, worst: 4.6 } };
   for (const hz of [60, 30, 20]) {
     let runs = 0, over = 0, worst = -9, sum = 0, hi = 0;
@@ -2332,9 +2173,6 @@ test("a key let go in the gap: the draw goes on to the node's point at the walki
   expect(pace.step(shown, 1000 + frame, "right", false)).toEqual(shown);
 });
 
-// The wiring through keepCross (the frame loop of the renderer: pace.stepFor with the keys or the stick, mounted, the arming of planPaceArm
-// at DONE, release()), for 3 s after DONE: the node walks on, the player holds the key (keys and stick, straight and diagonal, mounted), or
-// is released at 1.2 s (a second switch).
 test("3 s after DONE through the frame loop of the renderer: keys and stick, diagonal, mounted, a release: every frame within 0.9-1.11 x once the node's draw is followed, on the node's draw by 1.5 s", () => {
   let cases = 0, released = 0;
   for (const frameHz of [72, 144]) for (const dir of ["right", "downright"]) for (const stick of [false, true]) for (const mounted of [false, true]) for (const release of [undefined, 1200]) for (const done of [25, 60, 110]) for (const startFrame of [0.3, 6]) {

@@ -1,14 +1,3 @@
-// Particle editor popup. Talks to the game window over postMessage; the game
-// window (js/core/particleeditor.ts) passes what is asked on to the server.
-// The window itself is the shared workbench (tooleditor.ts); this file holds
-// what is the particle editor's own: its settings, the rules for its names,
-// its conversation with the game window, and the live preview, which runs the
-// particle the way the game does.
-//
-// The server never answers a request from here by name: the game window asks
-// it for the list again a moment after each change, and passes that on. So
-// what was asked for is checked against the lists that follow, and the result
-// (done, or not done) is said once it is known. Nothing is sent to find out.
 import { EditorShell, type ListRow } from "./tooleditor.js";
 import { FieldRenderer, type AssetOption, type Field } from "./toolfields.js";
 import { askText, button, card, confirmDialog, count, el, icon, iconButton, note, num, setIcon, tag, toast, tooltip, type AskOptions } from "./toolkit.js";
@@ -63,10 +52,6 @@ const RANGES = {
 
 /** With no particles in the first list, how long to wait for a list that has some before saying there are none. */
 const EMPTY_WAIT_MS = 1500;
-/**
- * How long what was asked for may take to show in a list before it is called not done. The game window asks the server
- * for the list 300 to 400 ms after passing a change on, so a list that has it is here well within this.
- */
 const GIVE_UP_MS = 2500;
 
 /** A whole number as the game stores one: what is not a number is 0. */
@@ -357,11 +342,6 @@ class ParticleEditorBridge {
     };
   }
 
-  /**
-   * The settings as the form's controls hold them: a slider keeps its number
-   * within its ends and on its steps, the colour field keeps "#rrggbb", a time
-   * field keeps a time or nothing.
-   */
   private settled(d: any): any {
     for (const [key, range] of Object.entries(RANGES)) d[key] = rangeValue(d[key], range.min, range.max, range.step);
     d.color = colourValue(d.color);
@@ -432,11 +412,6 @@ class ParticleEditorBridge {
     shell.setActions({ open: true, dirty: this.dirty, extra: [this.renameBtn, this.revertBtn] });
   }
 
-  /**
-   * The page: the settings as cards, and the preview beside them. Drawn when a
-   * particle is opened, put back or closed; a setting that changes only
-   * repaints the parts that follow it.
-   */
   private renderForm(): void {
     this.chrome();
     this.stageEl = this.factsEl = this.scheduleEl = this.imageNoteEl = null;
@@ -769,10 +744,6 @@ class ParticleEditorBridge {
     return entry.kind === "delete" ? !listed : listed;
   }
 
-  /**
-   * A list arrived: what it shows as done is said. One that does not show it is not the last word (it may have been
-   * on its way already), so what is still missing is only noted, and given until its time is up.
-   */
   private settle(): void {
     for (const entry of [...this.awaited]) {
       if (this.met(entry)) {
@@ -831,12 +802,6 @@ class ParticleEditorBridge {
   /** The last sprite baked, and the settings it was baked from. */
   private sprite: { key: string; canvas: HTMLCanvasElement; half: number; blend: GlobalCompositeOperation } | null = null;
 
-  /**
-   * The particle's sprite, baked exactly as the game bakes it (npc.ts getParticleSprite): the glow halo out to its
-   * reach stacked once per unit of Intensity, the feathered core, then the whole stacked once per unit of Brightness.
-   * Keep the two in step: the preview is only right while this matches. With an image (once it has loaded) the image
-   * takes the core's place, Size px wide at its own proportions, and the sprite is drawn as it is, not added as light.
-   */
   private getSprite(color: string, radius: number, glowIntensity: number, glowRadius: number, brightness: number, image: string = ""): { canvas: HTMLCanvasElement; half: number; blend: GlobalCompositeOperation } {
     const img = this.imageOf(image);
     const key = `${color}|${radius}|${glowIntensity}|${glowRadius}|${brightness}|${img ? image : ""}`;
@@ -877,10 +842,6 @@ class ParticleEditorBridge {
     return this.sprite;
   }
 
-  /**
-   * The particle as the game runs it (npc.ts updateParticle, the same in sourceparticles.ts): same clock, emission,
-   * spread, physics, fade and sprite. The crosshair is the point it is attached to; +X is right and +Y is down.
-   */
   private renderPreview(): void {
     if (!this.previewCtx) return;
     const ctx = this.previewCtx, canvas = this.previewCanvas, pData = this.getFormData();

@@ -1,18 +1,3 @@
-/**
- * The pixels of an emissive light field (lightmap.ts), computed in floats.
- *
- * The field is one texel per tile: a colour-dodge colour at alpha = the light's amount. Scaling that up on a canvas loses
- * it where the light is faint: a canvas keeps colour premultiplied in 8 bits, so at alpha 6 / 255 a dodge colour of 0.93
- * (a dark cave: the gain back to daylight is large, the colour close to 1) is stored as 6 / 6 = 1, which colour-dodge
- * clips to white, and at alpha 22 it is 20 / 22, a third less light than at alpha 21 (USER FEEDBACK 2026-10-03, "a
- * slight band on the outside of the edges": measured, the light was up to 46 % off and fell 16 times on its way up to
- * the lava, with a red rim where only red clipped). So the same scaling is done here in floats, and each pixel is
- * written opaque: colour-dodge at alpha 1 is a plain gain 1 / (1 - c), with all 8 bits on c. The last bit is dithered,
- * so the steps of c (0.4 % of the light at gain 2, 5 % at gain 12) do not show as contours either. A gain that 8 bits
- * hold exactly is written as it is, without dither: `exactGain` gives the nearest such gain, which lightmap.ts uses for
- * the emissive tiles themselves, so a lava lake is lit evenly, without the dither's grain.
- */
-
 /** how close to a whole 8-bit value counts as that value (float rounding of an exact gain) */
 const EXACT = 1e-3;
 
@@ -46,11 +31,6 @@ function dither(x: number, y: number): number {
   return n - Math.floor(n);
 }
 
-/**
- * `texels` (w x h, four floats each: the dodge colour's r, g, b premultiplied by the light's amount, then the amount)
- * scaled up to ow x oh RGBA pixels: 1 px per tile, to 4 px, to the size asked (two bilinear steps: fewer diamonds than
- * one), then per pixel the gain the light gives each channel, as an opaque colour-dodge colour.
- */
 export function spillPixels(texels: Float32Array, w: number, h: number, ow: number, oh: number): Uint8ClampedArray {
   const light = resize(resize(texels, w, h, w * 4, h * 4, 4), w * 4, h * 4, ow, oh, 4), out = new Uint8ClampedArray(ow * oh * 4);
   for (let y = 0; y < oh; y++) for (let x = 0; x < ow; x++) {

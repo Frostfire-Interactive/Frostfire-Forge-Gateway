@@ -1,6 +1,3 @@
-// What can be set on each kind of item of a cutscene, for the editor's popup: the fields of its form, what a new one
-// starts as, and the tidying after an edit. The server checks all of it again when the scene is saved (the engine's
-// systems/cutscenes.ts).
 import type { Field, Option } from "./toolfields.js";
 import type { Actor, CutsceneDoc, Item, Track } from "./cutscenedoc.js";
 import type { IconName } from "./toolkit.js";

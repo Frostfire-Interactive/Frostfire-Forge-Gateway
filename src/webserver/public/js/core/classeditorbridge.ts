@@ -1,10 +1,3 @@
-// Class editor popup (USER REQUEST 2026-10-14: "create a class editor that can define certain base stats and learn
-// certain spells at certain levels"; USER REQUEST 2026-10-21: "allow adding starter items"). Talks to the game window over postMessage; the game window forwards everything
-// to the server (engine src/systems/classeditor.ts), which validates and persists. The window itself is the shared
-// workbench (tooleditor.ts); this file holds what is the class editor's own: its fields, the server's rules repeated
-// so a slip is caught before the round trip, the lists of spells a class learns and items it starts with, and its
-// conversation with the server.
-// There are few classes, so the list is held whole here: every answer of the server carries it afresh.
 import { EditorShell, type ListRow, type RecordState } from "./tooleditor.js";
 import { FieldRenderer, setFieldError, type AssetOption, type Field } from "./toolfields.js";
 import { button, card, count, el, empty, forbid, icon, iconButton, listed, noticeDialog, shown, tag, thumb, toast } from "./toolkit.js";

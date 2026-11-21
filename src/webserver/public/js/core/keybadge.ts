@@ -1,7 +1,3 @@
-// The key badge drawn over what a key would act on: an NPC to talk to, loot, a corpse, a mailbox, a gathering node, a
-// chest. It shows the key the action is bound to (Hotkeys, keybinds.ts) and grows with the world zoom, as the world
-// under it does. One letter sits in a circle; a longer key name ("Space", "Num 1") in a pill as tall, wide enough for it.
-
 import { codeLabel, getKey, type ActionId } from "./keybinds.js";
 
 export type BadgeStyle = {
@@ -37,10 +33,6 @@ export function badgeLabel(action: ActionId): string {
   return codeLabel(getKey(action));
 }
 
-/**
- * The badge's half width and half height in canvas pixels, for a circle of `radius` CSS pixels drawn at `scale` (the
- * screen density times the world zoom) round text `textWidth` canvas pixels wide.
- */
 export function badgeBox(radius: number, scale: number, textWidth: number): { halfWidth: number; halfHeight: number } {
   const r = radius * scale;
   return { halfWidth: Math.max(r, textWidth / 2 + r * 0.6), halfHeight: r };
@@ -63,10 +55,6 @@ function pillPath(ctx: CanvasRenderingContext2D, x: number, y: number, halfWidth
   ctx.closePath();
 }
 
-/**
- * Draws the badge for `action` centred on (x, y), in the canvas's own pixels with no transform. `scale` is the screen
- * density times the world zoom. `progress` (0 to 1) draws a gold ring round it that far, for a key being held.
- */
 export function drawKeyBadge(
   ctx: CanvasRenderingContext2D, x: number, y: number, action: ActionId, scale: number, style: BadgeStyle, progress = 0,
 ): void {

@@ -1,6 +1,3 @@
-// The named zones of a map (drawn in the map editor) as the client reads them: which zone a point is in, which
-// music plays there, and when a zone's text is shown. Positions are in tiles. No DOM here.
-
 export interface ClientZone {
   name: string;
   text?: string;
@@ -22,10 +19,6 @@ export function zonesOfKind(zones: ClientZone[] | null | undefined, kind: string
   return (zones || []).filter((zone) => zone.kind === kind).map(({ name, bbox, outline }) => ({ name, bbox, outline }));
 }
 
-/**
- * What the zone music does when `wanted` is asked for: keep what plays, start it, bring back the track still fading
- * out when that is the one wanted again (so walking along a zone's edge does not start it twice), or stop.
- */
 export function zoneMusicAction(wanted: string | null, playing: string | null, fading: readonly string[]): "keep" | "start" | "revive" | "stop" {
   if (wanted === playing) return "keep";
   if (wanted === null) return playing === null ? "keep" : "stop";
@@ -35,11 +28,6 @@ export function zoneMusicAction(wanted: string | null, playing: string | null, f
 /** How long zone music takes to fade in from silence, and to fade out to silence, in seconds. */
 export const ZONE_MUSIC_FADE = 5;
 
-/**
- * The points of a fade of the zone music's level from `from` to `to` over `seconds`, as [seconds from now, level],
- * joined by straight ramps. A fade up starts slowly (the level follows the square of the time), a fade down is its
- * mirror and ends slowly, so the music comes in and goes out gently instead of jumping at the quiet end.
- */
 export function fadePoints(from: number, to: number, seconds: number, steps = 16): Array<[number, number]> {
   const points: Array<[number, number]> = [];
   for (let i = 1; i <= steps; i++) {
@@ -61,10 +49,6 @@ function ringArea(ring: number[][]): number {
   return Math.abs(sum) / 2;
 }
 
-/**
- * The area in tiles of a zone: that of all its pieces. A zone has no holes (they are filled), so its rings lie apart,
- * as when another zone cuts it in two.
- */
 export function zoneArea(zone: ClientZone): number {
   return (zone.outline || []).reduce((total, ring) => total + ringArea(ring), 0);
 }
@@ -106,10 +90,6 @@ function edgeDistance(zone: ClientZone, x: number, y: number): number {
   return best;
 }
 
-/**
- * Where a zone's name is written on a map: of a grid of points over its box, the one inside the zone farthest from
- * its edges, so a name stays out of a notch or a hole. The middle of the box when no point of the grid is inside.
- */
 export function zoneLabelPoint(zone: ClientZone, grid = 20): { x: number; y: number } {
   const b = zone.bbox;
   let best = { x: b.x + b.w / 2, y: b.y + b.h / 2 }, bestDistance = -1;
@@ -137,10 +117,6 @@ export interface BannerState {
   leftAt: Map<string, number>;
 }
 
-/**
- * One look at the zone the player is in: the text to show now, or null. A zone's text shows on entering it, unless
- * the player left it less than BANNER_RESHOW_MS ago; on a new map (`fresh`) it always shows.
- */
 export function bannerStep(state: BannerState, zone: ClientZone | null, nowMs: number, opts?: { fresh?: boolean }): string | null {
   const name = zone?.name ?? null;
   if (name === state.current && !opts?.fresh) return null;

@@ -1,12 +1,3 @@
-// Mail, as in World of Warcraft. Mailboxes stand in front of inns: the server
-// says where on the map the player is on (MAILBOXES), and they are drawn among
-// the characters, back to front. At one, E or a click opens the mail window:
-// the player's mail (MAIL_INBOX), and a page to write a mail with items and
-// coins attached. The server holds the mail and makes every change; it sends
-// the mail again after each one, and the player's bags and coins with it.
-//
-// The recipient field only suggests names from the player's friends list, and
-// Reply fills it in only for a friend: any other name is typed.
 import { config } from "../web/global.js";
 import { sendRequest, cachedPlayerId } from "./socket.js";
 import Cache from "./cache.js";
@@ -180,10 +171,6 @@ export function mailboxAt(worldX: number, worldY: number, slop = 0): Mailbox | n
   ctx.restore();
 };
 
-/**
- * The Interact key's badge over the mailbox the player stands at, in screen space, white as an NPC's is (npc.ts
- * renderNpcInteractBadge). Not while the window is open, nor when the key talks to an NPC instead.
- */
 (window as any).renderMailboxHint = (ctx: CanvasRenderingContext2D, npcNear: boolean) => {
   if (inbox || npcNear || TOUCH) return;
   const at = playerSpot();
@@ -203,8 +190,6 @@ export function mailboxAt(worldX: number, worldY: number, slop = 0): Mailbox | n
 
 // ---------------------------------------------------------------- the window
 
-// Keys typed in the window's fields are the window's: the game does not walk, cast or open the chat on them.
-// Escape leaves the field being typed in, or closes the window. Seen first, so the pause menu is not opened under it.
 function onKey(event: KeyboardEvent) {
   if (!popup) return;
   const focused = document.activeElement as HTMLElement | null;
@@ -533,10 +518,6 @@ function field(label: string, input: HTMLInputElement | HTMLTextAreaElement): HT
 /** The keys of the friend list under the To field while it is shown: true when it took the key. */
 let suggestionKeys: ((event: KeyboardEvent) => boolean) | null = null;
 
-/**
- * The friends whose names begin with what is typed in `to`, in a list under it to pick from. Only friends are offered:
- * any other name is typed in full.
- */
 function friendList(to: HTMLInputElement): HTMLDivElement {
   const list = document.createElement("div");
   list.className = "mail-suggest";
@@ -820,10 +801,6 @@ const ENVELOPE_SVG = `<svg viewBox="0 0 24 24" aria-hidden="true">
 /** When the minimap was not there yet: looked for again shortly. */
 let indicatorRetry = 0;
 
-/**
- * The envelope on the minimap while there is unread mail, gone when there is none. It lives in the minimap's box, so
- * it moves and scales with it; when that box is not built yet (mail said at login), it is looked for again.
- */
 function showMailIndicator() {
   window.clearTimeout(indicatorRetry);
   const shown = document.getElementById("mail-indicator");

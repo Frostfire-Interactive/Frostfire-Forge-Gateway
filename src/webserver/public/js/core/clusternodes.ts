@@ -1,10 +1,5 @@
 import { clusterNodesDebugCheckbox, clusterNodesText } from "./ui.js";
 
-// The "Cluster Nodes" overlay of the F2 debug menu (any logged-in player, cluster mode): which node owns which block of the map.
-// The engine answers a CLUSTER_DEBUG request with the block grid (engine src/cluster/nodedebug.ts); this module asks for
-// it while the box is ticked, keeps the last answer, and draws it on the debug layer. It only reads: nothing here
-// sends anything but the request.
-
 const REFRESH_MS = 2000;
 
 interface ClusterDebugData {
@@ -46,12 +41,6 @@ export function requestClusterRefresh(): void {
   request?.();
 }
 
-/**
- * A switch to another node or a disconnect began: the poll waits and the old node's answer is forgotten, so the overlay
- * does not show a node the player has left. requestClusterRefresh (after HANDOFF_DONE or LOAD_MAP) starts it again.
- * With `keepGrid` (a handoff: the player stays on the map) the last grid stays drawn, with a "switching" status, until
- * the next answer replaces it; otherwise (a disconnect, a stopped switch) it is cleared.
- */
 export function pauseClusterRefresh(keepGrid = false): void {
   paused = true;
   switching = keepGrid;
@@ -161,10 +150,6 @@ function hatchPattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
   return hatch;
 }
 
-/**
- * Draws the block grid on the debug layer (world coordinates, already translated and zoomed). `view` is the part of
- * the world on the screen, `zoom` the world zoom, `mapName` the map the player is on; an answer for another map is not drawn.
- */
 export function drawClusterNodes(
   dbg: CanvasRenderingContext2D,
   view: { left: number; top: number; right: number; bottom: number },

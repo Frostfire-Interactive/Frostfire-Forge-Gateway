@@ -1,7 +1,3 @@
-/**
- * The zone map window's view of the map: which tile is at the canvas's top-left corner (x, y, in tiles) and how many
- * screen pixels a tile takes (scale). It zooms from the whole map down to single tiles.
- */
 export interface View {
   x: number;
   y: number;
@@ -53,11 +49,6 @@ export function zoomAt(view: View, factor: number, sx: number, sy: number, viewW
   return clampView({ x: at.x - sx / scale, y: at.y - sy / scale, scale }, viewW, viewH, mapW, mapH);
 }
 
-/**
- * The full-detail pieces (regions of `pieceTiles` tiles a side) the view touches, row by row. None for a map baked a
- * pixel per tile (`bakeScale` 1), or while one pixel of the baked image is under 2 screen pixels, where the baked
- * image is already as sharp as the screen.
- */
 export function detailPieces(view: View, viewW: number, viewH: number, mapW: number, mapH: number, bakeScale: number, pieceTiles: number): Array<[number, number]> {
   if (bakeScale <= 1 || bakeScale * view.scale < 2) return [];
   const lastX = Math.ceil(mapW / pieceTiles) - 1, lastY = Math.ceil(mapH / pieceTiles) - 1;

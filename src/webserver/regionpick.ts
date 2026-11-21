@@ -1,10 +1,3 @@
-// Which node of a cluster region a connection token is bound to (webserver /api/gateway/connection-token).
-//
-// The player's saved point decides: the node that owns the block it is in is asked first, so the first connection
-// already goes to the node the game server would pass the login to. The hint only chooses the node the first
-// connection goes to. It spawns nothing and changes no ownership, and the game server still checks the spawn point
-// itself and sends the login on when the hint was wrong. Any doubt falls back to the least-loaded online node.
-
 /** Where a login would spawn, as far as the account row says. */
 export interface SavedPoint {
   map: string;
@@ -17,11 +10,6 @@ export const ROUTE_TIMEOUT_MS = 300;
 
 const bare = (map: string) => (map.endsWith(".json") ? map.slice(0, -5) : map);
 
-/**
- * The point the game server would spawn this account at (its receiver's spawn rule), or null when the row cannot say:
- * no row, no map (the default map's spawn is the game server's to work out), or a position with a 0 or missing
- * coordinate (the game server puts that on the map's spawn or centre). A dead player resumes at the corpse.
- */
 export function savedPointOf(row: any): SavedPoint | null {
   if (!row || typeof row !== "object") return null;
   const corpseMap = typeof row.corpse_map === "string" ? row.corpse_map.trim() : "";
@@ -45,10 +33,6 @@ export interface RouteFetch {
   key: string | undefined;
 }
 
-/**
- * The gateway's /route: the id of the node that owns the point, or null. The key goes in the `x-gateway-key` header and
- * never in the URL (URLs are logged); without a key nothing is asked. A non-2xx answer is an error.
- */
 export async function fetchGatewayRoute(deps: RouteFetch, realm: string, point: SavedPoint, signal: AbortSignal): Promise<string | null> {
   if (!deps.key) return null;
   const query = new URLSearchParams({ realm, map: point.map, x: String(point.x), y: String(point.y) });
@@ -61,11 +45,6 @@ export async function fetchGatewayRoute(deps: RouteFetch, realm: string, point: 
 /** A pick not yet seen in a heartbeat is not forgotten for longer than this (the fallback when a node's heartbeat time is not known). */
 export const HERD_WINDOW_MS = 10_000;
 
-/**
- * Logins sent to a node since its last heartbeat. The player count the gateway holds is refreshed once per heartbeat
- * (5 s), so a burst of picks would all see the same least-loaded node: each pick counts as one more connection on that
- * node until the next heartbeat arrives.
- */
 export class HerdSpread {
   private picks = new Map<string, { beat: unknown; at: number; count: number }>();
 
@@ -131,11 +110,6 @@ async function ownerHint(deps: PickDeps, realm: string, point: SavedPoint, ms: n
   }
 }
 
-/**
- * When `realm` names a cluster region: the node its ticket is bound to. The online node that owns the saved point when
- * there is one, else the online node with the fewest connections (counting the logins sent since its last heartbeat).
- * null for any other realm (the ticket is not bound); "unavailable" for a region with no online node.
- */
 export async function pickRegionNode(realm: string | null, saved: SavedPoint | null, deps: PickDeps): Promise<any | null | "unavailable"> {
   if (!realm) return null;
   let data: any;

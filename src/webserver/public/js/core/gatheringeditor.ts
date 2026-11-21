@@ -1,10 +1,3 @@
-// Game-window half of the gathering editor (/gathering): owns the popup window and relays its messages to the server,
-// as mailboxeditor.ts does, and draws the popup's density preview in the world (gathering.ts). USER REQUEST
-// 2026-10-17: "Able to configure spawn rate and preview how dense it will look".
-//
-// The popup asks for a preview of the area as typed; the server answers where nodes would stand
-// (GATHERING_EDITOR_PREVIEW_SPOTS), and they are drawn half transparent with the area's circle until the popup
-// clears it, saves, or closes.
 import { sendRequest, cachedPlayerId } from "./socket.js";
 import Cache from "./cache.js";
 import { setGatherPreview } from "./gathering.js";

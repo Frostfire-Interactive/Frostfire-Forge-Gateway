@@ -1,15 +1,3 @@
-// Chat on a touch screen (USER REQUEST 2026-10-07: "a chat bar to mobile that can be hidden and shown, as well as
-// chat history").
-//
-// The chat a mouse has is a frame at the bottom left of the screen, where a phone held sideways has its joystick, so
-// on a touch screen that frame is not shown (game.css). This puts the chat's own list of messages and its own field
-// into a panel made for a phone instead, so everything the chat does (channels, whispers, commands, the messages
-// sent before) is the same code on both. Three states:
-//  - hidden: a button under the player's frame, with a count of what has not been read, and what was just said
-//    shown beside it for a few seconds;
-//  - open (the button): the messages and the field, between the player's frame and the joystick;
-//  - typing (the field has the keyboard): the field alone across the top of the screen, because the keyboard
-//    covers the bottom half of a phone held sideways. The messages are back when the keyboard is put away.
 import { chatInput, chatMessages } from "./ui.js";
 import { keyHandlers } from "./input.js";
 
@@ -96,8 +84,6 @@ if (panel && bar && field && button && chatMessages && chatInput) {
 
   button.addEventListener("click", () => { if (isOpen()) closeChat(); else openChat(); });
 
-  // The field has the keyboard: typing. It can be given it while the chat is hidden too (a whisper started from a
-  // player's menu), which opens the chat. Without it again, the chat is as it was opened: the messages and the field.
   const startTyping = () => {
     if (!TOUCH.matches || panel.classList.contains("typing")) return;
     if (!isOpen()) openChat();
@@ -112,8 +98,6 @@ if (panel && bar && field && button && chatMessages && chatInput) {
     if (TOUCH.matches) toBottom();
   });
 
-  // Send does what Enter does (input.ts), which on a touch screen leaves the keyboard up for the next message. A
-  // press on the button is kept from taking the keyboard off the field first.
   sendButton?.addEventListener("mousedown", (event) => event.preventDefault());
   sendButton?.addEventListener("click", () => {
     chatInput.focus();
@@ -122,8 +106,6 @@ if (panel && bar && field && button && chatMessages && chatInput) {
   // The X puts the keyboard away. (An empty message sent does too, as with a keyboard of keys.)
   doneButton?.addEventListener("click", () => chatInput.blur());
 
-  // Every message is put in the list by the game (socket.ts), wherever the list is: the ones that come while the
-  // chat is hidden are seen here.
   new MutationObserver((changes) => {
     if (!TOUCH.matches) return;
     for (const change of changes) {
@@ -134,4 +116,3 @@ if (panel && bar && field && button && chatMessages && chatInput) {
   }).observe(chatMessages, { childList: true });
 }
 
-export { openChat as openMobileChat, closeChat as closeMobileChat };

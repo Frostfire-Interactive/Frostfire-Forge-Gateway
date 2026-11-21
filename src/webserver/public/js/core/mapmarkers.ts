@@ -1,10 +1,3 @@
-// What the map the player is on marks, as the server last sent it (MAP_MARKERS): its inns, its
-// merchants, its caves and its houses, each a spot in map px. The minimap draws a pin for each
-// inn, merchant and cave (minimap.ts); the world map draws a picture on each house (worldmap.ts).
-//
-// An inn or a merchant is the door of the house the innkeeper or the vendor is in (the NPC itself
-// stands inside, on a map of its own). A cave is a way into another world. A house is a door into
-// a map that is indoors.
 import { config } from "../web/global.js";
 import { getCachedImage } from "./images.js";
 
@@ -15,10 +8,6 @@ export interface MapMarker {
   name?: string | null;
 }
 
-/**
- * The picture of each kind of marker: its name in the asset server's icons folder ("inn" is
- * inn.png), or, starting with a slash, a picture of the game's own.
- */
 const ICONS: Record<string, string> = { inn: "inn", cave: "cave", house: "house", merchant: "/img/ui/ui-gold-currency.png" };
 
 /** Where the picture of a kind of marker is fetched from. */
@@ -54,8 +43,6 @@ export function setMapMarkers(data: any): void {
     byKind.get(kept.kind)!.push(kept);
     bySpot.set(`${kept.kind}:${spot(x, y)}`, kept);
   }
-  // The pictures of what this map marks are fetched now, not when the world map first draws them: it opened
-  // before they had come (USER REPORT 2026-10-07: "blue diamonds show before the icons load").
   for (const kind of byKind.keys()) getCachedImage(markerIconUrl(kind));
 }
 

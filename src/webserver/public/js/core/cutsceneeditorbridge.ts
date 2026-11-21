@@ -1,10 +1,3 @@
-// Cutscene editor popup (/cutscene-editor). Holds the document being worked on and talks to the game window over
-// postMessage. The game window forwards the requests to the server (engine src/systems/cutscenes.ts), which checks every
-// field and saves, and it shows the scene in the game (cutsceneeditor.ts): each change here is sent to it, and a mark
-// dragged about over there comes back here as a change. The window itself is the shared workbench (tooleditor.ts).
-//
-// A record is one scene: a timeline of tracks, the actors in it, how it is presented, what starts it. There are few
-// scenes, so the list is searched here, at every key. Every edit is one step of undo, kept as a copy of the whole scene.
 import { EditorShell, type ListRow, type RecordState } from "./tooleditor.js";
 import { FieldRenderer, inAnimationsFolder, setFieldError, sheetOptions, type AssetOption, type Field, type Option } from "./toolfields.js";
 import { askText, button, card, confirmDialog, count, el, icon, iconButton, note, noticeDialog, segments, setIcon, shown, subcard, tag, thumb, toast, tooltip } from "./toolkit.js";
@@ -980,10 +973,6 @@ class CutsceneEditorBridge {
     this.inspector.querySelector("textarea")?.focus();
   }
 
-  /**
-   * The track of this kind to add to: the one being worked on if it is one, or a new one. Text, sounds and the like go
-   * to a row with room at the playhead, not on top of what is there. An actor keeps to its own row.
-   */
   private trackFor(kind: Track["kind"], actor?: Actor): Track | null {
     const d = this.draft!;
     const fits = (track: Track) => track.kind === kind && (!actor || (track.kind === "actor" && track.actor === actor.id));

@@ -1,23 +1,6 @@
-// Custom branding: the product name players see. Nothing here runs unless
-// BRAND_NAME is set; it replaces "Frostfire Forge" in the web pages (not the
-// docs). Unset, every response is exactly what it was before. Importing this
-// file has no side effects: it reads one environment variable and nothing else.
-//
-// The logo and the favicon need no code: replace public/img/logo.png and
-// public/img/icons/favicon.ico before the gateway starts.
-//
-// How the name reaches the browser:
-//   - The webserver's pages are Bun HTML bundles, which cannot be rewritten
-//     inside the webserver. The reverse proxy (webserver/proxy.ts) fetches those
-//     pages itself and passes them through brandHtml() before answering.
-//   - The gateway server's own pages (login.html, dashboard.html) are plain
-//     files and go through brandHtmlText().
-
 export const DEFAULT_BRAND_NAME = "Frostfire Forge";
 const BRAND_NAME_MAX = 40;
 
-// The paths of the webserver pages that carry the product name. /docs is left
-// out on purpose: the documentation is about the engine itself.
 export const BRANDED_PAGES: ReadonlySet<string> = new Set([
   "/",
   "/registration",
@@ -48,16 +31,12 @@ export const BRANDED_PAGES: ReadonlySet<string> = new Set([
   "/animator",
 ]);
 
-// Customer input: control characters become spaces, the result is trimmed and
-// capped at 40 characters (counted as characters, not UTF-16 units).
 export function cleanBrandName(raw: string | null | undefined): string {
   if (!raw) return "";
   const flat = raw.replace(/[\u0000-\u001f\u007f]/g, " ").trim();
   return Array.from(flat).slice(0, BRAND_NAME_MAX).join("").trim();
 }
 
-// For attribute values: HTMLRewriter escapes text content, but only the quote
-// character in attributes, so "&amp;" typed by a customer would read back as "&".
 export function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -65,8 +44,6 @@ export function escapeHtml(value: string): string {
 // Read once, when the process starts.
 export const BRAND_NAME = cleanBrandName(process.env.BRAND_NAME);
 
-// Collects a text node (it may arrive in pieces) and writes it back with the
-// product name swapped. Replacement text is escaped by the rewriter.
 function nameSwap(name: string) {
   let pending = "";
   return {
@@ -82,9 +59,6 @@ function nameSwap(name: string) {
   };
 }
 
-// Rewrites an HTML response: the product name in the title and the brand
-// elements, and <html data-brand-name> for the client scripts. Text is escaped
-// by HTMLRewriter, attribute values here.
 export function brandHtml(source: Response, name: string): Response {
   if (!name) return source;
   const attribute = escapeHtml(name);

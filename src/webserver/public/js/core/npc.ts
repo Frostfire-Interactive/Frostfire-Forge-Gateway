@@ -71,18 +71,9 @@ class ParticlePool {
 
 const particlePool = new ParticlePool();
 
-// Cache of pre-rendered particle sprites keyed by color|size|glow intensity|glow radius. Baking the
-// radial gradient (and any glow) once and reusing it via drawImage avoids the
-// costly per-frame createRadialGradient / shadowBlur work that tanks FPS on iOS.
 const particleSpriteCache = new Map<string, ParticleSprite>();
-/**
- * A baked particle: its canvas, half its side (it is drawn centred), and how it is drawn: the dot adds its light
- * ('lighter'), an image is drawn as it is ('source-over').
- */
 type ParticleSprite = { canvas: HTMLCanvasElement; half: number; blend: GlobalCompositeOperation };
 
-// Convert a hex/named color to rgba() at a given alpha so we can build a
-// feathered gradient that fades smoothly instead of ending on a hard edge.
 function colorToRgba(color: string, alpha: number): string {
   let r = 255, g = 255, b = 255;
   if (color && color[0] === "#") {
@@ -102,8 +93,6 @@ function colorToRgba(color: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
-// Build a soft, feathered radial gradient so the particle core dissolves
-// gradually into the surrounding glow (no visible hard border).
 function addFeatheredStops(gradient: CanvasGradient, color: string): void {
   gradient.addColorStop(0, colorToRgba(color, 0.55));
   gradient.addColorStop(0.15, colorToRgba(color, 0.4));
@@ -112,10 +101,6 @@ function addFeatheredStops(gradient: CanvasGradient, color: string): void {
   gradient.addColorStop(1, colorToRgba(color, 0));
 }
 
-/**
- * Glow reach (px past the particle's edge): the particle's Radius setting (glow_radius), or, left at 0, twice the
- * particle's own radius (at least 6 px). Intensity no longer changes it: intensity is brightness only.
- */
 function glowReach(radius: number, glowRadius: number): number {
   return glowRadius > 0 ? glowRadius : Math.max(6, radius * 2);
 }
@@ -126,11 +111,6 @@ function particleBrightness(particle: any): number {
   return v === null || v === undefined || v === "" || !Number.isFinite(n) ? 1 : Math.max(0, n);
 }
 
-/**
- * `image` (USER REQUEST 2026-10-04, "Allow particles to choose an image to emit rather than a particle"): the name of a
- * sprite of the asset server (particleimages.ts). Once it has loaded it is baked in place of the round core, `radius`
- * * 2 px wide at its own proportions, over the glow; until then, and with no such sprite, the particle is its dot.
- */
 function getParticleSprite(color: string, radius: number, glowIntensity: number, glowRadius: number = 0, brightness: number = 1, image: unknown = null): ParticleSprite {
   const img = particleImage(image);
   const key = `${color}|${radius}|${glowIntensity}|${glowRadius}|${brightness}|${img ? image : ""}`;
@@ -141,8 +121,6 @@ function getParticleSprite(color: string, radius: number, glowIntensity: number,
   const imgW = img ? Math.max(1, radius * 2) : 0, imgH = img ? Math.max(1, imgW * img.naturalHeight / img.naturalWidth) : 0;
   const body = img ? Math.max(imgW, imgH) / 2 : radius;
 
-  // Bake at a fixed 1x scale on every device so the additive result (and thus
-  // brightness) is identical everywhere (matching the 1x PC/editor look).
   const reach = glowIntensity > 0 ? glowReach(body, glowRadius) : 0;
   const outer = body + reach;
   const sizeCss = Math.ceil(2 * outer) + 2;
@@ -154,8 +132,6 @@ function getParticleSprite(color: string, radius: number, glowIntensity: number,
   const sctx = canvas.getContext("2d")!;
   sctx.globalCompositeOperation = "lighter";
 
-  // Glow: a soft halo out to `outer`, the same size whatever the intensity. Intensity stacks it additively, so a
-  // higher intensity is a brighter glow, not a bigger one (each whole unit one more halo, the fraction a partial one).
   if (glowIntensity > 0) {
     const halo = sctx.createRadialGradient(half, half, 0, half, half, outer);
     const edge = Math.min(0.95, body / outer);
@@ -187,8 +163,6 @@ function getParticleSprite(color: string, radius: number, glowIntensity: number,
     sctx.fill();
   }
 
-  // Brightness: the whole sprite (core and glow) stacked additively, each whole unit one more copy and the fraction a
-  // partial one (above 1 it burns towards white); below 1 it is drawn fainter.
   let out = canvas;
   if (brightness !== 1) {
     out = document.createElement("canvas");
@@ -213,11 +187,6 @@ const NPC_SPRITE_WAIT_MS = 4000;
 /** ms: how long an NPC takes to fade in once its sprite is there. */
 const NPC_FADE_IN_MS = 400;
 
-/**
- * An NPC is not drawn while its sprite loads: it would show as the stand-in
- * box at its corner first, then jump to its sprite. It shows once the sprite is
- * there, or failed, or has taken too long, and then fades in.
- */
 function npcWaitingForSprite(npc: any, now: number): boolean {
   return npc.spriteLoadingSince > 0 && now - npc.spriteLoadingSince < NPC_SPRITE_WAIT_MS;
 }
@@ -318,8 +287,6 @@ function markerSpriteFor(marker: string | null): HTMLImageElement | HTMLCanvasEl
   return null;
 }
 
-// Text glyphs (! / ?) as a last resort: markers must never silently vanish
-// just because art failed to load.
 function markerGlyphFor(marker: string | null): { text: string; color: string } | null {
   if (marker === "available" || marker === "available_future") {
     return { text: "!", color: marker === "available" ? "#ffd100" : "#9d9d9d" };
@@ -330,9 +297,6 @@ function markerGlyphFor(marker: string | null): { text: string; color: string } 
   return null;
 }
 
-// Gossip chain: one line per conversation step. Each line shows for as long
-// as a player chat message of the same length (7000ms + 35ms per character,
-// mirroring handleChatMessage), then dialog advances to the next step.
 export function gossipLinesOf(npc: any): string[] {
   const raw = typeof npc?.gossip === "string" ? npc.gossip : "";
   return raw.split("\n").map((s: string) => s.trim()).filter(Boolean);
@@ -348,11 +312,6 @@ export function hasNpcGossip(npcId: number): boolean {
   return gossipLinesOf(npc).length > 0;
 }
 
-/**
- * Advance dialog through the chain on chat-like timing. Chains only run once
- * spoken to — interacting starts them via advanceNpcGossip — and the bubble
- * clears when the last line expires instead of looping. Call once per frame.
- */
 export function tickNpcGossip(npc: any, now: number = performance.now()): void {
   const lines = gossipLinesOf(npc);
   if (!npc || lines.length === 0) return;
@@ -360,9 +319,6 @@ export function tickNpcGossip(npc: any, now: number = performance.now()): void {
   if ((npc as any).gossipUntil !== undefined && now < (npc as any).gossipUntil) return;
   const next = ((npc as any).gossipIndex ?? -1) + 1;
   if (next >= lines.length) {
-    // End of the chain: the bubble clears back to whatever was showing
-    // before the conversation started (usually nothing), like player chat
-    // clearing after its timer.
     (npc as any).gossipActive = false;
     (npc as any).gossipUntil = undefined;
     (npc as any).gossipIndex = undefined;
@@ -375,10 +331,6 @@ export function tickNpcGossip(npc: any, now: number = performance.now()): void {
   (npc as any).gossipUntil = now + gossipDurationMs(lines[next]);
 }
 
-/**
- * Start the chain from its first line on interact (or jump to the next line
- * when already mid-conversation). Talking again after it finished replays it.
- */
 export function advanceNpcGossip(npcId: number): boolean {
   const npc = (cache.npcs || []).find((n: any) => Number(n.id) === Number(npcId));
   const lines = gossipLinesOf(npc);
@@ -400,10 +352,6 @@ export function advanceNpcGossip(npcId: number): boolean {
   return true;
 }
 
-/**
- * Whether an NPC, as the server sent it, sells things: it says so itself (`vendor`), or its stock
- * came with it (an NPC that was just saved in the editor).
- */
 export function sellsThings(data: any): boolean {
   return data?.vendor === true || (Array.isArray(data?.vendor_items) && data.vendor_items.length > 0);
 }
@@ -512,9 +460,6 @@ function createNPC(data: any) {
         context.restore();
       }
 
-      // Quest head markers next to the nameplate. Incomplete quests reuse the
-      // complete sprite rendered in greyscale; text glyphs cover art that
-      // failed to load so a marker never silently vanishes.
       const marker = getQuestMarker((this as any).id);
       const markerOffsetX = (this as any).layeredAnimation ? 0 : 16;
       const markerX = this.position.x + markerOffsetX;
@@ -606,12 +551,6 @@ function createNPC(data: any) {
 
       const emitInterval = (particle.interval || 1) / 60 * 1000; // Frame-rate independent: convert 60 FPS frame interval to milliseconds
 
-      // Match the particle editor preview: cap the per-frame delta at one 60 FPS
-      // frame and drive emission from that same clock. iOS throttles
-      // requestAnimationFrame, so the renderer lets deltaTime spike up to ~500ms.
-      // If emission ran on wall-clock time while aging used the capped delta,
-      // particles would spawn faster than they die and pile up (brighter overlap,
-      // worse FPS). Sharing one clamped clock keeps spawn/death balanced.
       const clampedDelta = Math.min(deltaTime, 0.01667);
 
       if (npc.lastEmitTime[particle.name || ''] === undefined) {
@@ -711,16 +650,11 @@ function createNPC(data: any) {
       const particleColor = particle.color || "white";
       const glowIntensity = particle.glow_intensity || 0;
 
-      // Set blend mode once for all particles. Use additive 'lighter' on every
-      // platform so iOS matches desktop/editor brightness instead of rendering
-      // ~2x dimmer with plain alpha compositing.
       context.globalCompositeOperation = 'lighter';
       // Clear any stray shadow state from earlier draws so it can't re-blur the sprite.
       context.shadowColor = 'transparent';
       context.shadowBlur = 0;
 
-      // The gradient + glow are identical for every particle of this config, so
-      // look the sprite up once per frame instead of per particle.
       const particleSprite = getParticleSprite(particleColor, (particle.size || 5) / 2, glowIntensity, Number(particle.glow_radius) || 0, particleBrightness(particle), particle.image);
       context.globalCompositeOperation = particleSprite.blend; // an image is drawn as it is, not added as light
       // glowing: queued for the light layer to draw again above the ambience (glowqueue.ts)
@@ -736,8 +670,6 @@ function createNPC(data: any) {
           continue;
         }
 
-        // Update physics - apply forces and velocity (match preview logic exactly)
-        // Use capped delta on mobile to prevent physics explosions
         const physDelta = clampedDelta;
 
         // Apply gravity
@@ -760,8 +692,6 @@ function createNPC(data: any) {
         p.localposition.x += p.velocity.x * physDelta;
         p.localposition.y += p.velocity.y * physDelta;
 
-        // Calculate alpha (fade durations based on this particle's own lifetime
-        // so staggertime extensions match the editor preview)
         const fadeInDur = p.lifetime * 0.4;
         const fadeOutDur = p.lifetime * 0.4;
         const lifeElapsed = p.lifetime - p.currentLife;
@@ -779,9 +709,6 @@ function createNPC(data: any) {
         // the light map draws glowing particles again above the ambience overlay (lightmap.ts), at this fade
         p.glowAlpha = alpha;
 
-        // Draw the pre-rendered sprite (gradient + glow baked once). globalAlpha
-        // above applies the fade; additive 'lighter' blending is unchanged, so the
-        // composited result matches the previous per-frame draw.
         const cx = npcPosX + p.localposition.x;
         const cy = npcPosY + p.localposition.y;
         context.drawImage(
@@ -828,8 +755,6 @@ function deleteNPC(npc: any) {
   }
 }
 
-// Talk-key badge over the nearest interactable NPC, mirroring the loot and
-// chest hints: the Interact key, as bound (keybadge.ts). Desktop only: touch devices tap the NPC instead.
 export function renderNpcInteractBadge(
   ctx: CanvasRenderingContext2D,
   cameraX: number,
@@ -848,9 +773,6 @@ export function renderNpcInteractBadge(
   const ny = Number(npc.position?.y);
   if (!Number.isFinite(nx) || !Number.isFinite(ny)) return;
 
-  // Small badge on the NPC's lower body: sprite shows through the fill while
-  // a bright ring and letter keep it noticeable. Where the world zoom puts it (worldzoom.ts), in the canvas's pixels,
-  // as large as the zoom makes the NPC.
   const dpr = canvasDpr();
   const at = worldToScreen(nx, ny + 12);
   drawKeyBadge(ctx, at.x * dpr, at.y * dpr, "interact", dpr * worldZoom(), PLAIN_BADGE);

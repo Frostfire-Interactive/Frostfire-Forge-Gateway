@@ -73,8 +73,6 @@ async function createPlayer(data: any) {
     _layerCanvases: {} as Record<string, HTMLCanvasElement>,
     lastDirection: "down" as string,
     friends: data.friends || [],
-    // Retained so the character sheet preview (and anything else) can rebuild
-    // the layered animation from live equipment without new packets.
     spriteData: data.spriteData || null,
     position: {
       x: Math.round(data.location.x),
@@ -101,8 +99,6 @@ async function createPlayer(data: any) {
     isGuest: data.isGuest || false,
     _adminColorHue: Math.floor(Math.random() * 360),
     targeted: false,
-    // What show() drew under the feet (name, guild, bars, level), in pixels
-    // from renderPosition, so the y-sorted tile layer covers it with the sprite.
     nameplate: null as null | { left: number; right: number; bottom: number },
     stats: data.stats,
     typing: false,
@@ -562,10 +558,6 @@ async function createPlayer(data: any) {
 
       context.imageSmoothingEnabled = false;
 
-      // Ghosts render translucent with a pulsing outline so the dead are
-      // visible but unmistakable. The blue tint is baked into cached layer
-      // canvases (not a per-frame ctx.filter) so it looks identical on all
-      // browsers, including ones without canvas-filter support.
       const ghostPulse = this.isGhost ? 0.5 + 0.5 * Math.sin(performance.now() * 0.004) : 0;
       const ghostTint = !!this.isGhost;
       if (this.isStealth || this.isVanished) {
@@ -587,8 +579,6 @@ async function createPlayer(data: any) {
         if (!frame || !frame.imageElement?.complete) continue;
 
         const isMounted: boolean = this.layeredAnimation.layers.mount !== null;
-        // Keyed by the layer's sheet too (its image): swapping an item in the same slot keeps the layer type, pose
-        // and frame, and a key without the sheet drew the old item's cached canvas.
         const layerKey = `${layer.type}_${(layer as any)._cacheKey ?? ""}_${this.layeredAnimation.currentAnimationName}_${layer.currentFrame}_${isMounted}_${ghostTint ? "ghost" : "live"}`;
         if (!this._layerCanvases[layerKey]) {
           const layerCanvas = document.createElement('canvas');
@@ -749,8 +739,6 @@ async function createPlayer(data: any) {
         plateBottom = 70 + uiOffset;
       }
 
-      // Your own health and stamina are on the screen's own bars (or your unit frame on touch), so only another player's
-      // nameplate shows them, while targeted. No nameplate shows a level: the unit frames do.
       const isOwn = data.id === cachedPlayerId;
 
       if (!this.isStealth && !this.isDead && !this.isGhost) {
@@ -867,11 +855,6 @@ async function createPlayer(data: any) {
     cache.pendingPlayers.delete(player.id);
   }
 
-  // Apply effects: prefer pendingEffects (from the later EFFECTS packet, already
-  // has endTime computed at the moment the packet was received) over data.effects
-  // (from the spawn packet, whose remaining values are stale by the time
-  // createPlayer finishes async animation loading).
-  // Only set if the EFFECTS handler didn't already set activeEffects directly.
   if (!Array.isArray(player.activeEffects) || player.activeEffects.length === 0) {
     const pendingList = cache.pendingEffects?.get(player.id);
     if (pendingList && pendingList.length > 0) {

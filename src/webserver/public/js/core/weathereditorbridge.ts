@@ -1,10 +1,3 @@
-// Weather editor popup. Talks to the game window over postMessage; the game
-// window forwards everything to the server, which validates and persists.
-// The window itself is the shared workbench (tooleditor.ts); this file holds
-// what is the weather editor's own: its fields, the server's rules repeated so
-// a slip is caught before the round trip, what the game draws for a weather of
-// each name, and its conversation with the server. There are few weathers, so
-// the list is held whole here: every answer of the server carries it afresh.
 import { EditorShell, type ListRow, type RecordState } from "./tooleditor.js";
 import { FieldRenderer, setFieldError, type Field } from "./toolfields.js";
 import { button, card, count, el, empty, iconButton, listed, note, noticeDialog, shown, subcard, tag, thumb, toast, type IconName } from "./toolkit.js";
@@ -28,19 +21,9 @@ interface Weather {
   sounds: Sounds;
 }
 
-/**
- * USER REQUEST 2026-10-17 ("browse sounds from the audio folder and add them to specific weather types in the weather
- * editor. Sounds for wind, thunder and rain and allow adding multiple (for variant support) and allow choosing the
- * intensity range they can happen at"): a weather's sounds, as the server keeps them (systems/weathersounds.ts).
- * Thunder has no range (USER REQUEST 2026-10-21): its sounds are a list, one picked at random at each strike.
- */
 type SoundKind = "rain" | "wind" | "thunder";
 interface Sound { name: string; from: number | null; to: number | null; volume: number | null }
 type Sounds = Record<SoundKind, Sound[]>;
-/**
- * What a kind of sound is heard by, as the server sends it: a ranged kind's range is held to min and max. A kind that
- * is not ranged (thunder) has no range, and its sounds no From and To.
- */
 interface SoundRule { label: string; ranged?: boolean; measure?: string; unit?: string; min?: number; max?: number }
 interface SoundsRules { kinds: SoundKind[]; rules: Record<SoundKind, SoundRule>; max: number; nameMax: number }
 
@@ -86,12 +69,6 @@ interface WorldWeather {
 const NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 const NUMBER_KEYS = ["temperature", "humidity", "wind_speed", "precipitation", "ambience"] as const;
 
-/**
- * What the game draws for a weather, which it picks by the weather's name
- * (weather.ts, ambience.ts and the WEATHER cases of socket.ts in the game
- * client): how much falls is its precipitation, and rain falls as snow below
- * 32 degrees. A name that is not here draws no rain and no snow.
- */
 const DRAWN: Record<string, { icon: IconName; short: string; long: string; ambience: boolean }> = {
   rainy: { icon: "cloud", short: "Rain", long: "Draws rain as heavy as Precipitation says, with splashes where it lands. Below 32 degrees it falls as snow.", ambience: false },
   thunderstorm: { icon: "bolt", short: "Rain, lightning, dark sky", long: "Draws rain as heavy as Precipitation says (snow below 32 degrees) and lightning strikes, turns shadows off and darkens the scene as much as Ambience says.", ambience: true },
@@ -227,10 +204,6 @@ class WeatherEditorBridge {
     }
   }
 
-  /**
-   * Takes the server's weathers as the list, and follows the open weather as
-   * the server now holds it, unless it has changes of this window's own.
-   */
   private adopt(data: any, follow = true): void {
     if (!data || typeof data !== "object") return;
     this.data = { ...this.data, ...data };
@@ -280,8 +253,6 @@ class WeatherEditorBridge {
       this.renderForm();
       return;
     }
-    // The reply names the deleted weather: never adopt it as the open one, and
-    // leave another open weather's unsaved edits alone.
     if (msg.name && msg.name === this.originalName) {
       this.draft = null;
       this.originalName = null;
@@ -294,11 +265,6 @@ class WeatherEditorBridge {
     this.renderForm();
   }
 
-  /**
-   * Something the server refused that no request here was waiting for. Before
-   * its first answer, that is the editor itself being refused: the page says
-   * so. After, it is said on the open weather, or in the corner.
-   */
   private report(lines: string[]): void {
     if (!this.ready) this.shell.refused(lines, () => this.askForList());
     else if (this.draft) {
@@ -856,8 +822,6 @@ class WeatherEditorBridge {
   private beginRequest(kind: "save" | "delete", packet: string, data: any, name: string): void {
     this.pending = { kind, packet, name };
     if (this.pendingTimer) clearTimeout(this.pendingTimer);
-    // No result ever comes back if the server drops the packet outright:
-    // don't leave the buttons blocked forever.
     this.pendingTimer = setTimeout(() => {
       if (this.pending?.packet !== packet) return;
       this.endRequest();

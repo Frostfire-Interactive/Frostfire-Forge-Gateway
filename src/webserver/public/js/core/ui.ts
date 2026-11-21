@@ -140,10 +140,6 @@ function getMissingIconUrl(): string {
   return `${config.ASSET_SERVER_URL}/icon?name=missing_icon`;
 }
 
-// Debuffs that aren't learned spells (e.g. Resurrection Sickness) have no
-// spellbook sprite: resolve "<effect name snake_cased>.png" from the asset
-// server's icons folder instead. Unknown names serve missing_icon, so this
-// degrades cleanly until the file is added.
 function getEffectIconUrl(spell: string): string {
   const key = spell.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   return `${config.ASSET_SERVER_URL}/icon?name=${encodeURIComponent(key)}`;
@@ -172,8 +168,6 @@ function createBuffIcon(spell: string, endTime: number, isDebuff: boolean = fals
 
   const entry = { el, timerEl, stacksEl, endTime, spell, isDebuff, info };
 
-  // Tooltip describes what the effect is actively doing to the player
-  // Disable tooltips on mobile devices
   if (!isMobileDevice) {
     setupSpellTooltip(el, () => {
       const spellMeta = Cache.getInstance().spells[spell];
@@ -216,8 +210,6 @@ function setBuffStacks(entry: { stacksEl: HTMLDivElement }, stacks: number) {
 }
 
 function removeBuffElement(entry: { el: HTMLDivElement }) {
-  // Detach tooltip handlers and hide the tooltip if it is currently
-  // showing for this icon (mouseleave never fires on removed elements)
   removeItemTooltip(entry.el);
   entry.el.remove();
 }
@@ -607,10 +599,6 @@ let activeCastbarClone: HTMLDivElement | null = null;
 
 const isMobileDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 
-// The windows of the game stand where the game puts them: they are not moved about (USER REQUEST 2026-10-07:
-// "Remove the ability to move UI around"). They could be, by holding Ctrl and dragging one, and where each was
-// left was kept in the browser and put back at every visit. What was kept is forgotten here, so a window that had
-// been moved is back in its own place.
 for (const name of ["stat-screen", "chat", "inventory", "spellbook", "collectables", "friends", "guild", "party", "hotbar"]) {
   try {
     localStorage.removeItem(`panel-pos-${name}`);
@@ -1179,8 +1167,6 @@ function createGuildUI(guildMembers: string[], guildNameValue: string | null) {
   if (!guildMembersList) return;
 
   if (!guildNameValue) {
-    // Create mode: the header carries the title; the in-section label is
-    // hidden via CSS.
     if (guildNameEl) {
       guildNameEl.textContent = "Create Guild";
       guildNameEl.style.display = "block";
@@ -1283,8 +1269,6 @@ function createGuildUI(guildMembers: string[], guildNameValue: string | null) {
     }
   }
 
-  // Rebuilt from the roster each time, sorted by rank then name. Sorting a COPY keeps currentPlayer.guild
-  // leader-first, which the context-menu leader checks (guild[0] === leader) rely on.
   guildMembersList.querySelectorAll(".guild-member").forEach((el) => el.remove());
   const sorted = [...roster].sort((a, b) => a.rank - b.rank || a.username.toLowerCase().localeCompare(b.username.toLowerCase()));
   const cache = Cache.getInstance();
@@ -1431,8 +1415,6 @@ function fillGuildRanksPanel() {
   (document.getElementById("guild-rank-add") as HTMLButtonElement).disabled = ranks.length >= 8;
 }
 
-// A panel whose input or checkbox has focus is not refilled (that would overwrite what is being typed); it is
-// marked stale and refilled once focus leaves its inputs.
 const guildPanelFills: Array<[string, () => void]> = [
   ["guild-member-panel", fillGuildMemberPanel],
   ["guild-ranks-panel", fillGuildRanksPanel],
@@ -1519,8 +1501,6 @@ function updatePartyMemberStats(username: string, health: number, maxHealth: num
     staminaProgress.style.setProperty("--stamina-scale", staminaScale.toString());
   }
 
-  // Barrier absorb overlay: read from cached stats (merged on every STATS /
-  // damage packet before this runs), so no packet plumbing changes needed.
   const absorbOverlay = memberElement.querySelector(".party-member-health-absorb") as HTMLElement;
   if (absorbOverlay) {
     const memberData = Array.from(Cache.getInstance().players).find(

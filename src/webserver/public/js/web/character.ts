@@ -1,9 +1,3 @@
-// The character page (/character), a full-screen screen over the world's start area (js/web/startarea.ts).
-// An account lists its characters here (GET /api/characters, src/systems/characters.ts), plays one, makes another
-// (a name and a class) or deletes one. A guest has one character and only picks its class here (GET/POST
-// /api/character), as does a character that has no class yet. A class has no picture of its own: its mark is the icon
-// of its first spell.
-
 import { characterListView, type CharacterRow } from '../core/characterlist';
 
 interface CharacterClassView {
@@ -283,10 +277,6 @@ function renderHero(name: string, label: string | null, description: string): vo
         ${description ? `<p class="cc-description">${escapeHtml(description)}</p>` : ''}`;
 }
 
-/**
- * A row of slots (spells or items) and, under it, the one picked: its name, level or count, and description. Pointing
- * at a slot, focusing it or tapping it picks it; the first is picked to begin with.
- */
 function slotsHtml(kind: string, views: SlotView[], none: string): string {
     if (views.length === 0) return `<p class="cc-none">${none}</p>`;
     const slots = views.map((v, i) => `
@@ -473,8 +463,6 @@ function goBack(): void {
     if (mode === 'create' && rows.length > 0) setMode('list');
 }
 
-// The name as it is typed: checked with the server a moment after typing stops, shown as a check (free) or a cross
-// (taken, or not a name), the reason in its tooltip.
 type NameState = 'none' | 'checking' | 'free' | 'taken';
 let nameState: NameState = 'none';
 let nameTimer: ReturnType<typeof setTimeout> | undefined;

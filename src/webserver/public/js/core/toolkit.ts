@@ -1,72 +1,3 @@
-// What every tool window is built from: elements, icons, the way numbers,
-// names and times are written for reading, and the small parts that
-// css/tools.css styles (buttons, tags, toasts, dialogs, tooltips). It was taken
-// out of the control panel so that the editors are made of the same pieces.
-//
-// ------------------------------ how to use ------------------------------
-//
-// Elements
-//   el(tag, className?, text?)                 an HTML element
-//   brandName()                                the product name for a title bar: "Frostfire Forge", or the gateway's BRAND_NAME
-//   svg(tag, attrs?)                         an SVG element
-//   icon(name, size = 16)                      one of ICONS as inline SVG, in the colour of the text around it
-//
-// Words and numbers
-//   shown(username)                            "aldric" -> "Aldric" (display only; send the name as stored)
-//   words(value)                               "ring_1" -> "Ring 1", "damage_over_time" -> "Damage over time"
-//   num(1204) -> "1,204"      short(2.34) -> "2.3"      count(4, "item") -> "4 items"
-//   duration(seconds)  memory(megabytes)  clock(ms)  dayAndTime(ms)  ago(ms)  listed(["a","b","c"]) -> "a, b and c"
-//
-// Buttons and small parts
-//   button(label, onClick, { icon, kind, small, block, fold, add, tip })
-//        kind: "primary" | "danger" | "danger-solid" | "quiet" | "quiet-danger"
-//        fold: under 1200px wide only the icon shows (give it an icon; the label becomes its tooltip)
-//   iconButton(iconName, label, onClick, { danger, size })    icon only; the label is its name and its tooltip
-//   setIcon(button, iconName, size = 16)       another icon in a button, in place of the one it has
-//   setBusy(button, on)                        a spinner in place of the label while an answer is on its way
-//   forbid(control, why)                       grey a control out, with the reason as its tooltip
-//   tag(text, kind?, iconName?)                kind: "good" | "warning" | "danger" | "info" | "muted" | "you"
-//   pill(text, level?, mark?)                  level: "good" | "warning" | "danger" | "info" | "wait"; mark: "dot" or an icon name
-//   avatar(username, large?)                   the first letter in a circle
-//   thumb(image, { size, fallback, quality, missing })   a square holding an icon; see below
-//   card(parent, title, lead?)                 -> { root, tools, body }: a titled section
-//   titleCount(card.root, 12)                  how many of them there are, beside a card's title
-//   subcard({ title, lead?, thumb?, open?, onToggle?, wrong? })   -> { root, fold, title, lead, tools, body }: one
-//                                              record of several inside a card. With onToggle its head is a button
-//                                              that folds the body away (fill the body only while `open`); `wrong`
-//                                              outlines it in red.
-//   note(text | lines, tone?, iconName?)       tone: "" (information) | "warning" | "danger" | "plain"
-//   empty(parent, iconName, title, text?)      "nothing here", inside a card or a list
-//   screen(parent, iconName, title, text)      a whole page that has only a reason to show
-//   segments(options, value, onPick, label)    a few choices side by side: one stop for the Tab key, the arrow keys
-//                                              move through them and pick; each button carries data-value
-//   arrowKeys(group) / oneStop(group)          the same keys and the same one stop for a set of [role=radio] built
-//                                              by hand; call oneStop again after the pick was changed from outside
-//   switchControl(on, label, onToggle)         an on/off switch
-//   searchBox(placeholder, onInput)            -> { root, input }: a search field with its icon
-//   tooltip(node, text)                        words shown beside a control under the pointer or the focus
-//
-// Feedback
-//   toast(text, kind = "info")                 a note in the corner that leaves by itself: "info", "warning" (something
-//                                              to put right first, or to know) or "error" (it failed or was refused;
-//                                              stays longer). A second line is shown smaller under the first.
-//   await confirmDialog({ title, body, okLabel, cancelLabel?, danger? })   -> true when agreed.
-//                                              Use it before anything that cannot be taken back.
-//   await noticeDialog(title, body)            why what was asked for was not done, when that is more than a toast can hold
-//   await leaveDialog(name)                    -> "save" | "discard" | "stay": asked on the way out of something with
-//                                              unsaved changes, where saving first is one of the ways out
-//   await askText({ title, body?, label, okLabel, value?, maxLength?, tidy?, check?, className? })
-//                                              -> what was typed, or null: a question answered with one line of text.
-//                                              check(text) says what is wrong with it, or null when it will do.
-//   openDialog(title, { onClose? })            -> { dialog, tools, body, foot, close }: a wide dialog to fill in
-//   In every question the last button is the yes and the first the no; Escape and a click outside are the no.
-//
-// A thumbnail: thumb(url, { size: "lg", fallback: "box", quality: "rare", missing: url2, lazy: true })
-//   shows the image; if it fails to load it tries `missing` once, then shows
-//   the fallback icon. With `quality` it gets the game's rarity frame. `lazy`
-//   is for a long grid of them: each loads when it scrolls into view.
-//
-// Nothing here talks to the server or knows about any one tool.
 import { applyItemFrame } from "./itemframe.js";
 // On a touch screen, a way back to the game in every window built from this.
 import "./toolback.js";
@@ -78,11 +9,6 @@ export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = ""
   return node;
 }
 
-/**
- * The product name in the title bar of a tool window. A gateway with custom branding (BRAND_NAME) writes it on
- * <html data-brand-name> before the page is sent; without one the name is Frostfire Forge. Always set it with
- * textContent (el's text argument does), never into markup.
- */
 export function brandName(): string {
   return document.documentElement.dataset.brandName || "Frostfire Forge";
 }
@@ -196,19 +122,11 @@ export function icon(name: IconName, size = 16): SVGSVGElement {
 
 // ------------------------------------------------------- words and numbers
 
-/**
- * A username as it is shown, first letter a capital, as the game shows names (the server stores them lower case).
- * For display only: what is sent to the server is the username as stored.
- */
 export const shown = (username: unknown): string => {
   const name = String(username ?? "");
   return name.charAt(0).toUpperCase() + name.slice(1);
 };
 
-/**
- * A stored value written for reading: "ring_1" -> "Ring 1", "damage_over_time" -> "Damage over time".
- * For the fixed words of the game (a type, a slot, a quality), not for the names people give things.
- */
 export function words(value: unknown): string {
   const text = String(value ?? "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
   return text.charAt(0).toUpperCase() + text.slice(1);
@@ -286,11 +204,6 @@ function toastHost(): HTMLElement {
   return host;
 }
 
-/**
- * A short note in the corner that leaves by itself. "warning" is for what
- * needs putting right before it can be done, or was done with something to
- * know about it; "error" is for what failed or was refused, and stays longer.
- */
 export function toast(text: string, kind: "info" | "warning" | "error" = "info"): void {
   const host = toastHost();
   const box = el("div", `tl-toast tl-toast-${kind}`);
@@ -336,11 +249,6 @@ export interface ConfirmOptions {
   notice?: boolean;
 }
 
-/**
- * Asks before something that cannot be taken back. Resolves true when the
- * admin has read what it will do and agreed; Escape, Cancel and a click
- * outside the box are all a no.
- */
 export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
   return new Promise((resolve) => {
     const danger = options.danger !== false;
@@ -390,20 +298,10 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
   });
 }
 
-/**
- * Something the admin has to read before going on, which a toast would take
- * away too soon: why what they asked for was not done. One button closes it.
- */
 export function noticeDialog(title: string, body: string | string[]): Promise<boolean> {
   return confirmDialog({ title, body, okLabel: "Close", notice: true });
 }
 
-/**
- * Asked on the way out of something with changes that are not saved, where
- * saving them first is one of the ways out: save and leave, throw the changes
- * away, or stay. Escape and a click outside the box are "stay". Each button
- * carries its answer as data-choice.
- */
 export function leaveDialog(name: string): Promise<"save" | "discard" | "stay"> {
   return new Promise((resolve) => {
     const dialog = el("dialog", "tl-dialog tl-dialog-three");
@@ -466,23 +364,11 @@ export interface AskOptions {
   maxLength?: number;
   /** Cleans up what was typed before it counts as an answer. An answer that comes out empty is not accepted. */
   tidy?(typed: string): string;
-  /**
-   * What is wrong with an answer, in a sentence, or null when it will do. It is
-   * given the answer as it would be returned, also when nothing was typed ("");
-   * an empty answer is never accepted, whatever it says of one.
-   */
   check?(answer: string): string | null;
   /** A class of the tool's own on the box, to tell it from a yes-or-no question. */
   className?: string;
 }
 
-/**
- * Asks for one line of text: the name of something new, a username. Resolves
- * with it, trimmed, once something that passes `check` has been typed and
- * agreed to (Enter is the yes button); what is wrong with an answer is said
- * under the field. Escape, Cancel and a click outside the box are all a no,
- * and resolve null.
- */
 export function askText(options: AskOptions): Promise<string | null> {
   return new Promise((resolve) => {
     const dialog = el("dialog", "tl-dialog" + (options.className ? ` ${options.className}` : ""));
@@ -588,11 +474,6 @@ export interface DialogParts {
   close(): void;
 }
 
-/**
- * A wide dialog with a title and a close button, to fill in: a picker, a
- * longer form. Escape, the close button and a click outside all close it
- * (with keepOnOutsideClick, only Escape and the buttons).
- */
 export function openDialog(title: string, opts: { onClose?: () => void; keepOnOutsideClick?: boolean } = {}): DialogParts {
   const dialog = el("dialog", "tl-dialog tl-dialog-wide");
   const heading = el("h2", "tl-dialog-title", title);
@@ -669,11 +550,6 @@ function showTip(node: HTMLElement): void {
   }, 400);
 }
 
-/**
- * Words shown beside a control while the pointer rests on it or the keyboard
- * focus is on it. An icon-only control also takes them as its name. Calling it
- * again changes the words.
- */
 export function tooltip<T extends HTMLElement>(node: T, text: string): T {
   node.dataset.tip = text;
   if (tipped.has(node)) return node;
@@ -787,11 +663,6 @@ export interface ThumbOptions {
   lazy?: boolean;
 }
 
-/**
- * Images that would not load, and when. A list is drawn again at every answer
- * of the server: an image that is not there is not asked for each time, only
- * again after a minute in case it was the asset server that was away.
- */
 const failedImages = new Map<string, number>();
 const RETRY_IMAGE_MS = 60000;
 const worthTrying = (src: string | null | undefined): src is string => !!src && Date.now() - (failedImages.get(src) ?? -RETRY_IMAGE_MS) >= RETRY_IMAGE_MS;
@@ -860,12 +731,6 @@ export interface SubcardOptions {
   wrong?: boolean;
 }
 
-/**
- * One record of several inside a card: an ability of a creature, a loot table
- * in a list of them. Its head holds what it is and, in `tools`, what can be
- * done to it. With `onToggle` the head is a button (`fold`) and the record
- * folds down to that one line; `body` is only on the page while it is open.
- */
 export function subcard(opts: SubcardOptions): { root: HTMLElement; fold: HTMLButtonElement | null; title: HTMLElement; lead: HTMLElement; tools: HTMLElement; body: HTMLElement } {
   const open = opts.onToggle ? !!opts.open : true;
   const root = el("div", "tl-subcard" + (opts.onToggle && open ? " is-open" : "") + (opts.wrong ? " has-error" : ""));
@@ -925,12 +790,6 @@ export function screen(parent: HTMLElement, name: IconName, title: string, text:
   return box;
 }
 
-/**
- * A few choices side by side, one of them picked. `label` names the set for a
- * screen reader; leave it out for a set that is named by a label beside it.
- * Each button carries its value as data-value. The set is one stop for the Tab
- * key, and the arrow keys move through it.
- */
 export function segments<T extends string>(options: Array<[T, string]>, value: T | null, onPick: (value: T) => void, label = ""): HTMLElement {
   const group = el("div", "tl-seg");
   group.setAttribute("role", "radiogroup");
@@ -952,11 +811,6 @@ export function segments<T extends string>(options: Array<[T, string]>, value: T
   return group;
 }
 
-/**
- * Makes a set of choices one stop for the Tab key: the choice that is picked
- * (the first, when none is) takes the focus, and the arrow keys reach the
- * rest. Call it again after the pick was changed from outside.
- */
 export function oneStop(group: HTMLElement): void {
   const choices = [...group.querySelectorAll<HTMLElement>('[role="radio"]')];
   const usable = choices.filter((choice) => !(choice as HTMLButtonElement).disabled);
@@ -964,11 +818,6 @@ export function oneStop(group: HTMLElement): void {
   for (const choice of choices) choice.tabIndex = choice === stop ? 0 : -1;
 }
 
-/**
- * The arrow keys (and Home and End) move through a set of choices and pick
- * the one they land on, as they do in a group of radio buttons, and the set
- * is one stop for the Tab key.
- */
 export function arrowKeys(group: HTMLElement): void {
   oneStop(group);
   // A pick made with the pointer moves the stop too, once the click has marked it.

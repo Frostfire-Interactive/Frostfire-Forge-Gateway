@@ -97,8 +97,6 @@ class NpcEditor {
     this.isActive = true;
 
     const url = window.location.origin + '/npc-editor';
-    // NPCs are placed, dragged and clicked in the game window, so this editor opens against the right edge of
-    // the screen, a little narrower than the other editors, and leaves the world in view beside it.
     const area = window.screen as Screen & { availLeft?: number; availTop?: number };
     const width = Math.min(EDITOR_WIDTH, area.availWidth - 40);
     const height = Math.min(EDITOR_HEIGHT, area.availHeight - 80);
@@ -201,10 +199,6 @@ class NpcEditor {
     }
   }
 
-  /**
-   * The game server sends asset paths, not URLs: prefix them with the asset
-   * server this client was configured with (same as the creature editor).
-   */
   private withAssetUrls<T>(value: T): T {
     if (typeof value === "string") {
       return (value.startsWith("/") ? `${config.ASSET_SERVER_URL}${value}` : value) as unknown as T;
@@ -259,16 +253,12 @@ class NpcEditor {
             for (const key of SOUND_KEYS) if (msg.npc[key] !== undefined) liveNpc[key] = msg.npc[key];
             if (msg.npc.position) {
               liveNpc.position.direction = msg.npc.position.direction;
-              // Where it stands was typed into the editor: the NPC is shown there at once, as when it is dragged.
-              // Only then: any other field sends the place too, as the editor has it, and that is not to move it.
               if (msg.moved && Number.isFinite(msg.npc.position.x) && Number.isFinite(msg.npc.position.y)) {
                 liveNpc.position.x = msg.npc.position.x;
                 liveNpc.position.y = msg.npc.position.y;
               }
             }
           }
-          // Mutate in place: selectedNpc points at this object, and replacing it
-          // would orphan the selection so later edits go to a detached copy.
           const npcIdx = this.npcs.findIndex(function (n) { return n.id === msg.npc.id; });
           if (npcIdx >= 0) {
             Object.assign(this.npcs[npcIdx], msg.npc);
@@ -346,12 +336,6 @@ class NpcEditor {
     this.isDirty = false;
   }
 
-  /**
-   * Puts an NPC where the admin's character stands (the editor's "Bring to me"): for one that has ended up off the
-   * map or somewhere it cannot be reached to be dragged back. As with a drag, the NPC is shown there at once and
-   * the editor is told, and nothing is saved until Save is pressed. USER REQUEST 2026-10-07: "Add a 'Bring to'
-   * button to NPCs and editable position fields so that admins can change their position if they are off map".
-   */
   private bringToPlayer(id: any) {
     const me: any = Array.from(cache.players as Iterable<any>).find((p) => p.id === (window as any).cachedPlayerId);
     if (!me?.position) return;
@@ -452,8 +436,6 @@ class NpcEditor {
       const dy = wy - this.dragStartY;
       if (!this.dragStarted && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
         this.dragStarted = true;
-        // Moving an NPC selects it, same as clicking it, so the editor shows
-        // the NPC being moved and follows its position live.
         if (this.selectedNpc?.id !== this.draggingNpc.id) this.selectLiveNpc(this.draggingNpc.id);
       }
       if (this.dragStarted) {
@@ -744,12 +726,7 @@ class NpcEditor {
   public handleNpcUpdated(npc: any) {
     if (!npc || npc.id == null) return;
 
-    // If this update is the server confirming a newly-created NPC, reconcile the
-    // temporary (id === null) entry with the real server-assigned id.
     if (this.hasPendingNew && this.lastSavedNpcId === null) {
-      // Checked before the merge: selectedNpc is usually this same temp row,
-      // so after Object.assign its id is no longer null. Without re-selecting,
-      // the editor window keeps id null and its next Save creates a duplicate.
       const tempSelected = !!this.selectedNpc && this.selectedNpc.id === null;
       const tempIdx = this.npcs.findIndex(function (n) { return n.id === null; });
       if (tempIdx >= 0) {

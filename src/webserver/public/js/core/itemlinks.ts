@@ -1,10 +1,3 @@
-// Item links in chat. Shift + left click on an item (anywhere an element carries
-// data-item-name) writes [Item Name] at the caret. The engine turns each real [Item Name] of a relayed line into a
-// link (data.links), shown here as a coloured span; clicking it opens the item tooltip, clicking it again or
-// anywhere else closes it. Achievements link the same way: Shift + left click on an element that carries
-// data-achievement-name (a row of the achievements window) writes [Achievement Name]; the engine sends it as a link of
-// kind "achievement", shown in green, and clicking it opens the reader's own achievements window at that achievement.
-
 type TooltipModule = typeof import("./tooltip.js");
 
 const QUALITIES = new Set(["common", "uncommon", "rare", "epic", "legendary"]);
@@ -35,11 +28,6 @@ export function insertItemLink(name: string, quality = "common"): void {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-/** Writes [name] of an achievement at the caret of the chat input, as insertItemLink does for an item. */
-export function insertAchievementLink(name: string): void {
-  insertItemLink(name, ACHIEVEMENT);
-}
-
 function holderAt(target: EventTarget | null): HTMLElement | null {
   return (target as Element | null)?.closest?.("[data-item-name], [data-achievement-name]") as HTMLElement | null;
 }
@@ -49,10 +37,6 @@ function linkNameAt(target: EventTarget | null): string {
   return holder?.dataset.itemName || holder?.dataset.achievementName || "";
 }
 
-/**
- * The rarity of a clicked item: its data-item-quality when set, else a rarity class on the element or inside it (bag
- * slots carry one), else the item as the client holds it (socket.ts itemsByName), else common.
- */
 function qualityAt(holder: HTMLElement, name: string): string {
   const set = holder.dataset.itemQuality?.toLowerCase();
   if (set && QUALITIES.has(set)) return set;
@@ -72,11 +56,6 @@ function typingElsewhere(input: HTMLInputElement): boolean {
     || (active instanceof HTMLInputElement && !["button", "checkbox", "radio", "range", "submit", "reset", "color", "file", "image"].includes(active.type));
 }
 
-/**
- * Shift + left click on an item links it: the chat box opens (it takes the keyboard, as Enter opens it) if it was not
- * open, and [name] goes in at the caret, or at the end when the box was just opened. USER REQUEST 2026-10-17:
- * "Shift clicking an item should auto open chat and link it and focus the chat".
- */
 function shiftClickInsert(e: MouseEvent): boolean {
   if (!e.shiftKey || e.button !== 0) return false;
   const input = chatInputEl();
@@ -96,18 +75,10 @@ function shiftClickInsert(e: MouseEvent): boolean {
   return true;
 }
 
-// ------------------------------------------------------------------------------------------------ the chat box
-// An <input> shows one colour, so while it holds links its text is made see-through (the caret stays) and a copy is
-// laid over it, matching its font, padding and size, with each link in its rarity colour. The copy scrolls with it.
-
 let mirror: HTMLDivElement | null = null;
 let mirrorText: HTMLSpanElement | null = null;
 let mirrorQueued = false;
 
-/**
- * The chat box's own text shadow, read while it is not see-through: once it holds links its shadow is turned off
- * (#chat-input.has-links), so the copy cannot read it from the box then.
- */
 let boxShadow: string | null = null;
 
 const COPIED_STYLES = [
@@ -187,8 +158,6 @@ for (const type of ["input", "keydown", "keyup", "select", "focus", "blur", "mou
 }
 window.addEventListener("resize", queuePaint);
 
-// The click (and double click) that follows a Shift click must not also act on the item: taking a mail attachment,
-// choosing a quest reward, equipping a bag item.
 let swallowClick = false;
 document.addEventListener("mousedown", (e) => {
   // Every mousedown decides afresh: a mouseup that never came cannot leave the flag set for a later click.
@@ -285,10 +254,6 @@ function achievementSpan(data: any): HTMLSpanElement {
   return span;
 }
 
-/**
- * Appends text to container as text nodes and links as item-link spans (kind "item", or no kind) or achievement-link
- * spans (kind "achievement" with an id): every exact [name] of links[i] in the text becomes one. Everything else, brackets included, stays plain text (set as text, never as HTML).
- */
 export function renderMessageParts(container: HTMLElement, text: string, links?: unknown): void {
   const known = new Map<string, any>();
   if (Array.isArray(links)) {

@@ -1,6 +1,3 @@
-// Game-window half of the creature editor: owns the popup window, relays its
-// messages to the server, and provides the in-world tools (spawn placement,
-// patrol drawing, context menu, debug overlay).
 import { sendRequest, getIsLoaded } from "./socket.js";
 // (kept for the order the modules start in: see events.ts)
 import "./renderer.js";
@@ -10,11 +7,6 @@ import { creatureAt } from "./creature.js";
 import { config } from "../web/global.js";
 import { screenToWorld } from "./worldzoom.js";
 
-/**
- * The game server sends asset paths, not URLs: it reaches the asset server on an
- * internal address the browser cannot resolve. Prefix them with the asset server
- * this client was configured with.
- */
 function withAssetUrls<T>(value: T): T {
   if (typeof value === "string") {
     return (value.startsWith("/") ? `${config.ASSET_SERVER_URL}${value}` : value) as unknown as T;
@@ -75,9 +67,6 @@ class CreatureEditor {
     document.addEventListener("mousemove", (e) => this.onMouseMove(e), true);
     document.addEventListener("mouseup", (e) => this.onMouseUp(e), true);
     document.addEventListener("keydown", (e) => this.onKeyDown(e));
-    // The game page is going away (refresh, close, navigation): take the
-    // popup with it, since the reloaded page has no link back to it. Only the
-    // window is closed here - the connection is closing too.
     window.addEventListener("pagehide", () => {
       try {
         if (this.editorWindow && !this.editorWindow.closed) this.editorWindow.close();
@@ -176,9 +165,6 @@ class CreatureEditor {
   private onBridgeMessage(event: MessageEvent): void {
     const msg = event.data;
     if (!msg?.type) return;
-    // Only this editor's own popup. This module is loaded with the game, so without the check it also relayed the
-    // "request" of every other editor's popup: each of their changes reached the server twice (the player editor's
-    // adds were made twice, and its admin toggle flipped back).
     if (event.source !== this.editorWindow) return;
     switch (msg.type) {
       case "bridgeReady":
@@ -322,9 +308,6 @@ class CreatureEditor {
       this.stopTool();
       return;
     }
-    // drawPath: shift-click adds a 2s wait at the new point. Every point streams
-    // to the editor popup live, so finishing with Enter is optional - the
-    // popup already holds everything placed so far.
     this.pathPoints.push({ x: point.x, y: point.y, wait_ms: event.shiftKey ? 2000 : 0 });
     this.toEditor({ type: "pointPicked", what: "path", points: this.pathPoints, map: this.currentMap() });
   }
@@ -332,8 +315,6 @@ class CreatureEditor {
   private onKeyDown(event: KeyboardEvent): void {
     if (!this.isActive || this.mode === "none") return;
     if (event.key === "Escape") {
-      // Just leave draw mode: points were already streamed to the editor, so
-      // there is nothing to lose. Delete strays in the popup's Points list.
       this.stopTool();
       return;
     }

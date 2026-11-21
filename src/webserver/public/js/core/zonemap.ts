@@ -1,16 +1,3 @@
-// Zone map popup (/zone-map): the whole current map, where zone borders are drawn and edited (the game has no zone
-// editing of its own). It opens from the map editor window (tileeditorbridge.ts) and talks to the game window
-// (window.opener.opener, tileeditor.ts), which holds the zones. Every edit made here is sent there: one undo step of
-// the map editor, the Zones layer marked unsaved, saved with the map editor's Save. What the game sends back is what
-// is drawn.
-//
-// The messages, all of this site and of type zoneMap*:
-//   game to here: zoneMapInit { map, assetServerUrl, zones, unsaved, player }, zoneMapZones { map, zones, unsaved },
-//                 zoneMapPlayer { player }, zoneMapRefused { message }
-//   here to game: zoneMapReady, zoneMapEdit { name, zone }, zoneMapCommand { name }, zoneMapClosed
-//
-// The picture is the asset server's baked image of the map (/worldmap, the one the world map shows), with its
-// full-detail pieces once zoomed in close enough. Positions are in tiles; a zone's points are tile corners.
 import { brandName, button, confirmDialog, el, empty, icon, iconButton, note, num, pill, screen, searchBox, toast, type IconName } from "./toolkit.js";
 import { FieldRenderer } from "./toolfields.js";
 import { zoneArea, zoneAt, zoneLabelPoint, zonesList, type ClientZone } from "./zonelogic.js";
@@ -206,10 +193,6 @@ function takeZones(raw: unknown, isUnsaved: boolean): void {
   schedule();
 }
 
-/**
- * An edit, sent to the game: the zone `oldName` (null: a new zone) becomes `zone` (null: it is deleted). It is shown
- * here at once; what the game sends back replaces it, and a refused edit comes back with the reason.
- */
 function commit(oldName: string | null, zone: ClientZone | null): void {
   const next = { ...zones };
   if (oldName !== null) delete next[oldName];

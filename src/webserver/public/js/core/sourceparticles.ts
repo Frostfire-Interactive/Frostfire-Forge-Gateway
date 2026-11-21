@@ -1,5 +1,3 @@
-// Particle emitter/renderer for sources drawn at their raw position (player
-// effect particles). NPCs have their own centred variant in npc.ts.
 import { particlePool, getParticleSprite, particleBrightness } from "./npc.js";
 import { queueGlow } from "./glowqueue.js";
 import { windBurst, calculateWindSpeed, applyWindVelocity, getWindBias } from "./windphysics.ts";
@@ -13,12 +11,6 @@ export function updateSourceParticle(particle: Particle, entity: any, context: C
 
       const emitInterval = (particle.interval || 1) / 60 * 1000; // Frame-rate independent: convert 60 FPS frame interval to milliseconds
 
-      // Match the particle editor preview: cap the per-frame delta at one 60 FPS
-      // frame and drive emission from that same clock. iOS throttles
-      // requestAnimationFrame, so the renderer lets deltaTime spike up to ~500ms.
-      // If emission ran on wall-clock time while aging used the capped delta,
-      // particles would spawn faster than they die and pile up (brighter overlap,
-      // worse FPS). Sharing one clamped clock keeps spawn/death balanced.
       const clampedDelta = Math.min(deltaTime, 0.01667);
 
       if (entity.lastEmitTime[particle.name || ''] === undefined) {
@@ -93,16 +85,11 @@ export function updateSourceParticle(particle: Particle, entity: any, context: C
       const particleColor = particle.color || "white";
       const glowIntensity = particle.glow_intensity || 0;
 
-      // Set blend mode once for all particles. Use additive 'lighter' on every
-      // platform so iOS matches desktop/editor brightness instead of rendering
-      // ~2x dimmer with plain alpha compositing.
       context.globalCompositeOperation = 'lighter';
       // Clear any stray shadow state from earlier draws so it can't re-blur the sprite.
       context.shadowColor = 'transparent';
       context.shadowBlur = 0;
 
-      // The gradient + glow are identical for every particle of this config, so
-      // look the sprite up once per frame instead of per particle.
       const particleSprite = getParticleSprite(particleColor, (particle.size || 5) / 2, glowIntensity, Number(particle.glow_radius) || 0, particleBrightness(particle), particle.image);
       context.globalCompositeOperation = particleSprite.blend; // an image is drawn as it is, not added as light
       // glowing: queued for the light layer to draw again above the ambience (glowqueue.ts) with the transform they were drawn with
@@ -141,8 +128,6 @@ export function updateSourceParticle(particle: Particle, entity: any, context: C
         p.localposition.x += p.velocity.x * physDelta;
         p.localposition.y += p.velocity.y * physDelta;
 
-        // Calculate alpha (fade durations based on this particle's own lifetime
-        // so staggertime extensions match the editor preview)
         const fadeInDur = p.lifetime * 0.4;
         const fadeOutDur = p.lifetime * 0.4;
         const lifeElapsed = p.lifetime - p.currentLife;
@@ -157,9 +142,6 @@ export function updateSourceParticle(particle: Particle, entity: any, context: C
 
         context.globalAlpha = alpha;
 
-        // Draw the pre-rendered sprite (gradient + glow baked once). globalAlpha
-        // above applies the fade; additive 'lighter' blending is unchanged, so the
-        // composited result matches the previous per-frame draw.
         const cx = entityPosX + p.localposition.x;
         const cy = entityPosY + p.localposition.y;
         context.drawImage(

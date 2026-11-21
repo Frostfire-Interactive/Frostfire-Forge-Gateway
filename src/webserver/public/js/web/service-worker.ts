@@ -6,26 +6,12 @@
 
 declare const self: ServiceWorkerGlobalScope;
 
-// v4: drops the entries v3 took with no way to tell them apart from a newer
-// copy (activate deletes every other cache name).
 const ASSET_CACHE = 'asset-cache-v4';
-// The asset version each asset server had when its entries were last checked,
-// one entry per origin. Its own cache, so eviction never drops it.
 const VERSION_CACHE = 'asset-cache-v4-versions';
 
 // How long a version check holds before the next request checks again.
 const VERSION_CHECK_MS = 60_000;
 
-// Asset-server GET endpoints whose responses are kept cache-first. They are
-// kept until the asset server's /asset-version changes (a restart with new
-// sprites, icons or sprite sheets), then fetched again.
-// Matched by exact pathname so e.g. "/sprite" doesn't also swallow
-// "/sprite-sheet-image".
-// "/tileset" is NOT here: tileset images get edited in place under the same
-// name, and a cache-first entry kept serving the old image on every normal
-// reload (only a hard reload, which bypasses the worker, showed the new one).
-// The asset server answers /tileset with an ETag and "Cache-Control: no-cache",
-// so the browser's HTTP cache revalidates it each load (a 304 when unchanged).
 const CACHEABLE_PATHS: ReadonlySet<string> = new Set([
   '/sprite',
   '/sprite-sheet-image',
@@ -72,8 +58,6 @@ async function handleCacheStrategy(request: Request): Promise<Response> {
 
   let response: Response;
   try {
-    // no-cache: the browser's HTTP cache revalidates its copy (a 304 when it
-    // is current) instead of handing back one it kept for a year.
     response = await fetch(request, { cache: 'no-cache' });
   } catch {
     const stored = await fromCache(request);
@@ -81,11 +65,6 @@ async function handleCacheStrategy(request: Request): Promise<Response> {
     return new Response('Offline - asset not cached', { status: 503 });
   }
 
-  // Cache real assets only. NOT the "missing" fallback: Cache Storage has no
-  // TTL, so a cached fallback would mask a real asset added later until the
-  // whole cache is bumped. The asset server sends the fallback with a short
-  // max-age, so the browser's HTTP cache handles placeholder de-duplication
-  // and self-expires.
   if (
     response.status === 200 &&
     !response.headers.get('X-Asset-Fallback')
@@ -96,8 +75,6 @@ async function handleCacheStrategy(request: Request): Promise<Response> {
   return response;
 }
 
-// The last version check per asset server origin, shared by the requests made
-// while it runs. A worker the browser stopped and started again checks anew.
 const versionChecks = new Map<string, { at: number; done: Promise<void> }>();
 
 function checkVersion(origin: string): Promise<void> {
@@ -108,9 +85,6 @@ function checkVersion(origin: string): Promise<void> {
   return done;
 }
 
-// Asks the asset server for its asset version and, when it differs from the
-// one its entries were taken at, drops every entry from that asset server. An
-// asset server that does not answer leaves the cache as it is.
 async function dropIfVersionChanged(origin: string): Promise<void> {
   try {
     const response = await fetch(`${origin}/asset-version`, { cache: 'no-store', redirect: 'error' });
@@ -133,10 +107,6 @@ async function dropIfVersionChanged(origin: string): Promise<void> {
   }
 }
 
-// Cache Storage can fail on its own (out of quota, a damaged profile). This
-// worker only speeds assets up, so a failure is a miss and the network answers:
-// without that, every sprite and icon comes back "offline" and the world never
-// loads, though the asset server is fine.
 async function fromCache(request: Request): Promise<Response | undefined> {
   try {
     return await caches.match(request);

@@ -1,10 +1,3 @@
-// The local player's own SPAWN_PLAYER right after a handoff. The new node sends it after the walk pose and the first
-// steps, with the snapshot point and, before the engine fix, an idle pose, to a client that kept its world: taken at
-// its word it snaps the player back and stops the walk animation until the next key change. The first self spawn after
-// HANDOFF_DONE (and only that one, and only for a short time) leaves the position as HANDOFF_DONE and the echoes set it,
-// and rebuilds the animation only when the sheets changed. A spawn that is far, on another map, or later is a real
-// respawn, teleport or map change: everything is applied.
-
 import { TELEPORT_PX } from "./movementsmoothing.ts";
 
 /** Backstop only: the deferred spawn follows HANDOFF_DONE within the same tick plus one database wait. */
@@ -43,13 +36,6 @@ export interface SelfSpawnPlan {
 
 interface Point { x: number; y: number }
 
-/**
- * What to do with the local player's SPAWN_PLAYER. `doneAt` is when HANDOFF_DONE arrived (null: none pending; the caller
- * clears it on the first self spawn after DONE, on LOAD_MAP and on a SWITCH). `doneMap` is the map HANDOFF_DONE named,
- * `spawnMap` the one the spawn names, `position` where the player is drawn and `spawnPoint` where the spawn puts them.
- * Inside the window, on the same map and nearer than TELEPORT_PX, the position is kept, and the animation is rebuilt
- * only if the sheets changed, keeping the walk while a key or stick is held, else the pose the old animation had.
- */
 export function planSelfSpawn(args: {
   doneAt: number | null;
   now: number;

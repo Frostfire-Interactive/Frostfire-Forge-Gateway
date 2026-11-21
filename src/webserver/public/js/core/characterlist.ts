@@ -1,6 +1,3 @@
-// The character list on the character page (/character): each of the account's characters as a row, and whether
-// another can be made. The list comes from GET /api/characters (src/systems/characters.ts).
-
 export interface CharacterSummary {
     id: number;
     name: string;

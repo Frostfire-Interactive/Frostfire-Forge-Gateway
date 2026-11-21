@@ -1,6 +1,3 @@
-// The named zones of the map the player is on (drawn in the map editor, sent with the map and again on a save): the
-// zone's text shows at the top of the screen on entering it, and its music fades in. Looked at every LOOK_MS, from
-// the player's position in tiles. Which zone and which music: zonelogic.ts.
 import { setZoneMusic, updateZoneMusic } from "./audio.js";
 import { cutsceneActive } from "./cutscene.js";
 import { cachedPlayerId } from "./socket.js";
@@ -54,10 +51,6 @@ function look(): void {
   updateZoneMusic(cutsceneActive());
 }
 
-/**
- * The map's zones are in (window.mapData.zones): a new map (`fresh`) shows the zone the player stands in even when it
- * has the same name as the last; new zones of the same map (a save) only show a zone the player then walks into.
- */
 export function zonesLoaded(opts: { fresh: boolean }): void {
   if (opts.fresh) fresh = true;
   startAreaZones();

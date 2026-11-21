@@ -1,7 +1,3 @@
-// The maps this browser visited last, newest first: what the mailbox editor lists before anything is searched
-// (USER REQUEST 2026-10-17: "only show recently visited maps unless the developer searches for a specific map").
-// Kept in localStorage, so the list outlives a reload; without it (a private window) there is only this visit's.
-
 const KEY = "frostfire.visitedMaps";
 /** How many names are kept: more than the editor lists, as a name the server no longer has is left out there. */
 const KEPT = 20;

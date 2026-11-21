@@ -1,14 +1,3 @@
-// Mailbox editor popup (/mailbox). USER REQUEST 2026-10-16 ("Add a /mailbox command to open a UI to edit where
-// mailboxes are placed and the ability to move them"), on the editor pattern of the others (USER REQUEST
-// 2026-10-17). Talks to the game window over postMessage; the game window forwards the requests to the server
-// (engine src/systems/mailboxeditor.ts), which validates and persists, and draws in the world what is open here.
-// The window itself is the shared workbench (tooleditor.ts).
-//
-// A record is a map. The list is the map the admin is on and the maps they visited last (visitedmaps.ts); any other
-// map is found by a search of its name, which the server answers 50 at a time, as the item editor's search. A map left alone has
-// its mailboxes in front of its inns; saving gives it a list of its own, and Delete gives it back to its inns.
-// The mailboxes of the map the admin is on are dragged in the game, and each change shows there at once; nothing
-// is saved until Save. There are few such maps, so the list is held whole here: every answer carries it afresh.
 import { EditorShell, type ListRow, type RecordState } from "./tooleditor.js";
 import { FieldRenderer, setFieldError, type Field } from "./toolfields.js";
 import { button, card, count, el, empty, icon, iconButton, noticeDialog, shown, tag, thumb, toast } from "./toolkit.js";

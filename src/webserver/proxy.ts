@@ -27,12 +27,6 @@ function tryParseURL(url: string): URL | null {
 
 const domainHost = process.env.DOMAIN?.replace(/https?:\/\//, "") || "";
 
-// The webserver's pages are Bun HTML bundles that cannot be rewritten inside the
-// webserver, so with a custom product name (BRAND_NAME, see
-// modules/branding.ts) or with the documentation switched off (DOCS_ENABLED,
-// see modules/docs_switch.ts) the proxy fetches the page itself, rewrites the
-// name and takes out the Docs link, and answers with that. With neither it
-// returns null and the request takes the ordinary proxy path, unchanged.
 async function fetchBrandedPage(url: URL, req: Request, ip: string): Promise<Response | null> {
   if (!BRAND_NAME && DOCS_ENABLED) return null;
 

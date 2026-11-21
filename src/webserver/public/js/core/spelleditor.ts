@@ -1,14 +1,6 @@
-// Game-window half of the spell editor: owns the popup window and relays its
-// messages to the server. Mirrors itemeditor.ts; the spell editor has no
-// in-world tools.
 import { sendRequest } from "./socket.js";
 import { config } from "../web/global.js";
 
-/**
- * The game server sends asset paths, not URLs: it reaches the asset server on an
- * internal address the browser cannot resolve. Prefix them with the asset server
- * this client was configured with.
- */
 function withAssetUrls<T>(value: T): T {
   if (typeof value === "string") {
     return (value.startsWith("/") ? `${config.ASSET_SERVER_URL}${value}` : value) as unknown as T;
@@ -36,8 +28,6 @@ class SpellEditor {
 
   constructor() {
     window.addEventListener("message", (e) => this.onBridgeMessage(e));
-    // The game page is going away (refresh, close, navigation): take the
-    // popup with it, since the reloaded page has no link back to it.
     window.addEventListener("pagehide", () => {
       try {
         if (this.editorWindow && !this.editorWindow.closed) this.editorWindow.close();
@@ -55,8 +45,6 @@ class SpellEditor {
   private open(): void {
     this.isActive = true;
     const url = window.location.origin + "/spell-editor";
-    // The size the editor's workbench is laid out for, where the screen allows, in the middle of the screen
-    // and a step down and right of the item editor, so one does not open exactly over the other.
     const area = window.screen as Screen & { availLeft?: number; availTop?: number };
     const width = Math.min(EDITOR_WIDTH, area.availWidth - 40);
     const height = Math.min(EDITOR_HEIGHT, area.availHeight - 80);
@@ -102,8 +90,6 @@ class SpellEditor {
   // -------------------------------------------------------- server messages
 
   onData(data: any): void {
-    // Only the icon list holds asset paths. The popup builds icon URLs itself
-    // for spells whose icon is not in the list.
     this.lastData = { ...data, icons: withAssetUrls(data?.icons ?? []), assetServerUrl: config.ASSET_SERVER_URL };
     this.toEditor({ type: "data", data: this.lastData });
   }
@@ -124,9 +110,6 @@ class SpellEditor {
   private onBridgeMessage(event: MessageEvent): void {
     const msg = event.data;
     if (!msg?.type) return;
-    // Every editor's popup posts to this same window. Only this editor's own
-    // popup is listened to, or each request of another editor would be sent
-    // to the server a second time from here.
     if (!this.editorWindow || event.source !== this.editorWindow) return;
     switch (msg.type) {
       case "bridgeReady":
@@ -135,8 +118,6 @@ class SpellEditor {
         if (this.lastData) this.toEditor({ type: "data", data: this.lastData });
         break;
       case "request":
-        // Only spell editor packets leave from here; the server re-checks
-        // permission on every one of them.
         if (typeof msg.packet === "string" && msg.packet.startsWith("SPELL_EDITOR_")) {
           sendRequest({ type: msg.packet, data: msg.data });
         }

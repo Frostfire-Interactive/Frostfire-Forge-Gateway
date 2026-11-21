@@ -1,61 +1,3 @@
-// Form fields for the tool windows, built from a definition: the label, the
-// control, the hint under it and the problem with it, in the markup that
-// css/tools.css styles. An editor describes its fields and this draws them.
-//
-// ------------------------------ how to use ------------------------------
-//
-//   const fields = new FieldRenderer({
-//     rerender: () => this.render(),                          // draw the form again (a field that shows or hides others)
-//     assetOptions: (field, value) => [...],                  // what an "asset" or "sheet" field offers, when the field has no `assets` of its own
-//     flags: [{ bit: 1, label: "Hostile" }],                  // the boxes of a "flags" field
-//     missingImage: () => `${assetServer}/icon?name=missing_icon`,   // tried once when a picture fails to load
-//   });
-//   const grid = el("div", "tl-fields");                      // the grid fields sit in
-//   grid.appendChild(fields.renderField(field, target, touch, { error, disabled }));
-//
-// renderField(field, target, touch, state?) edits target[field.key] in place
-// and calls touch() after every change. `state.error` is the problem to show
-// under it, `state.disabled` turns its controls off. It returns the field's
-// element, which carries data-field="<field.path or field.key>".
-//
-// A field definition:
-//   { key, label, type, hint?, ... }
-//   type "text"       one line.            + maxLength, placeholder
-//        "textarea"   several lines; takes the whole row.   + maxLength, rows
-//        "number"     "" is stored as null. + min, max, step, unit ("pixels", "seconds": written inside the field)
-//        "select"     a dropdown.          + options: () => [{ value, label }]. A value made of digits is stored as a number,
-//                                            unless the field says asText (a map may be called "42").
-//                                            A stored value that is not offered stays visible as its own choice.
-//        "segmented"  the same, side by side, for two to four choices: one stop for the Tab key, the arrow keys move
-//                     through the choices, and each button carries its value as data-value.
-//        "switch"     on or off, stored as true or false.
-//        "checkbox"   the same as a tick box.
-//        "flags"      a box of tick boxes, one per bit of the context's `flags`; takes the whole row.
-//        "asset"      a button showing the picked entry, opening a searchable picker.
-//                     + assets: () => [{ value, label, image?, quality? }], noIcons (names only), searchFirst (nothing listed until typed),
-//                       fallback (the icon shown where there is no picture)
-//        "sheet"      the same; the context's assetOptions(field, value) says what is offered (field.slot tells it which).
-//        "list"       names kept as one comma-separated text (null when empty), shown as chips with a picker to add one.
-//                     + assets (what can be added), known: (name) => boolean (a name that fails it is marked), noun ("particle")
-//        "money"      gold, silver and copper boxes for an amount stored in copper.
-//        "readonly"   the value, written out; not editable.
-//   Any field:  hint       a line under the control, in plain words (read out with the control, or with the group
-//                          of them, by a screen reader)
-//               rerender   draw the form again after it changes
-//               wide       take the whole row;   newRow   start a new row
-//               path       where its problems are reported, when that is not its key ("effects.0.value")
-//
-// Also here: orderFields(fields) (switches and tick boxes after the rest,
-// flags last), sheetOptions(sheetsBySlot, slot, current), pick(values),
-// nameList("a, b") -> ["a", "b"], COPPER_PER_SILVER, COPPER_PER_GOLD, and an
-// amount of copper written for reading: coins(1250) is an element, "12" and
-// "50" each with its coin mark (null when it is nothing); coinWords(1250) is
-// "12 silver and 50 copper", for a sentence.
-//
-// Problems: setFieldError(element, "Damage must be a whole number.") marks a
-// field and shows the words under it; setFieldError(element, null) clears it.
-// FieldRenderer.openAssetPicker(title, options, onPick, { icons, searchFirst, current, fallback })
-// opens the picker on its own.
 import { el, icon, listed, num, openDialog, searchBox, segments, switchControl, thumb, type IconName } from "./toolkit.js";
 
 export type FieldType =
@@ -192,10 +134,6 @@ export function coins(copper: unknown): HTMLElement | null {
   return box;
 }
 
-/**
- * Switches and tick boxes always come after the other fields, and the
- * full-width flag grid last of all; within each group the declared order is kept.
- */
 export function orderFields(fields: Field[]): Field[] {
   const rank = (field: Field) => (field.type === "flags" ? 2 : field.type === "checkbox" || field.type === "switch" ? 1 : 0);
   return fields
@@ -239,10 +177,6 @@ export function sheetOptions(
 
 let ids = 0;
 
-/**
- * Marks a field as having a problem and says what it is under the control, or
- * clears the problem with `null`. The field keeps its hint.
- */
 export function setFieldError(wrap: HTMLElement | null, message?: string | null): void {
   if (!wrap) return;
   wrap.querySelector(":scope > .tl-field-error")?.remove();
@@ -261,10 +195,6 @@ export function setFieldError(wrap: HTMLElement | null, message?: string | null)
 export class FieldRenderer {
   constructor(private ctx: FieldContext) {}
 
-  /**
-   * One form field. It edits `target[field.key]` and calls `touch` on change.
-   * A `hint` is a line under the control; `state.error` is shown under that.
-   */
   renderField(field: Field, target: any, touch: () => void, state: FieldState = {}): HTMLElement {
     const toggle = field.type === "switch" || field.type === "checkbox";
     const wide = field.wide || field.type === "textarea" || field.type === "flags" || field.type === "list";
@@ -439,10 +369,6 @@ export class FieldRenderer {
     return field.assets?.() ?? this.ctx.assetOptions?.(field, value) ?? [];
   }
 
-  /**
-   * Asset fields open a searchable picker rather than a dropdown: asset lists get
-   * long, and a dropdown cannot show the pictures.
-   */
   private pickerField(field: Field, target: any, touch: () => void, id: string): HTMLElement {
     const btn = el("button", "tl-picker");
     btn.type = "button";
@@ -480,11 +406,6 @@ export class FieldRenderer {
     });
   }
 
-  /**
-   * The searchable picker: every entry with its picture when it has one, or a
-   * list of names. Picking an entry closes it; so do Escape, the close button
-   * and a click outside.
-   */
   openAssetPicker(title: string, options: AssetOption[], onPick: (option: AssetOption) => void, opts: PickerOptions = {}): void {
     const icons = opts.icons !== false;
     const dialog = openDialog(title);
@@ -542,10 +463,6 @@ export class FieldRenderer {
     list.querySelector(".is-selected")?.scrollIntoView({ block: "center" });
   }
 
-  /**
-   * Names kept as one comma-separated text, shown as chips that can each be
-   * removed, with a picker of what can be added.
-   */
   private listField(field: Field, target: any, touch: () => void): HTMLElement {
     const chips = el("div", "tl-chips");
     const noun = field.noun ?? "entry";
@@ -583,11 +500,6 @@ export class FieldRenderer {
     return chips;
   }
 
-  /**
-   * Gold, silver and copper boxes for an amount stored as a single copper
-   * total (what the server keeps and drops). Silver and copper are 0-99; each
-   * edit writes the combined total back.
-   */
   private moneyField(field: Field, value: unknown, target: any, touch: () => void): HTMLElement {
     const total = Math.max(0, Math.floor(Number(value) || 0));
     const row = el("div", "tl-money");

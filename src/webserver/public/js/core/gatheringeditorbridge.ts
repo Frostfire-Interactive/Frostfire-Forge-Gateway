@@ -1,11 +1,3 @@
-// Gathering editor popup (/gathering). USER REQUEST 2026-10-17: "Add a gathering system with an editor that allows
-// setting the item to spawn (image) selectable from the asset server. Able to configure spawn rate and preview how
-// dense it will look". Talks to the game window over postMessage; the game window forwards the requests to the
-// server (engine src/systems/gathering/editor.ts), which validates and saves, and draws the preview in the world.
-// The window itself is the shared workbench (tooleditor.ts).
-//
-// A record is an area of the map the admin is on: a circle where nodes of one item spawn. The list holds every area
-// of that map; there are few, so it is searched here, at every key.
 import { EditorShell, type ListRow, type RecordState } from "./tooleditor.js";
 import { FieldRenderer, setFieldError, type AssetOption, type Field } from "./toolfields.js";
 import { button, card, count, el, noticeDialog, shown, tag, thumb, toast } from "./toolkit.js";

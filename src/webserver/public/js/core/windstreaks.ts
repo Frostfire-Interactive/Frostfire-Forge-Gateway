@@ -1,10 +1,3 @@
-/**
- * Wind streaks: the thin white lines that show which way the wind blows and how hard, drawn on the weather canvas
- * over whatever else the weather draws. A streak is a path laid down in the world when it spawns: a shallow wave along
- * the wind, sometimes with one curl in it. A line of fixed length then runs that path from start to end, so the streak
- * draws itself on, travels, and draws itself off. Stronger wind gives more streaks, moving faster; with no wind, or a
- * wind with no direction, there are none.
- */
 const isMobileDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 
 const MAX_STREAKS = isMobileDevice ? 5 : 10;
@@ -114,11 +107,6 @@ function draw(ctx: CanvasRenderingContext2D, s: WindStreak, offX: number, offY: 
   ctx.fill();
 }
 
-/**
- * Advances and draws the wind streaks for one frame of the weather canvas. `windSpeed` and `windDirection` are the
- * current weather's (the speed with its gusts already in it); `offX`, `offY` are the world position of the canvas's
- * top left corner, `width` and `height` its size and `margin` the part of it that lies off screen on every side.
- */
 export function windStreaks(
   ctx: CanvasRenderingContext2D, deltaMs: number, windSpeed: number, windDirection: string | null,
   offX: number, offY: number, width: number, height: number, margin: number
@@ -142,9 +130,6 @@ export function windStreaks(
     }
   }
 
-  // Streaks already under way when the wind drops go on at the pace of a light breeze, fading out over CALM_FADE
-  // seconds. USER REPORT 2026-10-16 ("Weather effects like wind ... stay around even when the weather has changed"):
-  // they ran their whole path, two or three seconds, after the weather had turned still.
   const speed = Math.min(900, 260 + Math.max(0, windSpeed) * 18);
   ctx.fillStyle = "#ffffff";
   for (const s of streaks) {

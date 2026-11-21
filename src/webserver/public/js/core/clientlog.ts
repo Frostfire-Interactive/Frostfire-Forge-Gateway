@@ -1,8 +1,3 @@
-// Forwards console errors/warnings and uncaught errors to the webserver
-// (POST /api/client-log), so problems on devices without devtools (phones)
-// show up in the server log. Messages still print to the console as usual.
-// The first batch also carries a one-line device/WebGL report.
-
 type Level = "error" | "warn" | "info";
 
 const ENDPOINT = "/api/client-log";
@@ -17,8 +12,6 @@ let sending = false;
 
 function describe(value: unknown): string {
   if (value instanceof Error) {
-    // Chromium stacks start with "Name: message". Safari and Firefox stacks are
-    // frames only, so without this the reason for the error never reaches the log.
     const summary = `${value.name}: ${value.message}`;
     if (!value.stack) return summary;
     return value.stack.includes(value.message) ? value.stack : `${summary}\n${value.stack}`;

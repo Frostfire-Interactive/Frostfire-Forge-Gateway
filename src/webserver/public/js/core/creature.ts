@@ -1,5 +1,3 @@
-// Client view of server-authoritative creatures. The client never simulates
-// creatures; it only renders the snapshots the game server sends.
 import { initializeLayeredAnimation, updateLayeredAnimation, changeLayeredAnimation, getVisibleLayersSorted } from "./layeredAnimation.js";
 import { createCachedImage, getCachedImage } from "./images.js";
 import { getSkeletonSpriteUrl } from "./skeletons.js";
@@ -99,8 +97,6 @@ export function applyCreatureSpawn(data: any): void {
     const now = performance.now();
     // Keep an already-loaded sprite when the same creature is re-sent.
     const sameSprite = !!existing && existing.templateId === view.templateId && existing.sprite === view.sprite;
-    // The same creature sent again slides on from where it is drawn. A new one, one that respawned, or one far from
-    // there (it walked while out of view) starts where the server says it is: it is not drawn somewhere else first.
     const slide = !!existing && sameSprite
       && (existing.state === "dead") === (view.state === "dead")
       && Math.hypot(existing.renderX - c.x, existing.renderY - c.y) <= SNAP_DISTANCE;
@@ -128,11 +124,6 @@ function hasSpriteToLoad(c: CreatureView): boolean {
   return !!c.spriteLayers && c.spriteType !== "none" && !!c.sprite && !spriteFailures.has(c.sprite);
 }
 
-/**
- * A living creature is not drawn while its sprite loads: it would show as the
- * placeholder body first, and then change. It shows once the sprite is there,
- * or failed, or has taken too long.
- */
 function waitingForSprite(c: CreatureView, now: number): boolean {
   return c.state !== "dead" && c.loadingSince > 0 && now - c.loadingSince < SPRITE_WAIT_MS;
 }
@@ -149,10 +140,6 @@ async function loadCreatureSprite(c: CreatureView): Promise<void> {
   }
 }
 
-/**
- * The creature as it is held now, when it still has the sprite `c` was loading:
- * the server may have sent it again meanwhile, and the copy it sent is the one drawn.
- */
 function holderOf(c: CreatureView): CreatureView | null {
   const now = creatures.get(c.id);
   return now && now.templateId === c.templateId && now.sprite === c.sprite ? now : null;
@@ -360,12 +347,6 @@ export function applyCreatureCombatText(data: any): void {
   if (floatingTexts.length > 100) floatingTexts.splice(0, floatingTexts.length - 100);
 }
 
-/** Creature under a world-space point, nearest first. Corpses only when `corpses` is set. */
-/**
- * Creature under a world point, nearest first. The hit circle is centred on the
- * sprite's middle and covers most of a 64px body; `slop` widens it for touch,
- * where a fingertip is far less precise than a cursor.
- */
 export function creatureAt(worldX: number, worldY: number, corpses = false, slop = 0): CreatureView | null {
   let best: CreatureView | null = null;
   let bestDist = Infinity;
@@ -417,10 +398,6 @@ function arrowPalette(c: CreatureView): ArrowPalette {
   return TARGET_ARROWS.neutral;
 }
 
-/**
- * Where the target arrow goes over a creature, and how: its tip just over the head (over the cast bar
- * while it casts), or over the skeleton of a corpse. Drawn by the renderer over the top tile layers.
- */
 export function targetArrowFor(c: CreatureView): { x: number; tipY: number; palette: ArrowPalette; alpha: number } | null {
   // Not drawn yet (its sprite is loading, or it is out of view): nothing over it either.
   if (!c.shownAt) return null;
@@ -441,11 +418,6 @@ export function targetArrowFor(c: CreatureView): { x: number; tipY: number; pale
 
 let lastRenderAt = 0;
 
-/**
- * Moves every creature along and steps its animation for this frame, and
- * returns the ones in view. The renderer draws those with drawCreature, in
- * depth order with the players.
- */
 export function stepCreatures(isInView: (x: number, y: number) => boolean): CreatureView[] {
   const now = performance.now();
   const deltaSeconds = Math.min(0.1, lastRenderAt ? (now - lastRenderAt) / 1000 : 0);
@@ -510,15 +482,6 @@ export function drawFloatingTexts(
   ctx.restore();
 }
 
-/** Draws the creature's sprite centred on its anchor. Returns the drawn height, or 0 if nothing was drawn. */
-/**
- * Where the sprite's feet land, and how tall it is, without drawing anything.
- *
- * A sprite frame is mostly empty space below the character, so the feet are not
- * the bottom edge of the image. Players put their shadow a quarter of a frame
- * below the anchor (+16 on a 64px frame); creatures use the same rule so both
- * stand on the ground the same way.
- */
 export const FEET_FRACTION = 0.25;
 
 function spriteMetrics(c: CreatureView): { height: number; feetY: number } | null {
@@ -542,9 +505,6 @@ function spriteMetrics(c: CreatureView): { height: number; feetY: number } | nul
 }
 
 function drawCreatureSprite(ctx: CanvasRenderingContext2D, c: CreatureView): number {
-  // The template's scale grows every layer about the frame centre (like
-  // players), with each layer's offset scaled too - so head, body and gear
-  // keep their relative alignment at any scale instead of overlapping.
   const scale = c.scale > 0 ? c.scale : 1;
   const draw = (image: CanvasImageSource, width: number, height: number, ox: number, oy: number): void => {
     ctx.drawImage(
@@ -581,11 +541,6 @@ function drawCreatureSprite(ctx: CanvasRenderingContext2D, c: CreatureView): num
 /** Longest edge of a corpse skeleton, matching player death markers. */
 const CORPSE_SKELETON_SIZE = 56;
 
-/**
- * A dead creature is drawn as a skeleton, the same marker players leave, in
- * place of its sprite. It stays as long as the server keeps the corpse (so it
- * can still be looted), then disappears with it.
- */
 function drawCreatureCorpse(ctx: CanvasRenderingContext2D, c: CreatureView): void {
   const img = getCachedImage(getSkeletonSpriteUrl());
   if (!img.complete || img.naturalWidth === 0) return;
@@ -611,11 +566,6 @@ const LOOT_SPARKLE_MS = 1600;
 /** How far a sparkle rises before it is gone. */
 const LOOT_SPARKLE_RISE = 30;
 
-/**
- * "You can loot this": small gold sparkles that rise from the corpse and fade.
- * Each one's spot and timing come from the creature's id and the clock, so
- * nothing is kept between frames.
- */
 function drawLootSparkles(ctx: CanvasRenderingContext2D, c: CreatureView, x: number, y: number, width: number, fade: number): void {
   const now = performance.now();
   for (let i = 0; i < LOOT_SPARKLES; i++) {
@@ -684,8 +634,6 @@ export function drawCreature(ctx: CanvasRenderingContext2D, c: CreatureView, tar
   ctx.save();
   ctx.globalAlpha = fade;
 
-  // Ground markers go under the creature's feet and are drawn before the
-  // sprite, so nothing is painted over the creature itself.
   const metrics = spriteMetrics(c);
   const groundY = groundLine(c, metrics);
   const groundRx = metrics ? Math.max(radius, 10 * (c.scale || 1)) : radius;
@@ -709,8 +657,6 @@ export function drawCreature(ctx: CanvasRenderingContext2D, c: CreatureView, tar
   }
   ctx.globalAlpha = fade;
 
-  // Bars and icons sit above the drawn sprite, so they follow scaled creatures.
-  // Measured from the feet so bars clear the head of a tall or scaled sprite.
   const headY = spriteHeight > 0 ? groundY - spriteHeight : cy - radius;
   drawNameplate(ctx, c, targeted, headY, groundY);
   drawCastBar(ctx, c, headY);
@@ -720,8 +666,6 @@ export function drawCreature(ctx: CanvasRenderingContext2D, c: CreatureView, tar
 /** Same layout as player nameplates: name below the feet, subname in the guild slot, health bar when targeted. */
 function drawNameplate(ctx: CanvasRenderingContext2D, c: CreatureView, targeted: boolean, headY: number, groundY: number): void {
   const x = c.renderX;
-  // Below the feet (feet sit a quarter frame under the anchor, players offset
-  // their name the same way), so a scaled creature's shadow never lands on it.
   const nameY = groundY + 34;
   const tappedByOther = c.tap === "other";
 

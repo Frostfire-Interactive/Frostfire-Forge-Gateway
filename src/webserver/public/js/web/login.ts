@@ -11,8 +11,6 @@ if (!login) {
   throw new Error('login-button not found');
 }
 
-// The gateway dashboard sends admins here to sign in (/?next=gateway). The
-// realm selection page sends them back to it once they have.
 if (new URLSearchParams(window.location.search).get('next') === 'gateway') {
   sessionStorage.setItem('login-return', '/gateway');
 }
@@ -110,9 +108,6 @@ const guest_listener = async (event?: Event) => {
 
 guestLogin.addEventListener('click', guest_listener);
 
-// Demo links open straight into guest play (/?guest=1). The parameter is
-// dropped from the address first so Back to this page does not make
-// another guest account.
 const pageParams = new URLSearchParams(window.location.search);
 if (pageParams.get('guest') === '1') {
     pageParams.delete('guest');
@@ -127,8 +122,6 @@ document.addEventListener('keydown', (event) => {
     }
 });
 
-// If Safari panned the page for the keyboard, settle back to the top
-// once editing ends so the card is never left pushed up.
 document.addEventListener('focusout', () => {
     window.setTimeout(() => {
         if (document.activeElement === document.body) {

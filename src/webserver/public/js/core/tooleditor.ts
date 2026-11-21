@@ -291,11 +291,6 @@ export class EditorShell {
     if (window.opener) window.opener.postMessage(msg, "*");
   }
 
-  /**
-   * Listen to the game window and tell it this window is ready. Messages from
-   * anywhere else are ignored. When this window closes the game window is
-   * told; when the game window is gone, this one closes.
-   */
   connect(onMessage: (msg: any) => void): void {
     if (this.standalone) {
       this.usable(false);
@@ -308,18 +303,12 @@ export class EditorShell {
       if (e.data?.type) onMessage(e.data);
     });
     window.addEventListener("beforeunload", () => this.send({ type: "editorClosed" }));
-    // Backup for the game page closing us on unload: if the game tab is gone,
-    // this editor has nothing to talk to, so close.
     setInterval(() => {
       if (!window.opener || window.opener.closed) window.close();
     }, 1000);
     this.send({ type: "bridgeReady" });
   }
 
-  /**
-   * Until the server's first answer: the shapes of what is loading. If nothing
-   * has come after a while, the page says so and offers to ask again.
-   */
   waiting(retry: () => void): void {
     if (this.standalone) return;
     this.usable(false);
@@ -351,11 +340,6 @@ export class EditorShell {
     this.usable(true);
   }
 
-  /**
-   * The server answered that this admin may not use the editor, or that it
-   * could not open it: the page says so in the server's words. With `retry`
-   * there is a button to ask again.
-   */
   refused(lines: string[], retry?: () => void): void {
     if (this.waitTimer) clearTimeout(this.waitTimer);
     this.waitTimer = null;
@@ -590,8 +574,6 @@ export class EditorShell {
       this.saveBtn.dataset.act = "save";
       actions.append(el("span", "tl-topbar-rule"), this.saveBtn);
     }
-    // On a small window (a phone, either way up) the list of records is not beside the page but slides over it
-    // (css/tools.css): this button brings it out, and a tap beside it, on a record or on New puts it away.
     const toggle = iconButton("list", "Show the list", () => this.showList(true));
     toggle.classList.add("tl-list-toggle");
     this.topEl.append(toggle, record, actions);
@@ -603,11 +585,6 @@ export class EditorShell {
     });
   }
 
-  /**
-   * On a small window, where the list of records slides over the page: bring it out or put it away. It starts out,
-   * as there is nothing open to look at yet. On a full window the list is always beside the page and this changes
-   * nothing. USER REQUEST 2026-10-07: "Update other panels to work on mobile landscape and portrait".
-   */
   showList(open: boolean): void {
     this.appEl?.classList.toggle("is-list-open", open);
   }
@@ -626,11 +603,6 @@ export class EditorShell {
     if (record?.thumb !== this.thumbSlot.firstElementChild) this.thumbSlot.replaceChildren(...(record?.thumb ? [record.thumb] : []));
   }
 
-  /**
-   * How the open record stands: saved, changed, on its way to the server,
-   * refused. Null when nothing is open. `label` replaces the usual words, for
-   * an editor where they would be wrong.
-   */
   setState(state: RecordState | null, label?: string): void {
     const text = state ? label ?? STATES[state].label : "";
     // Said again only when it changes: it is read out as a status.
@@ -667,12 +639,6 @@ export class EditorShell {
 
   // ------------------------------------------------------------ tabs, banner
 
-  /**
-   * The tab in view, how many problems each tab has (a tab with problems shows
-   * their number, so a refused save points at where to look) and how many
-   * things a tab lists. Null hides the tabs: nothing is open, or the kind in
-   * view has none.
-   */
   setTabs(active: string | null, problems: Record<string, number> = {}, counts: Record<string, number> = {}): void {
     const tabs = this.kind.tabs ?? [];
     this.tabsEl.hidden = active === null || tabs.length === 0;
@@ -734,14 +700,6 @@ export class EditorShell {
 
   // -------------------------------------------------------------------- page
 
-  /**
-   * Empties the page and hands back where the cards go: `main` for the form,
-   * `aside` for what stays in view beside it (only there with `aside`).
-   * `key` names what is being shown, the record and the tab: while it stays
-   * the same, a redraw keeps the scrolling and puts the keyboard back in the
-   * very control it was in (the second coin box of an amount, the choice
-   * picked among several), with the caret where it stood.
-   */
   page(key: string, opts: { aside?: boolean; readOnly?: boolean } = {}): { main: HTMLElement; aside: HTMLElement } {
     const same = key === this.pageKey;
     const top = same ? this.pageEl.scrollTop : 0;
@@ -797,20 +755,10 @@ export class EditorShell {
     return screen(this.pageEl, name, title, text);
   }
 
-  /**
-   * The page while no record is open: `text` says how to open or start one.
-   * When there are no records at all the page says that instead, with `none`
-   * as the sentence under it. Returns the box, to add the New button to.
-   */
   idle(text: string, none: string | null = null): HTMLElement {
     return this.screen(this.kind.icon, none === null ? `No ${this.noun} open` : `There are no ${this.plural} yet`, none ?? text);
   }
 
-  /**
-   * What is wrong with the open record, summarised at the top of the page
-   * whichever tab is in view. Fields carry their own problem; this says how
-   * many there are and where, and anything that is not about one field.
-   */
   setProblems(lines: string[], show = true): void {
     this.problems = lines;
     this.paintProblems();
@@ -853,10 +801,6 @@ export class EditorShell {
     });
   }
 
-  /**
-   * Asked on the way to another kind of record while the open one has changes
-   * that are not saved: save them first, throw them away, or stay.
-   */
   leave(name: string): Promise<"save" | "discard" | "stay"> {
     return leaveDialog(name);
   }

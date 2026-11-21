@@ -1,13 +1,3 @@
-// The world's start area behind the character page. USER REQUESTS 2026-10-14: "I want the character creator to pan over
-// the starting area of the world (don't show players or creatures)"; "it's stuttery and loads in weird. At realm
-// selection, we should pre-load the chunks".
-//
-// The realm's game server says which map its players start on and where (GET /start-area). A worker reads that part of
-// the map from the asset server as the game does (/tileset, /map-chunk) and draws it into one picture: the map's tiles
-// only, so no player, creature or NPC. The picture is kept in the browser's Cache Storage under the map's version, so
-// the realm page makes it while the player picks a realm (window.startAreaPrepare) and the character page shows it at
-// once. The pan is a CSS transform animation, run by the browser's compositor: nothing is drawn while it moves.
-// Anything that fails leaves the backdrop empty; the pages work the same without it.
 (() => {
     interface StartArea {
         name: string;
@@ -21,15 +11,8 @@
         spawnY: number;
         version?: string;
     }
-    /**
-     * Where the picture lies on the map, in map pixels, how far the view drifts from the spawn each way, and the
-     * picture's pixels to a map pixel (k).
-     */
     interface Geometry { ox: number; oy: number; w: number; h: number; panX: number; panY: number; k: number }
 
-    /** The window the picture is made for: this screen's, within these bounds. A bigger one scales the picture up. */
-    // (a phone's own size: a desktop screen is wider than the least anyway. 2026-10-16, "Optimize the character creator
-    // for mobile": the least was 1280x720, which made a phone's picture twice its screen, at two pixels to one)
     const VIEW_MIN = [512, 512];
     const VIEW_MAX = [2560, 1440];
     /** The drift: a figure eight through the spawn, these many tiles out each way, once round in PAN_PERIOD_MS. */
@@ -38,11 +21,6 @@
     const PAN_PERIOD_MS = 100000;
     /** Points on the figure eight the animation runs straight between. */
     const PAN_STEPS = 360;
-    /**
-     * How much the picture is blurred, in map pixels (a CSS pixel each when the picture is not scaled up). The blur is
-     * made once, in the picture, so it moves with the map; a CSS blur over the moving picture is made again on every
-     * frame from the screen's pixels, and flickers where the picture is scaled by an uneven amount.
-     */
     const BLUR = 8;
     const CACHE_NAME = 'start-area-v1';
     /** Part of the cache key: raise it when the picture is made differently, so old ones are not shown. */
@@ -73,16 +51,10 @@
         const w = Math.min(viewW + 2 * panX, mapW), h = Math.min(viewH + 2 * panY, mapH);
         const ox = Math.min(Math.max(0, Math.round(area.spawnX - w / 2)), mapW - w);
         const oy = Math.min(Math.max(0, Math.round(area.spawnY - h / 2)), mapH - h);
-        // A picture pixel to every two map pixels: the picture is blurred, so a finer one shows nothing more and only
-        // costs memory. The browser scales it up filtered, so it moves smoothly between pixels.
         const k = 0.5;
         return { ox, oy, w, h, panX, panY, k };
     }
 
-    /**
-     * The worker's whole code, run from its own source (it reads nothing outside itself). Given the area, the
-     * picture's place on the map and the blur in picture pixels, it answers with the picture as a PNG blob, or an error.
-     */
     function pictureWorker(): void {
         const HIDDEN = ['collision', 'nopvp', 'no-pvp', 'shadow'];
         const CHUNK_SIZES: Record<number, number> = { 16: 64, 32: 32, 64: 16 };
@@ -158,8 +130,6 @@
                 }
 
                 if (blur > 0) {
-                    // The picture with its edge pixels stretched out round it, so near an edge the blur reads more of
-                    // the edge, not empty space: the edges stay as bright as the middle.
                     const pad = Math.ceil(blur * 3);
                     const wide = new OffscreenCanvas(W + 2 * pad, H + 2 * pad);
                     const e = wide.getContext('2d')!;
@@ -202,10 +172,6 @@
     type Prepared = { area: StartArea; g: Geometry; blob: Blob };
     const preparing = new Map<string, Promise<Prepared | null>>();
 
-    /**
-     * The start area of a realm and its picture: from the cache when it was made for this version of the map, else
-     * made now and kept (the realm's pictures of other versions are dropped). Null when there is none to show.
-     */
     function prepare(serverId: string | null | undefined): Promise<Prepared | null> {
         if (!serverId) return Promise.resolve(null);
         let job = preparing.get(serverId);

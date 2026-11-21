@@ -1,14 +1,3 @@
-// NPC editor popup. Talks to the game window over postMessage; the game
-// window owns the NPCs of the map the admin stands on, shows them in the
-// world (where they are placed, dragged and clicked) and sends what is saved
-// on to the server. The window itself is the shared workbench (tooleditor.ts);
-// this file holds what is the NPC editor's own: its fields, the NPC said in
-// plain words, and its conversation with the game window.
-//
-// That conversation is not like the other editors': there is no search on the
-// server and no result of a save. The game window sends the whole list
-// whenever it changes, and a save or a delete is known to have gone through
-// when the list that comes back shows it.
 import { EditorShell, type ListRow } from "./tooleditor.js";
 import { FieldRenderer, coinWords, inAnimationsFolder, orderFields, sheetOptions, type AssetOption, type Field } from "./toolfields.js";
 import { button, card, confirmDialog, count, el, empty, iconButton, listed, tag, thumb, toast, tooltip } from "./toolkit.js";
@@ -79,22 +68,12 @@ class NpcEditorBridge {
   private availableSounds: string[] = [];
   private spriteData: { spriteSheets: Record<string, Array<{ name: string; image: string | null }>>; icons: Array<{ name: string; image: string | null }> } = { spriteSheets: {}, icons: [] };
   private selectedNpcId: number | null = null;
-  /**
-   * A private copy of the open NPC, never the object the game window owns:
-   * the fields edit this in place, and the game window replaces its own rows
-   * on every refresh.
-   */
   private draft: any = null;
   private edit: Edit = { direction: "down", given: [], ended: [], particles: [], stock: [] };
   /** The row the draft was copied from, as text: a refresh that brings the same row again changes nothing. */
   private source = "";
   /** Unsaved edits live in the draft; a refresh must not overwrite them. */
   private dirty = false;
-  /**
-   * The NPCs changed here, or moved in the world, and not saved since. The
-   * game window keeps such changes with the NPC while the editor is open, so
-   * they are still there, unsaved, when the NPC is opened again.
-   */
   private unsaved = new Set<number | null>();
   /** The NPCs whose last save was never seen to arrive. */
   private unconfirmed = new Set<number | null>();
@@ -111,8 +90,6 @@ class NpcEditorBridge {
   /** The page was not drawn again because a dialog was open over it; it is once the dialog has closed. */
   private stale = false;
 
-  // The game window relays no result of a save or a delete, only the list as
-  // it is afterwards: each is waited for here until the list shows it.
   private saving: { id: number | null; label: string; timer: ReturnType<typeof setTimeout> } | null = null;
   /** The NPCs being deleted, by id: several can be on their way at once. */
   private deleting = new Map<number, { label: string; timer: ReturnType<typeof setTimeout> }>();
@@ -298,18 +275,10 @@ class NpcEditorBridge {
     };
   }
 
-  /**
-   * Re-sync the draft with the refreshed list. Unsaved edits win: a list update
-   * can arrive because any player on this map changed an NPC, and that must not
-   * throw away what is being typed.
-   */
   private refreshDraftFromList(): boolean {
     if (this.dirty || this.selectedNpcId === null) return false;
     const fresh = this.npcs.find((n: any) => n.id === this.selectedNpcId);
     if (!fresh) return false;
-    // Most list updates are about some other NPC. Drawing the page again then
-    // would be for nothing. Nor under an open picker: what is picked there
-    // goes into the draft it was opened on.
     if (JSON.stringify(fresh) === this.source || dialogOpen()) return false;
     this.setDraft(fresh);
     return true;
@@ -364,11 +333,6 @@ class NpcEditorBridge {
     return changed;
   }
 
-  /**
-   * The open NPC is gone from the list (deleted from its row, elsewhere, or an
-   * unsaved one discarded): close it instead of editing something that no
-   * longer exists.
-   */
   private dropDeletedSelection(): boolean {
     if (!this.draft) return false;
     if (this.npcs.some((n: any) => n.id === this.selectedNpcId)) return false;
@@ -597,9 +561,6 @@ class NpcEditorBridge {
     };
     fact("Map", d.map ? String(d.map) : "The map you are on", d.map ? "" : "Set when the NPC is saved.");
     this.placeEl = fact("Position", this.placeOf(d), "Drag the NPC in the game window, type where it stands, or bring it to you.");
-    // Where it stands can be typed, and it can be brought to where the admin's character is: an NPC that has ended
-    // up off the map, or anywhere it cannot be reached, cannot be dragged back (USER REQUEST 2026-10-07: "Add a
-    // 'Bring to' button to NPCs and editable position fields"). Like a drag, neither is saved until Save is pressed.
     if (!d.position) d.position = {};
     const spot = el("div", "tl-fields ne-spot");
     const across = this.field({ key: "x", label: "X", type: "number", unit: "px", hint: "Across the map, from its left edge." }, d.position, "position.x");
@@ -639,11 +600,6 @@ class NpcEditorBridge {
     ));
   }
 
-  /**
-   * Appearance: the same sprite tools as the creature editor, mapped onto NPC
-   * keys. The body sheet and the static image both live in sprite_body; NPCs
-   * have no scale.
-   */
   private renderAppearance(main: HTMLElement): void {
     const d = this.draft;
     const spriteType = String(d.sprite_type ?? "none");
@@ -738,10 +694,6 @@ class NpcEditorBridge {
     return wanted ? this.availableItems.find((item) => item.name.toLowerCase() === wanted) : undefined;
   }
 
-  /**
-   * What a stocked item is sold for, under its card's title: its price here, or the item's own buy price, or why the
-   * price asked is not the one charged.
-   */
   private stockLine(entry: { item: string; price: number | null }): string {
     const item = this.itemNamed(entry.item);
     if (!entry.item) return "Pick the item this NPC sells.";
@@ -752,11 +704,6 @@ class NpcEditorBridge {
     return asked > 0 ? `Sold for ${coinWords(asked)}, ${whose}. Vendors pay ${coinWords(item.sell_price)} for it.` : "Given away for nothing.";
   }
 
-  /**
-   * What the NPC sells. An NPC with anything in stock is a vendor: players
-   * buy from it, and it buys what they sell at each item's own sell price
-   * (set in the item editor).
-   */
   private renderVendor(main: HTMLElement): void {
     // An inn is one more service an NPC offers, with or without goods.
     const inn = this.section(main, "Inn", "Where players set the home their home item returns them to");
@@ -962,10 +909,6 @@ class NpcEditorBridge {
     return wrap;
   }
 
-  /**
-   * What the game window is sent: the NPC as the form has it now. The game
-   * window keeps the position (it is dragged there) and the map.
-   */
   private formData(): any {
     if (this.draft === null && this.selectedNpcId === null) return null;
     const d = this.draft;

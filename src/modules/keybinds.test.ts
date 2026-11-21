@@ -3,9 +3,6 @@ import {
   ACTIONS, DEFAULT_BINDINGS, actionForCode, actionsShown, codeLabel, isBindableCode, parseBindings, rebind, serializeBindings,
 } from "../webserver/public/js/core/keybinds";
 
-// The hotkey rebinding screen (options menu, Hotkeys): every action with a keyboard shortcut and its key. The defaults
-// are exactly the keys that were hard-coded before, so a player who rebinds nothing sees no change.
-
 test("the defaults are the keys that were hard-coded", () => {
   expect(DEFAULT_BINDINGS.inventory).toBe("KeyB");
   expect(DEFAULT_BINDINGS.spellbook).toBe("KeyP");

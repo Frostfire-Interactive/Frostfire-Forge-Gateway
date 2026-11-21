@@ -1,10 +1,3 @@
-// When the game client tries again after losing its connection (socket.ts attemptReconnect).
-//
-// A server restart or a deploy takes minutes: the server has to come back, register with the gateway again and load
-// its maps, and until its heartbeat runs out the gateway still lists the old one as online. So the client keeps trying
-// for RECONNECT_WINDOW_MS after the loss, waiting a little longer after each failed attempt, instead of giving up
-// after a fixed number of quick tries.
-
 /** The wait before the first attempt. */
 export const RECONNECT_FIRST_DELAY_MS = 2000;
 /** The longest wait between two attempts. */

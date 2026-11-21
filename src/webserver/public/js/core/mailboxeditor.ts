@@ -1,12 +1,3 @@
-// Game-window half of the mailbox editor (/mailbox): owns the popup window and relays its messages to the
-// server, as classeditor.ts does, and holds the editor's tools in the world, as npceditor.ts does. USER REQUEST
-// 2026-10-17: "Rebuild the mailbox editor on the standard editor pattern, like the NPC editor".
-//
-// The popup says which map it has open and its mailboxes as they are being edited ("preview"): while that is
-// the map the admin is on, they are drawn where the popup has them, each in a frame, and a mailbox is dragged
-// with the mouse to move it (the popup is told where it is, "moved"; nothing is saved until Save). A click or a
-// tap on a mailbox picks it in the popup ("pick"). The mailboxes as the server holds them (MAILBOXES) are drawn
-// again when the popup shows another map, or closes.
 import { sendRequest, cachedPlayerId } from "./socket.js";
 import Cache from "./cache.js";
 import { mailboxAt, setMailboxes } from "./mail.js";
@@ -55,8 +46,6 @@ class MailboxEditor {
 
   constructor() {
     window.addEventListener("message", (e) => this.onBridgeMessage(e));
-    // The game page is going away (refresh, close, navigation): take the
-    // popup with it, since the reloaded page has no link back to it.
     window.addEventListener("pagehide", () => {
       try {
         if (this.editorWindow && !this.editorWindow.closed) this.editorWindow.close();
@@ -164,9 +153,6 @@ class MailboxEditor {
   private onBridgeMessage(event: MessageEvent): void {
     const msg = event.data;
     if (!msg?.type) return;
-    // Every editor's popup posts to this same window. Only this editor's own
-    // popup is listened to, or each request of another editor would be sent
-    // to the server a second time from here.
     if (!this.editorWindow || event.source !== this.editorWindow) return;
     switch (msg.type) {
       case "bridgeReady":
@@ -178,8 +164,6 @@ class MailboxEditor {
         }
         break;
       case "request":
-        // Only mailbox editor packets leave from here; the server re-checks
-        // permission on every one of them.
         if (typeof msg.packet === "string" && msg.packet.startsWith("MAILBOX_EDITOR_")) {
           // with the maps visited last, which the list shows while nothing is searched
           sendRequest({ type: msg.packet, data: { ...(msg.data && typeof msg.data === "object" ? msg.data : {}), recent: recentVisits() } });

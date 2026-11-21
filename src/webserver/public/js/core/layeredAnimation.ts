@@ -10,24 +10,10 @@ import { nameLayerSheets } from './layersheets.ts';
 
 const spriteSheetCache: SpriteSheetCache = {};
 
-/**
- * Animation Frame Sequence Cache
- * Caches pre-built animation frame sequences to avoid rebuilding them on every animation change
- * Key format: `${spriteName}:${animationName}` (e.g., "body:walk_down")
- */
 const animationFrameCache: Map<string, AnimationFrame[]> = new Map();
 
-/**
- * Pending animation frame builds to prevent duplicate work when multiple layers request the same animation concurrently
- * Stores promises that are currently being built to avoid race conditions
- */
 const pendingAnimationFrameBuilds: Map<string, Promise<AnimationFrame[]>> = new Map();
 
-/**
- * Sprite Sheet Template Cache
- * Caches fetched sprite sheet templates to avoid duplicate network requests
- * Key: template URL
- */
 const spriteSheetTemplateCache: Map<string, Promise<any>> = new Map();
 
 // Fetch sprite sheet template from asset server with caching
@@ -66,17 +52,12 @@ async function resolveSpriteUrl(spriteUrl: any): Promise<any> {
 
   // If it has templateUrl, fetch the template
   if (spriteUrl.templateUrl) {
-    // Copy it: the fetch cache hands out one shared object per URL, and every
-    // sheet sharing that template (all NPCs/creatures share npc_body_base) sets
-    // its own imageSource below - mutating the shared one swaps their images.
     const template = { ...(await fetchSpriteSheetTemplate(spriteUrl.templateUrl)) };
 
     // Extract base URL from templateUrl
     const baseUrl = spriteUrl.templateUrl.substring(0, spriteUrl.templateUrl.indexOf('?'));
     const assetServerUrl = baseUrl.substring(0, baseUrl.lastIndexOf('/'));
 
-    // Use the provided imageUrl if available (for equipment sprites using shared templates),
-    // otherwise convert template's imageSource to full asset server URL
     if (spriteUrl.imageUrl) {
       // Equipment sprite with shared template - use the equipment's specific image
       template.imageSource = spriteUrl.imageUrl;
@@ -95,8 +76,6 @@ async function resolveSpriteUrl(spriteUrl: any): Promise<any> {
     return template;
   }
 
-  // If it only has imageUrl (equipment sprites), construct minimal template
-  // Equipment should animate with the same animation states as the body
   if (spriteUrl.imageUrl) {
     const createDirections = (frameDuration: number, loop: boolean) => ({
       down: { frames: [0], frameDuration, loop, offset: { x: 0, y: 0 } },
@@ -130,11 +109,6 @@ async function resolveSpriteUrl(spriteUrl: any): Promise<any> {
   throw new Error(`Invalid sprite data: ${JSON.stringify(spriteUrl)}`);
 }
 
-/**
- * A worn item's sheet: equipment is drawn over the body, so one that cannot be fetched (not on the asset server) is
- * left off with a warning rather than failing the whole character. Failing it kept every layer as it was, so the item
- * worn before stayed drawn after a swap.
- */
 async function resolveWornSprite(spriteUrl: any): Promise<any> {
   try {
     return await resolveSpriteUrl(spriteUrl);
@@ -381,9 +355,6 @@ async function createAnimationLayer(
     }
   }
 
-  // Keyed by the image too: NPC/armor templates carry the same internal name as
-  // the player ones ("player_body_base"), so a name-only key made a creature's
-  // frames leak into the player's body layer and vice versa.
   const frameCacheKey = `${type}:${cacheKey}`;
   const frames = await getOrBuildAnimationFrames(
     frameCacheKey,
@@ -437,10 +408,6 @@ export function updateLayeredAnimation(
   }
 }
 
-/**
- * Get or build animation frames with caching
- * Avoids rebuilding frame sequences on every animation change
- */
 async function getOrBuildAnimationFrames(
   spriteName: string,
   animationName: string,
@@ -482,14 +449,7 @@ export async function changeLayeredAnimation(
   if (layeredAnim.currentAnimationName === newAnimationName) return;
 
   layeredAnim.currentAnimationName = newAnimationName;
-  // Timestamp of the last applied pose change. The stall-revert fallback
-  // must not kill a freshly applied walk state whose position datagrams
-  // simply haven't arrived yet (UDP reorder after a pause).
   layeredAnim._animAppliedAt = performance.now();
-  // Monotonic change token: frame builds resolve asynchronously, so a fast
-  // stop/start sequence can have an older animation's rebuild land AFTER a
-  // newer one. Without the token the stale frames overwrite the current
-  // pose, leaving e.g. idle frames under a walk name (stuck-idle bug).
   const changeToken =
     ((layeredAnim as any)._animChangeToken = ((layeredAnim as any)._animChangeToken || 0) + 1);
 
@@ -544,9 +504,6 @@ export async function changeLayeredAnimation(
 
       if (!animationExists) continue;
 
-      // Update this layer's frames. The key includes the sheet's image (cacheKey
-      // is "name:imageSource") because NPC/armor templates share the player
-      // templates' internal names - a name-only key mixed their frames up.
       const frameCacheKey = `${layer.type}:${cacheKey}`;
       const frames = await getOrBuildAnimationFrames(
         frameCacheKey,
@@ -555,9 +512,6 @@ export async function changeLayeredAnimation(
         cached.extractedFramesMap
       );
 
-      // A newer animation change superseded this one while the frames were
-      // building: discard the stale result or it would pin the sprite to the
-      // wrong pose (walk name with idle frames, etc.).
       if ((layeredAnim as any)._animChangeToken !== changeToken) return;
 
       layer.frames = frames;
@@ -568,16 +522,9 @@ export async function changeLayeredAnimation(
     }
   });
 
-  // Don't block rendering - update animations asynchronously
-  // This allows the animation change to be visible immediately, with layers updating in the background
   Promise.all(templateUpdates).catch(err => console.error('Error updating animation layers:', err));
 }
 
-/**
- * A single still frame from a layer's sprite sheet, independent of whatever the
- * layer is currently animating - e.g. the first "idle_down" frame for a
- * portrait. Returns null until the sheet has loaded or if the pose is missing.
- */
 export function getLayerStillFrame(
   layer: AnimationLayer | null | undefined,
   animationName: string = "idle_down"
@@ -632,24 +579,5 @@ export function getVisibleLayersSorted(layeredAnim: LayeredAnimation): Animation
     }
     return layer;
   }).sort((a, b) => a.zIndex - b.zIndex);
-}
-
-/**
- * Clear the animation frame cache
- * Useful for memory management or testing
- */
-export function clearAnimationFrameCache(): void {
-  animationFrameCache.clear();
-}
-
-/**
- * Get animation frame cache statistics
- * Returns the number of cached animation sequences
- */
-export function getAnimationFrameCacheStats(): { size: number; entries: string[] } {
-  return {
-    size: animationFrameCache.size,
-    entries: Array.from(animationFrameCache.keys())
-  };
 }
 

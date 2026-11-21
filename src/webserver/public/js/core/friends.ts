@@ -55,11 +55,6 @@ function updateFriendOnlineStatus(friendName: string, isOnline: boolean) {
   });
 }
 
-/**
- * The players this one ignores, listed under their friends. The server holds
- * the list and holds their chat back: this only shows it, with a way to take
- * a name off again.
- */
 function updateIgnoredList(names: string[]) {
   cache.ignored = new Set(names.map((name) => name.toLowerCase()));
 

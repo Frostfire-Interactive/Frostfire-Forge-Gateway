@@ -1,14 +1,3 @@
-// Caches the tile editor's multi-tile brush preview.
-//
-// Drawn tile by tile, a picked region costs a drawImage and a strokeRect per
-// tile on every frame, which for a few thousand tiles is more than a whole
-// frame's budget. The picked tiles only change when the pick does, so they are
-// baked once into canvas blocks and a frame becomes one blit per block on
-// screen.
-//
-// Blocks rather than one canvas: a region copied from the map has no size
-// limit, and blocks are only built once they come into view.
-
 /** Target edge of one block, in pixels. Small enough that baking one does not cost a frame. */
 const BLOCK_PX = 256;
 /** Blocks kept before the ones off screen are dropped (about 256 KB each). */
@@ -18,10 +7,6 @@ const BUILDS_PER_FRAME = 2;
 /** How far a tile's outline reaches past the tile's own edge, in pixels. */
 const OUTLINE_BLEED = 1;
 
-/**
- * Draws one tile with its outline at (x, y). Returns false while the tile's
- * image is still loading, so the block is baked again once it has arrived.
- */
 export type PreviewTileDrawer = (target: CanvasRenderingContext2D, tileId: number, x: number, y: number) => boolean;
 
 export class TilePreviewCache {
@@ -42,15 +27,6 @@ export class TilePreviewCache {
     this.blocks.clear();
   }
 
-  /**
-   * Draws `tiles` with their top left corner at (originX, originY).
-   *
-   * `stamp` is whatever the tiles' appearance depends on besides their ids
-   * (the map they belong to); a different one starts the cache over. Tiles are
-   * baked at `alpha`, so outlines that overlap blend exactly as they would
-   * drawn straight onto the target. Expects the target's transform to be
-   * axis-aligned, which the map renderer's always is.
-   */
   public draw(
     target: CanvasRenderingContext2D,
     tiles: number[][],
@@ -146,8 +122,6 @@ export class TilePreviewCache {
     blockCtx.globalAlpha = this.alpha;
     blockCtx.imageSmoothingEnabled = false;
 
-    // One tile further out on every side: the neighbours' outlines reach into
-    // this block, and leaving them out would show as seams between blocks.
     let complete = true;
     for (let row = Math.max(0, row0 - 1); row < Math.min(rows, row1 + 1); row++) {
       const line = tiles[row];

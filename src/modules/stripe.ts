@@ -1,7 +1,3 @@
-// The parts of the Stripe subscription feature that can be checked without a database, a network or a
-// server: reading the three settings, checking a webhook signature, turning a Stripe subscription
-// object into the state kept on an account, and form-encoding a request body. Nothing runs when this
-// file is imported. The routes and the calls to Stripe are in systems/subscription.ts.
 import crypto from "crypto";
 
 export type StripeSettings = { secretKey: string; webhookSecret: string; priceId: string };
@@ -20,11 +16,6 @@ export const SIGNATURE_TOLERANCE_SECONDS = 300;
 
 export type SignatureResult = { ok: true } | { ok: false; reason: "missing" | "malformed" | "stale" | "mismatch" };
 
-/**
- * Checks a `Stripe-Signature` header against the exact raw request body: `t=<seconds>` and one or more
- * `v1=<hex>`, where v1 is the HMAC-SHA256 of `${t}.${raw}` with the webhook secret. The compare takes the
- * same time wherever the strings differ.
- */
 export function verifyStripeSignature(raw: string, header: string | null | undefined, secret: string, nowMs: number = Date.now()): SignatureResult {
   if (!header || !secret) return { ok: false, reason: "missing" };
 

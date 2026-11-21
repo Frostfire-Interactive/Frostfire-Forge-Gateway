@@ -1,6 +1,3 @@
-// Game-window half of the player editor: owns the popup window and relays its
-// messages to the server. It opens on one player, from /player edit or from
-// the player context menu; the editor has no in-world tools.
 import { sendRequest } from "./socket.js";
 import { config } from "../web/global.js";
 
@@ -17,8 +14,6 @@ class PlayerEditor {
 
   constructor() {
     window.addEventListener("message", (e) => this.onBridgeMessage(e));
-    // The game page is going away (refresh, close, navigation): take the
-    // popup with it, since the reloaded page has no link back to it.
     window.addEventListener("pagehide", () => {
       try {
         if (this.editorWindow && !this.editorWindow.closed) this.editorWindow.close();

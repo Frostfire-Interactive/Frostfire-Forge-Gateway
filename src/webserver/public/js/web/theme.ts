@@ -1,6 +1,3 @@
-// Light/dark theme for the account pages (login, registration, realm list,
-// password reset, profile, 2FA). The choice is shared with the documentation
-// site through the same storage key.
 (() => {
   const STORAGE_KEY = 'docs-theme';
 

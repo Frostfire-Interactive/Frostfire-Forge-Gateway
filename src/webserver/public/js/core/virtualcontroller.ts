@@ -134,10 +134,6 @@ function getNormalizedInput(): { x: number; y: number } {
     let x = deltaX / CONFIG.maxDistance;
     let y = deltaY / CONFIG.maxDistance;
 
-    // Clamp by vector magnitude, NOT per-axis. Independent clamping inflated the
-    // minor-axis component relative to the clamped major axis once the touch
-    // passed the rim, skewing atan2() toward the diagonals (the harder you
-    // pushed, the more every direction read as a diagonal).
     const rawMagnitude = Math.sqrt(x * x + y * y);
     if (rawMagnitude > 1) {
         x /= rawMagnitude;
@@ -204,8 +200,6 @@ function initializeMountButton(): void {
 
     if (!mountButton) return;
 
-    // Never let a long-press reach the document contextmenu handler (it would
-    // treat the touch as a canvas click) or the native menu.
     mountButton.addEventListener('contextmenu', (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -215,8 +209,6 @@ function initializeMountButton(): void {
         return;
     }
 
-    // Tap mounts; holding opens the mount collection instead. The hold is
-    // detected on a timer so it fires while the finger is still down.
     const LONG_PRESS_MS = 550;
     const MOVE_SLOP_PX = 12;
     let pressTimer = 0;

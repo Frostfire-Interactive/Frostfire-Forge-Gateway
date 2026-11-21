@@ -1,6 +1,3 @@
-// The timeline of the cutscene editor's popup: a row to each track, its items laid out along the scene's seconds, and
-// the playhead over them. Items are dragged along their track, stretched by their ends and picked to edit below. The
-// document is the editor's (cutsceneeditorbridge.ts): this changes the items it is shown and says that it did.
 import { el, icon, iconButton, type IconName } from "./toolkit.js";
 import type { CutsceneDoc, Item, Track } from "./cutscenedoc.js";
 
@@ -201,8 +198,6 @@ export class Timeline {
 
   private pressEmpty(e: PointerEvent, space: HTMLElement): void {
     if (e.target !== space) return;
-    // Picking draws the rows again, so only when there is something to clear: otherwise each press of a double click
-    // replaces the lane, and the browser never sends the double click.
     if (!e.ctrlKey && !e.shiftKey && this.picks.length) this.pick([]);
   }
 

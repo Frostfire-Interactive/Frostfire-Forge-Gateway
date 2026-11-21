@@ -104,12 +104,6 @@ export default async function query<T>(sql: string, values?: any[]): Promise<T[]
   return ask<T[]>({ sql, values: values || [] });
 }
 
-/**
- * Runs `statements` in order as one transaction, on one connection: all of them are kept, or none.
- * Answers with one result for each statement, as `query` would give it. Throws when nothing was
- * kept: a GuardError when a statement marked `mustChange` changed no rows, the database's own error
- * otherwise. See TransactionStatement for what `mustChange` asks of a statement.
- */
 export async function transaction(statements: TransactionStatement[]): Promise<any[]> {
   if (statements.length === 0) return [];
   return ask<any[]>({ transaction: statements });

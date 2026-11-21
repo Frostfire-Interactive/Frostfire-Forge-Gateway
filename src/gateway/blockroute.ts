@@ -1,10 +1,3 @@
-// Which node of a cluster region owns which block of each map, as the game servers report it (POST /blocks) and as
-// the webserver asks for it (GET /route). Nothing here changes who owns a block: it only answers where a login is
-// best sent first, and the game server's own check stays the authority.
-//
-// The layout is the engine's (src/cluster/blockreport.ts in the Frostfire Forge repo): per map the table's epoch, its
-// size in blocks and one character per block, row by row (by * blocksX + bx), naming the owner as an index into `nodes`.
-
 export const REPORT_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 export const NO_OWNER = ".";
 /** A report names at most this many nodes (one alphabet character each). */
@@ -17,11 +10,6 @@ export const MAX_NAME = 128;
 export const MAX_BLOCK_PX = 1048576;
 /** A report body may be this large (the biggest table is MAX_BLOCKS characters plus a little). */
 export const MAX_BODY_BYTES = 131072;
-/**
- * What the store may hold. The keys come from game servers, but a mistaken one must not grow without end, so the
- * tables are bounded by memory, not by how many maps there are: a world has hundreds of small maps (one block each).
- * A table is counted at its characters plus a fixed amount per map and per node name (see `tableCost`).
- */
 export const MAP_OVERHEAD_BYTES = 1024;
 export const NODE_OVERHEAD_BYTES = 32;
 /** The most one region's tables may add up to. */
@@ -79,10 +67,6 @@ export function parseBlocksReport(body: unknown): ParsedReport {
   };
 }
 
-/**
- * The owner of the block a position is in; what the engine's BlockTable.ownerOf says for the same table. A position
- * on or past the far edge is in the last block, a negative or non-finite one in block 0. Null for an unowned block.
- */
 export function decodeOwner(table: RouteTable, x: number, y: number): string | null {
   const block = (px: number, size: number) => Math.min(Number.isFinite(px) ? Math.max(0, Math.floor(px / table.blockPx)) : 0, size - 1);
   const char = table.owners[block(y, table.blocksY) * table.blocksX + block(x, table.blocksX)];
@@ -110,12 +94,6 @@ export class BlockRoutes {
   private regions = new Map<string, Region>();
   private total = 0;
 
-  /**
-   * Keeps the table unless the one held is of a higher epoch. The same epoch replaces (it is the same table). A table
-   * that takes more than it replaces (a new map counts as all of it) is refused ("full") when it would take the region
-   * or the store over its budget; one that keeps its size or shrinks always goes in, so a map held is updated whatever
-   * the state of the budget.
-   */
   accept(regionId: string, map: string, table: RouteTable): Accepted {
     const region = this.regions.get(regionId);
     const held = region?.maps.get(map);
@@ -172,10 +150,6 @@ export class BlockRoutes {
     return this.dropRegion(regionId);
   }
 
-  /**
-   * A node registering into a region none of whose other nodes is alive starts it again: the tables held are from a
-   * run that is over, and a cluster whose store was wiped counts epochs from 1, below the ones held.
-   */
   dropRegionIfAlone(regionId: string | undefined, selfId: string, servers: Iterable<{ id: string; regionId?: string; lastHeartbeat: number }>, now: number, timeoutMs: number): boolean {
     if (!regionId) return false;
     for (const server of servers) {
@@ -255,11 +229,6 @@ export interface RouteDeps {
   liveNodes(regionId: string): ReadonlySet<string>;
 }
 
-/**
- * GET /route?realm=&map=&x=&y=: the node that owns that point, `{ nodeId }`, or `{ nodeId: null }` when there is no
- * table, no owner, or the owner is not alive. For the webserver, which sends the key in `x-gateway-key`: it is never
- * in the URL.
- */
 export function handleRoute(deps: RouteDeps, req: Request): Response {
   if (!deps.isValidAuthKey(req.headers.get("x-gateway-key"))) return json(401, { error: "Invalid authentication key" });
   const params = new URL(req.url).searchParams;

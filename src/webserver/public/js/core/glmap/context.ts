@@ -1,7 +1,3 @@
-// Owns the single WebGL2 context the map is rendered with. The canvas is never
-// attached to the DOM: each pass renders into its top-left corner and the 2D
-// canvases copy that region with drawImage.
-
 import {
   TILE_VS, TILE_FS, FULLSCREEN_VS, TRIM_FS, BLUR_FS,
   SHADOW_COMPOSITE_VS, SHADOW_COMPOSITE_FS,
@@ -28,8 +24,6 @@ export interface GLState {
 let state: GLState | null = null;
 let unavailable = false;
 let contextLost = false;
-// Bumped whenever the context is (re)created; GPU resources tagged with an
-// older generation are stale and must be rebuilt.
 let generation = 0;
 const restoreListeners: Array<() => void> = [];
 
@@ -80,8 +74,6 @@ function build(canvas: HTMLCanvasElement, gl: WebGL2RenderingContext): GLState {
   gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
   gl.bindVertexArray(null);
 
-  // Textures are uploaded premultiplied and untouched by colour management, so
-  // pixels match what the 2D canvas drawImage path produced.
   gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
 
@@ -98,8 +90,6 @@ function build(canvas: HTMLCanvasElement, gl: WebGL2RenderingContext): GLState {
   };
 }
 
-// Returns the GL state, creating the context on first use. Null while the
-// context is lost or if WebGL2 is unavailable (the map then doesn't render).
 export function getGL(): GLState | null {
   if (state) return contextLost ? null : state;
   if (unavailable) return null;
@@ -153,13 +143,6 @@ export function getGeneration(): number {
   return generation;
 }
 
-export function onContextRestored(listener: () => void): void {
-  restoreListeners.push(listener);
-}
-
-// Grow the (never displayed) canvas so a pass of this size fits. It only ever
-// grows, so alternating between the map passes and the minimap doesn't
-// reallocate the drawing buffer.
 export function ensureCanvasSize(s: GLState, width: number, height: number): void {
   const w = Math.max(s.canvas.width, Math.ceil(width));
   const h = Math.max(s.canvas.height, Math.ceil(height));

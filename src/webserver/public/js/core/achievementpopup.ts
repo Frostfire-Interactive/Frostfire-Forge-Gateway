@@ -1,8 +1,3 @@
-// The popup for an achievement just earned (ACHIEVEMENT_EARNED from the engine's systems/achievements): at the top centre
-// of the screen, over the game, without taking the clicks around it (only its card takes them). It fades out after
-// 5 s, or at once from its X. Several earned together are shown one after another. Design: engine repo,
-// docs/superpowers/specs/2026-10-17-achievements-design.md.
-
 /** What the server sends of an achievement just earned. */
 export interface Earned {
   id: number;

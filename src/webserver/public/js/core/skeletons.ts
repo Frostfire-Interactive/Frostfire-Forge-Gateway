@@ -3,11 +3,6 @@ import { config } from "../web/global.js";
 import { getCachedImage } from "./images.js";
 import { mapCenterOffsetX, screenToWorld, worldToScreen, worldZoom } from "./worldzoom.js";
 
-// Death skeletons are fully server-authoritative: the game server spawns a
-// marker where a player dies, sends LOAD_SKELETONS (AOI-filtered) on login,
-// broadcasts ADD_SKELETON on death and REMOVE_SKELETON on expiry. This module
-// only renders the "skeleton.png" sprite from the asset server's sprites
-// folder on the ground. It never creates markers itself.
 export const SKELETON_ICON_NAME = "skeleton";
 export const SKELETON_TTL_MS = 15 * 60 * 1000;
 
@@ -137,8 +132,6 @@ function ensureTapListener(): void {
   tapListenerAttached = true;
   const canvas = document.getElementById("game");
   if (!canvas) return;
-  // Track the gesture start so drags (joystick movement) and long-presses
-  // (context menu) are not mistaken for taps. Passive: never blocks input.
   canvas.addEventListener("touchstart", (e) => {
     const touch = (e as TouchEvent).touches?.[0];
     if (!touch) return;
@@ -175,10 +168,6 @@ function displayName(username: string): string {
   return username.charAt(0).toUpperCase() + username.slice(1);
 }
 
-// World <-> CSS-px projection shared by DOM overlays (orb, corpse marker,
-// tap hit-testing). Mirrors the game canvas transform from map.ts loadMap,
-// including the 0.85 mobile zoom - without it every overlay lands up to ~15%
-// of half-viewport off on touch devices.
 export interface ScreenView {
   viewW: number;
   viewH: number;
@@ -204,8 +193,6 @@ export function getScreenView(): ScreenView | null {
   return { viewW, viewH, zoom, centerX, camX, camY };
 }
 
-// The world zoom's own projection (worldzoom.ts), which the drawing uses too. The view is only asked for so a caller
-// with no camera yet gets null from getScreenView first.
 export function worldToScreenCss(worldX: number, worldY: number, _v: ScreenView): { x: number; y: number } {
   return worldToScreen(worldX, worldY);
 }

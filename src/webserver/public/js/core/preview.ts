@@ -36,8 +36,6 @@ function findPlayer(id: string): any | null {
   return (Array.from(cache.players).find((p: any) => String(p.id) === String(id)) as any) ?? null;
 }
 
-// Sprite templates backing a live animation (already cached), so building an
-// idle preview for another player reuses loaded art with no downloads.
 function templatesFromLiveAnim(live: any): any | null {
   if (!live?.layers) return null;
   const L = live.layers;
@@ -121,9 +119,6 @@ function tick(now: number): void {
   const dt = Math.min((now - lastFrameTime) / 1000, 0.1);
   lastFrameTime = now;
 
-  // Resolve the rebuild key + sprite source for the inspected subject. Self
-  // keys on spriteData (refreshed by noteSelfSpritesChanged); others key on
-  // their live animation object, which the server replaces on gear changes.
   let key: any;
   let spriteData: any;
   if (previewSubject.kind === "self") {
@@ -156,8 +151,6 @@ export function startStatPreview(inspectedId: string): void {
     ? { kind: "self" }
     : { kind: "other", id: String(inspectedId) };
   if (rafId !== null) {
-    // Sheet already open (e.g. inspecting someone else): drop the old build
-    // so the loop rebuilds for the new subject immediately.
     previewAnim = null;
     previewKey = null;
     buildToken++;
@@ -199,18 +192,11 @@ const SPRITE_FIELDS = [
   "armorWeaponSprite",
 ] as const;
 
-// Called when SPRITE_SHEET_ANIMATION(_BATCH) arrives for the local player.
-// Equip/unequip/mount changes arrive this way, not via PLAYER packets, so
-// without this the preview (and player.spriteData) would go stale. Merges
-// into a fresh object so the loop's reference check triggers a rebuild.
 export function noteSelfSpritesChanged(sprites: any): void {
   if (!sprites) return;
   const cache = Cache.getInstance();
   const me = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId) as any;
   if (!me) return;
-  // Compare by sprite name, not reference: every movement packet carries
-  // freshly-deserialized (content-identical) objects, and a reference check
-  // would rebuild the preview on every step.
   const keyOf = (s: any) => (s == null ? null : (typeof s === "object" ? (s.name ?? JSON.stringify(s)) : s));
   const merged: any = { ...(me.spriteData || {}) };
   let changed = false;

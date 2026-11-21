@@ -1,13 +1,6 @@
-// Game-window half of the item editor: owns the popup window and relays its
-// messages to the server. The item editor has no in-world tools.
 import { sendRequest } from "./socket.js";
 import { config } from "../web/global.js";
 
-/**
- * The game server sends asset paths, not URLs: it reaches the asset server on an
- * internal address the browser cannot resolve. Prefix them with the asset server
- * this client was configured with.
- */
 function withAssetUrls<T>(value: T): T {
   if (typeof value === "string") {
     return (value.startsWith("/") ? `${config.ASSET_SERVER_URL}${value}` : value) as unknown as T;
@@ -35,8 +28,6 @@ class ItemEditor {
 
   constructor() {
     window.addEventListener("message", (e) => this.onBridgeMessage(e));
-    // The game page is going away (refresh, close, navigation): take the
-    // popup with it, since the reloaded page has no link back to it.
     window.addEventListener("pagehide", () => {
       try {
         if (this.editorWindow && !this.editorWindow.closed) this.editorWindow.close();

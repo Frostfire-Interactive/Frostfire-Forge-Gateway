@@ -1,16 +1,3 @@
-// Loot table editor popup. Talks to the game window over postMessage; the game
-// window passes each change on to the server as a request of its own, so
-// there is no Save: every add, edit and remove is sent as it is made.
-// The window itself is the shared workbench (tooleditor.ts); this file holds
-// what is the loot table editor's own: the table of rows that is edited in
-// place, the field that adds an item, and its conversation with the game
-// window.
-//
-// The server answers each change with whether it was made, why not when it
-// was not, and the tables as they stand afterwards: the window is drawn again
-// from that list. One thing is asked of the server at a time; what is asked
-// meanwhile is sent when the answer has come, so every list is newer than the
-// one before it.
 import { qualityOf } from "./itemframe.js";
 import { EditorShell, type ListRow, type RecordState } from "./tooleditor.js";
 import { askText, button, card, count, el, empty, icon, iconButton, setBusy, thumb, toast, words } from "./toolkit.js";
@@ -55,11 +42,6 @@ class LootEditorBridge {
   /** The tables have been listed at least once. */
   private ready = false;
 
-  /**
-   * What has been asked of the server and not answered yet, in the order asked:
-   * changes, and "reload" for the tables read again because the admin asked.
-   * Only the first is with the server.
-   */
   private asked: Array<Change | "reload"> = [];
   private requests = 0;
   private pendingTimer: ReturnType<typeof setTimeout> | null = null;
@@ -81,8 +63,6 @@ class LootEditorBridge {
     onSearch: () => this.renderList(),
     liveSearch: true,
     onNew: () => void this.newTable(),
-    // Every change is sent as it is made, so there is no Save button and nothing to copy;
-    // Ctrl+S sends the row being typed in without leaving it.
     onSave: () => this.commits.get(document.activeElement as Element)?.(),
     saveButton: false,
     onDelete: () => void this.deleteTable(this.selectedTableData),
@@ -521,11 +501,6 @@ class LootEditorBridge {
     return { root, update };
   }
 
-  /**
-   * The field that adds an item to the open table: the server's items are
-   * searched as it is typed in and the matches listed under it. Picking one
-   * adds it as one item that always drops; its numbers are then edited in its row.
-   */
   private addField(): HTMLElement {
     const wrap = el("div", "tl-suggest-wrap le-add");
     const list = el("div", "tl-suggest");

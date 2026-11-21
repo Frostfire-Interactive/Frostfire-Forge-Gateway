@@ -1,9 +1,3 @@
-// The animation editor: a sprite sheet is cut into frames, the frames are put
-// in order on a timeline for each direction of each animation, and the result
-// is exported as the metadata the game reads. The page (animator.html) is its
-// own markup, styled by css/tools.css and css/animator.css; this script finds
-// its parts by their ids. It talks to no server: what it keeps is the autosave
-// in the browser's own storage, and what it writes is the exported file.
 import { icon, num, toast, tooltip, type IconName } from "../core/toolkit";
 
 declare global {
@@ -3086,10 +3080,6 @@ class AnimatorTool {
     }
   }
 
-  /**
-   * Asks before going on. `okLabel` is what the yes button says, which is the
-   * thing it does; `danger` is for a yes that loses work, and makes it red.
-   */
   private async showConfirm(title: string, message: string, okLabel: string = 'Okay', danger: boolean = false): Promise<boolean> {
     return new Promise((resolve) => {
       const modal = document.getElementById('confirm-modal');
@@ -3150,11 +3140,6 @@ class AnimatorTool {
     });
   }
 
-  /**
-   * A note in the corner that leaves by itself. Something done, or something to
-   * know, is a plain note; something that was not done ('warning') or that went
-   * wrong ('error') is shown as the other tools show a refusal, and stays longer.
-   */
   private showNotification(message: string, type: 'success' | 'warning' | 'error' | 'info' = 'success'): void {
     toast(message, type === 'warning' || type === 'error' ? 'error' : 'info');
   }

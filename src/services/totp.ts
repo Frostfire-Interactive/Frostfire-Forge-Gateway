@@ -72,11 +72,6 @@ export function generateHOTP(secret: string, counter: number, digits: number = 6
   return otp.toString().padStart(digits, "0");
 }
 
-export function generateTOTP(secret: string, period: number = 30, digits: number = 6): string {
-  const counter = Math.floor(Date.now() / 1000 / period);
-  return generateHOTP(secret, counter, digits);
-}
-
 export function verifyTOTP(secret: string, token: string, window: number = 1, period: number = 30, digits: number = 6): boolean {
   if (token.length !== digits) return false;
 

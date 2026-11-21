@@ -1,10 +1,3 @@
-// Game-window half of the cutscene editor (/cutsceneeditor): owns the popup window, relays its messages to the server,
-// as mounteditor.ts does, and shows the scene being worked on in the game. The popup (cutsceneeditorbridge.ts) holds the
-// document and sends it here after each edit. This never changes it: a mark dragged about in the game window is reported
-// to the popup, which changes the document and sends it back.
-//
-// The preview is on this client alone: no other player sees anything of it (cutscene.ts). The director's view is a layer
-// over the game that takes the pointer, so that the camera can be flown anywhere while the player stays where they are.
 import Cache from "./cache.js";
 import { config } from "../web/global.js";
 import { cachedPlayerId, sendRequest } from "./socket.js";

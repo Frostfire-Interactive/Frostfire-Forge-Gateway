@@ -1,16 +1,3 @@
-/**
- * USER REQUEST 2026-11-13 ("I would like to add a new weather type: fog", then "Just haze"): fog, drawn on the weather
- * canvas when the weather is "fog", everywhere on the map. It is a mood, not a wall: a pale haze over the scene, the
- * map and the players still plain to see through it, and no bank of it closing in around the player.
- *
- * - an even, pale grey veil over everything;
- * - soft cloud in two layers (one on a phone), the same round puffs as the blizzard's billows (zonestorm.ts), drifting
- *   slowly along the wind at two paces, so they pass one another and change shape as they go. In still air they still
- *   creep, so the fog is never frozen.
- *
- * How thick it is comes from the weather's humidity: none at 50 or less, full at 100 (the seeded fog is 95). It rises
- * and falls over FADE_SECONDS when the weather changes. It makes no sound.
- */
 import { makeCloudTexture } from "./zonestorm.ts";
 
 const isMobileDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
@@ -63,9 +50,6 @@ function driftOf(direction: string | null): [number, number] {
   }
 }
 
-// The layers: each its own picture (`size` px, made when first drawn), drawn `scale` times as large and stretched
-// along the wind; `speed` its share of the drift; `x`, `y` how far it has drifted, kept within one repeat, each layer
-// starting somewhere of its own.
 const layers = (isMobileDevice
   ? [{ size: 160, scale: 4, parallax: 0.9, alpha: 0.45, speed: 0.6 }]
   : [
@@ -82,12 +66,6 @@ export interface FogState {
   thickness: number;
 }
 
-/**
- * Moves the fog on by `seconds` and says how much of it shows, 0 to 1. It comes in and goes over FADE_SECONDS. While
- * it is wanted its thickness follows the humidity, gliding to a new one at the same pace; once it is not, it keeps the
- * thickness it had and only fades: the weather after it (a blizzard, a clear day) has a humidity of its own, which is
- * not the fog's.
- */
 export function fogStep(state: FogState, wanted: boolean, humidity: unknown, seconds: number): number {
   const step = Math.max(0, seconds) / FADE_SECONDS;
   if (wanted) {

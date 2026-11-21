@@ -189,8 +189,6 @@ function base64ToBytes(base64: string): Uint8Array {
   return bytes;
 }
 
-// The certificate hash of each game server origin, kept once fetched: a node the player is handed to is asked once, and
-// the next handoff to it (or the pre-opened session before it) does not fetch again. A hash that fails to connect is dropped.
 const certHashes = new Map<string, string>();
 
 function certOrigin(server: any): string {
@@ -297,8 +295,6 @@ function rebuildInventoryGrid() {
     slot.dataset.inventoryIndex = i.toString();
     const item = slotArray[i];
     if (item) {
-      // An item without a quality must not throw here: the grid has just been
-      // emptied, so an error would leave the inventory with no slots at all.
       slot.classList.add((item.quality || "common").toLowerCase());
       if (item.iconUrl) {
         createCachedImage(item.iconUrl).then((iconImage) => {
@@ -353,13 +349,6 @@ function sendRequest(data: any) {
   sendRawFrame(packet.encode(JSON.stringify(data)));
 }
 
-/**
- * Change character (pause menu): no packet is sent. LOGOUT would end the web login, and DISCONNECT clears the session
- * id before the node's leave-save, which only runs while the session is held. The transport is closed instead, so the
- * node's normal onDisconnect save runs with the session held and keeps the token. closeHandled is set first, as for
- * CHARACTER_REQUIRED, so the close does not start a reconnect or show a notice; the page goes to the character list
- * when the close completes, or after a second.
- */
 async function leaveForCharacterList(): Promise<void> {
   // Slot order not yet sent goes now, while the stream is open (beforeunload would find it closed).
   flushInventorySlots();
@@ -402,11 +391,6 @@ const loadPlayersQueue: any[] = [];
 // Global item cache for looking up item details by name
 const itemsByName = new Map<string, any>();
 
-/**
- * A line from the game itself in party or guild chat (engine systems/achievements): no speaker, no bubble, in the
- * channel's colour. "<name> has completed [<achievement>]", the achievement a green link that opens the reader's own
- * achievements window at it (achievements.ts focusAchievement). Text is set as text, never as HTML.
- */
 function systemChatLine(box: HTMLElement, data: any, channel: "party" | "guild"): void {
   const line = document.createElement("div");
   line.classList.add("message", "ui");
@@ -415,9 +399,6 @@ function systemChatLine(box: HTMLElement, data: any, channel: "party" | "guild")
   stamp.textContent = `${new Date().toLocaleTimeString()} `;
   const said = document.createElement("span");
   said.className = `${channel}-message`;
-  // The guild's message of the day at login: its own, stronger look so it reads on the chat background. Known by the
-  // engine's motd flag, or by its wording from an engine that does not send the flag yet (system lines come only from
-  // the server, so no player can make one).
   const isMotd = !!data?.motd || (channel === "guild" && String(data?.message ?? "").startsWith("Guild Message of the Day: "));
   if (isMotd) said.classList.add("guild-motd");
   const id = Number(data?.achievementId);
@@ -445,12 +426,6 @@ function systemChatLine(box: HTMLElement, data: any, channel: "party" | "guild")
   box.scrollTop = box.scrollHeight;
 }
 
-/**
- * One line of player speech in the chat box: "<time> <name>: <message>", the name in the channel's colour and the
- * message in its own span, any [item] in it a link (data.links, itemlinks.ts). Everything is set as text or as DOM
- * nodes, never as HTML, so neither the name nor the message can inject markup. Same classes and look as before.
- * `padded` is the older global-chat shape (the space sits inside the name span, none between name and message).
- */
 function playerChatLine(
   box: HTMLElement,
   nameClass: string,
@@ -481,8 +456,6 @@ function getMissingIconUrl(): string {
   return `${config.ASSET_SERVER_URL}/icon?name=missing_icon`;
 }
 
-// Creates a 32x32 spell icon image that falls back to the missing icon
-// when no source is provided or the source fails to load
 function createSpellIconImage(src: string | null | undefined, onReady: (img: HTMLImageElement) => void): HTMLImageElement {
   const img = new Image();
   img.draggable = false;
@@ -496,55 +469,6 @@ function createSpellIconImage(src: string | null | undefined, onReady: (img: HTM
   return img;
 }
 
-export function requestMapChunkViaWS(mapName: string, chunkX: number, chunkY: number, chunkSize: number): Promise<any> {
-  return new Promise((resolve, reject) => {
-
-    if (!streamWriter || !transportReady) {
-      reject(new Error("WebTransport not connected"));
-      return;
-    }
-
-    const chunkKey = `${chunkX}-${chunkY}`;
-    pendingMapChunkRequests.set(chunkKey, { resolve, reject });
-
-    sendRequest({
-      type: "REQUEST_MAP_CHUNK",
-      data: { map: mapName, x: chunkX, y: chunkY, size: chunkSize }
-    });
-
-    setTimeout(() => {
-      if (pendingMapChunkRequests.has(chunkKey)) {
-        pendingMapChunkRequests.delete(chunkKey);
-        reject(new Error("Map chunk request timeout"));
-      }
-    }, 10000);
-  });
-}
-
-export function requestTilesetViaWS(tilesetName: string): Promise<any> {
-  return new Promise((resolve, reject) => {
-
-    if (!streamWriter || !transportReady) {
-      reject(new Error("WebTransport not connected"));
-      return;
-    }
-
-    pendingTilesetRequests.set(tilesetName, { resolve, reject });
-
-    sendRequest({
-      type: "REQUEST_TILESET",
-      data: { name: tilesetName }
-    });
-
-    setTimeout(() => {
-      if (pendingTilesetRequests.has(tilesetName)) {
-        pendingTilesetRequests.delete(tilesetName);
-        reject(new Error("Tileset request timeout"));
-      }
-    }, 60000);
-  });
-}
-
 let cachedPlayerId: string | null = null;
 let sessionActive: boolean = false;
 
@@ -556,9 +480,6 @@ let animationUpdateBuffer: Array<{id: string, name: string, data: any, revision:
 let pendingMovements: Array<{id: string, _data: any, revision: number}> = [];
 let pendingSpriteAnimations: Array<{id: string, animationState: string, bodySprite: any, headSprite: any, mountSprite: any, armorHelmetSprite: any, armorShoulderguardsSprite: any, armorNeckSprite: any, armorHandsSprite: any, armorChestSprite: any, armorFeetSprite: any, armorLegsSprite: any, armorWeaponSprite: any, mounted?: boolean}> = [];
 
-// Projectiles arrive as unreliable datagrams and can race ahead of the
-// reliable-stream spawn packets for their source/target. Missing participants
-// are buffered here and retried for a short window before being dropped.
 const PENDING_PROJECTILE_TTL_MS = 2000;
 const pendingProjectiles: Array<{ data: any; expiresAt: number }> = [];
 let pendingProjectileTimer: number | null = null;
@@ -668,8 +589,6 @@ function dispatchProjectileData(data: any, expiresAt: number) {
 
   if (icon && spell && !cache.projectileIcons.has(spell)) {
 
-    // Projectiles render nothing when the real icon is missing -
-    // skip caching if the asset server served its fallback icon
     fetch(icon)
       .then((response) => {
         if (!response.ok || response.headers.get("X-Asset-Fallback")) return null;
@@ -828,8 +747,6 @@ async function connectThroughGateway(): Promise<WebTransport | undefined> {
     throw new Error('Failed to obtain connection token from gateway');
   }
 
-  // A ticket bound to a cluster node is good on that node only: no other server is tried with it. A failure
-  // goes to the reconnect path, which asks the gateway for a new ticket.
   if (connectionToken.node) {
     try {
       return await openGameTransport(connectionToken.node);
@@ -862,16 +779,10 @@ async function connectThroughGateway(): Promise<WebTransport | undefined> {
 
         return await openGameTransport(server);
       } else {
-        // A reconnect waits for the realm the player was in (a restarting server may be missing from the list for a
-        // while) instead of forgetting it and joining another.
         if (reconnectAttempts > 0) return undefined;
         localStorage.removeItem('selectedServerId');
       }
     } catch (error: any) {
-      // Logged rather than swallowed: this path discards the selected server
-      // and retries the fallback below, so without this the only error that
-      // ever reaches the console is the second attempt's, and the first
-      // attempt fails invisibly.
       console.error(
         "WebTransport: connecting to the selected server failed:",
         error?.name,
@@ -906,8 +817,6 @@ async function connectThroughGateway(): Promise<WebTransport | undefined> {
 
     return await openGameTransport(server);
   } catch (error: any) {
-    // WebTransportError carries the useful detail on `source`, and the
-    // session's own reason often arrives on `closed` rather than `ready`.
     console.error(
       "Error connecting through gateway:",
       error?.name,
@@ -940,8 +849,6 @@ async function initializeSocket() {
     socket = (await connectThroughGateway()) as WebTransport;
 
     if (!socket) {
-      // Only bounce to the login/home screen on the initial connection.
-      // During reconnection attempts the caller handles retries itself.
       if (reconnectAttempts === 0 && !subscriptionRequired) {
         window.location.href = "/";
       }
@@ -951,8 +858,6 @@ async function initializeSocket() {
     try {
       await setupTransport();
     } catch (error) {
-      // A reconnect attempt that opened a session but did not log in leaves nothing open on the server for the next
-      // one. (On the first connect the session's own close leads to the reconnect, so it is left to close.)
       if (reconnectAttempts > 0) {
         try {
           socket.close();
@@ -984,9 +889,6 @@ async function setupTransport(preStream?: WebTransportBidirectionalStream | null
   receiveLoop();
   receiveDatagrams();
 
-  // LOGIN and AUTH go right behind AUTH_CONNECT. The node handles the frames of the stream in order, so the login
-  // takes one round trip instead of three in a row (AUTH_CONNECT, then PING, then LOGIN): about 60 ms of every node
-  // switch, with the player standing still.
   const authenticated = authenticateConnection();
   sendLogin();
   await authenticated;
@@ -1066,11 +968,6 @@ function sendLogin() {
     return;
   }
   const language = navigator.language.split("-")[0] || navigator.language || "en";
-  // A resumed handoff's gap walk so far, which the new node walks the same way before HANDOFF_DONE (handoffwalk.ts GapLog).
-  // An engine that does not take it ignores the field (an unknown packet type would close the connection). A change of
-  // key from here on is sent as a HANDOFF_GAP (noteGapFrame), only to an engine that took this report (`report`).
-  // A SWITCH within a frame of HANDOFF_BEGIN comes before the gap walk's first frame: nothing ended, the keys held now go
-  // on. Unreported, the node walked the whole gap the way the player walked into it, past a key let go.
   const gap = handoffResume && gapReports && getHandoffGap()
     ? (gapLog.started ? gapLog.report() : { segments: [], held: gapDirection(pressedKeys, getStickDirection()) })
     : null;
@@ -1085,18 +982,6 @@ function initializeConnection() {
   closeHandled = false;
 }
 
-// NOTE: there is deliberately no inbound-inactivity watchdog here.
-//
-// One used to close the session after 5 seconds of silence, which only worked
-// because the server pushed SERVER_TIME every second. That heartbeat is gone -
-// time of day is anchored once and advanced locally - so a player standing
-// still legitimately receives nothing for long stretches, and that rule would
-// now disconnect them.
-//
-// A server that vanishes without closing the session is detected by QUIC's own
-// idle timeout, which resolves `socket.closed`; setupSocketHandlers already
-// routes that into handleSocketClose.
-
 function setupSocketHandlers() {
   const transport = socket;
   transport.closed.then((info: any) => {
@@ -1105,43 +990,24 @@ function setupSocketHandlers() {
     handleSocketClose(info);
   }).catch(() => {
     if (leftBySwitch.has(transport)) return;
-    // Expected on session close (e.g. logout or server shutdown) - the
-    // "Connection lost" rejection is not a real error.
     handleSocketClose({ closeCode: 1, reason: "" });
   });
 }
 
-// Cluster mode: a node hands the player to another with SWITCH (the next node and a ticket for it), then closes the
-// session with "switch". The client leaves quietly and logs in on the next node as after a fresh connect.
 const leftBySwitch = new WeakSet<WebTransport>();
 let switchInProgress = false;
 let switchesStarted = 0;
 // How long a "switch" close that was read before its SWITCH packet waits for that packet.
 const SWITCH_PACKET_WAIT_MS = 3000;
-// Nodes that keep handing the player on (a loop between nodes that each think another owns the login, or an owner
-// that is up but out of reach) are not followed forever: after SWITCH_LOOP_LIMIT switches with no login completed in
-// between (LOAD_MAP), the next SWITCH ends in the connection error instead. However long each try takes: there is no
-// time window. Counted in sessionStorage, so the reconnect that a failed switch falls back to (it reloads the page)
-// does not start the count again.
 const SWITCH_LOOP_LIMIT = 3;
 const SWITCH_COUNT_KEY = "nodeSwitches";
-// How long the next node has to answer (its transport ready) before the switch counts as failed. Without it a node
-// out of reach (UDP dropped) holds the switch until the browser's own QUIC handshake timeout.
 const SWITCH_CONNECT_TIMEOUT_MS = 5000;
 let switchingStopped = false;
-// A handoff (cells phase 6) moves the player to the node that owns the block they walked into. With resume, the
-// reconnect keeps the world on screen: nothing is cleared until HANDOFF_DONE, or a LOAD_MAP if the new node could
-// not resume after all.
 let handoffResume = false;
 /** When HANDOFF_DONE last arrived (performance.now()), for the window of the player's own deferred SPAWN_PLAYER. */
 let lastHandoffDoneAt: number | null = null;
 /** The map HANDOFF_DONE named: a self spawn on another map right after it is a warp or respawn, not the handoff's. */
 let lastHandoffDoneMap: string | null = null;
-/**
- * When HANDOFF_DONE last arrived. A second variable, not lastHandoffDoneAt: that one is the self-spawn guard and is
- * consumed by the first self spawn, while this one dates the window for the repeated clock and weather; both are cleared
- * by a SWITCH and by LOAD_MAP.
- */
 let lastHandoffDoneStamp: number | null = null;
 /** The WEATHER content applied last: the same content from the node taking over is not applied again. */
 let appliedWeatherKey: string | null = null;
@@ -1150,10 +1016,6 @@ function inHandoffWindow(): boolean {
   return inWindow(handoffResume, lastHandoffDoneStamp, performance.now());
 }
 
-// What the new node re-sends after a resumed handoff replaces the entry it has; what it does not re-send is gone
-// from its view and is dropped once it has had time to send its initial world. The server sends no end marker for
-// that (players, NPCs and gather nodes follow HANDOFF_DONE in separate batches), so a short window after HANDOFF_DONE
-// is the end. Creatures are not swept: the new node diffs them (it sends only changes and despawns, not the whole set).
 const HANDOFF_SWEEP_MS = 4000;
 let handoffHeld: {
   players: Set<any>;
@@ -1231,10 +1093,6 @@ function clearSwitches() {
   }
 }
 
-/**
- * Too many switches in a row: leave the node and show the connection error, without following the SWITCH or
- * reconnecting (which would only go round again). The count is cleared, so a refresh tries afresh.
- */
 function stopSwitching() {
   switchingStopped = true;
   pauseClusterRefresh();
@@ -1292,10 +1150,6 @@ async function openSwitchTransport(server: any, marks?: { cert?: number; ready?:
   }
 }
 
-// A handoff the client is walked into (cells phase 7): the next node's session is opened while the player is still
-// walking toward the border (HANDOFF_PREPARE), and idles with no ticket and no login until the SWITCH names the same
-// node. At most one is held; it is closed when unused after HANDOFF_PREOPEN_MS, on HANDOFF_ABORT, and when another
-// prepare names a different node.
 const HANDOFF_PREOPEN_MS = 10_000;
 interface PreOpened {
   key: string;
@@ -1357,10 +1211,6 @@ function preOpenNode(data: any) {
   });
 }
 
-/**
- * The next node's session for a SWITCH: the pre-opened one when it is to the same node and still open, otherwise a new
- * one as before. `used` says which.
- */
 async function transportForSwitch(server: any, handoff: boolean): Promise<{ transport: WebTransport; stream: WebTransportBidirectionalStream | null; used: boolean }> {
   const pre = preOpened;
   preOpened = null;
@@ -1488,11 +1338,6 @@ function gapWalkStarted(): boolean {
   return gapLog.started;
 }
 
-/**
- * One frame of the gap walk, for the report (GapLog.frame). After AUTH's report a change of key is sent at once with the
- * whole gap so far (HANDOFF_GAP): the new node walks the gap as it says even when it came after HANDOFF_DONE, so the
- * gap walk follows the keys as drawn and the node ends where it did.
- */
 function noteGapFrame(direction: string, walkMs: number, now: number, from: number | null) {
   gapLog.frame(direction, walkMs, now, from);
   if (gapSentHeld === null || direction === gapSentHeld) return;
@@ -1506,11 +1351,6 @@ function noteGapFrame(direction: string, walkMs: number, now: number, from: numb
   sendRequest({ type: "HANDOFF_GAP", data: { seq: gapSeq, ...report } });
 }
 
-/**
- * A change of key in the gap walk (a turn, or a key let go): the walk going on first walks on to the end of its tick
- * (GapLog.finish), as the node steps a stretch in whole ticks and ends it there. Returns that walk and its ms for the
- * caller to walk the player (advanceSelf), null when nothing is left or the node does not walk the reported gap.
- */
 function finishGapWalk(direction: string): { walk: string; ms: number } | null {
   if (!gapReports) return null;
   const left = gapLog.stepLeft(getTickMs());
@@ -1520,23 +1360,12 @@ function finishGapWalk(direction: string): { walk: string; ms: number } | null {
   return left;
 }
 
-/**
- * The part of a gap frame of `ms` the keys held now walk: none of the time a finish already walked (finishGapWalk walks
- * it at once). Walked twice, the walk after a turn went on that much longer than the node walks it, which counts the
- * gap's time on its own clock.
- */
 function gapFrameMs(ms: number): number {
   const taken = Math.min(Math.max(0, ms), gapFinishedAheadMs);
   gapFinishedAheadMs -= taken;
   return ms - taken;
 }
 
-/**
- * HANDOFF_DONE came: a change of key since the gap walk's last frame (no frame saw it, and none follows if the gap
- * ended now) is noted as one more frame, which stood since that one as the draw did, and sent (noteGapFrame). Unsent,
- * the node would walk on as the last report said while the client took the key as let go. The walk going on is finished
- * first, as a frame finishes it (finishGapWalk).
- */
 function noteGapChange() {
   if (gapSentHeld === null || !getHandoffGap()) return;
   const direction = gapDirection(pressedKeys, getStickDirection());
@@ -1555,10 +1384,6 @@ function endHandoffGap() {
   gapDoneWait = null;
 }
 
-/**
- * The gap walk starts: it goes on from the last echo, in the direction walked now (walkAtSwitch). `report`: the node walks
- * the gap as reported; `updates`: and takes the changes of key after AUTH (HANDOFF_GAP).
- */
 function startHandoffGap(resume: boolean, report: boolean, updates: boolean) {
   handoffGap = resume;
   handoffGapAt = performance.now();
@@ -1578,13 +1403,6 @@ function startHandoffGap(resume: boolean, report: boolean, updates: boolean) {
   if (own) own.handoffWalk = undefined;
 }
 
-/**
- * HANDOFF_BEGIN: the old node stopped stepping the player (the drain) and sends the SWITCH only after its lock, release
- * and save, 150-200 ms later. The gap walk starts now, from an echo a tick old, so its first step makes up the time since
- * it (gapStepMs). Started at the SWITCH that echo was too old to walk on from: the draw stood through the drain and save,
- * and HANDOFF_DONE found the walk too far behind the node's point to keep it. The walk goes on from BEGIN's point, the
- * old node's last step, whose own echo may come after this frame and be dropped, or not come (handoffwalk.ts beginPoint).
- */
 function beginHandoffGap(data: any) {
   if (switchInProgress || isReconnecting) return;
   handoffSettle.cancel();
@@ -1603,11 +1421,6 @@ function beginHandoffGap(data: any) {
   movementAllowed = false;
 }
 
-/**
- * HANDOFF_STAY: the old node gave the handoff up after HANDOFF_BEGIN and keeps the player at `at` (null: where its last
- * echo put them). The walked difference is eased out, as a reseed at HANDOFF_DONE; a key still held is sent by the
- * renderer's next frame (movementAllowed was false, so its last sent direction is empty).
- */
 function stayAfterHandoffBegin(at: any) {
   if (!handoffBegun || switchInProgress) return;
   const predicting = getHandoffGap();
@@ -1637,11 +1450,6 @@ function stayAfterHandoffBegin(at: any) {
   movementAllowed = true;
 }
 
-/**
- * HANDOFF_DONE came before the node walked the newest gap report: the gap walk goes on (movement stays blocked, the
- * node's echoes are of the walk the answer replaces) until HANDOFF_GAP_DONE answers it. Without the answer in
- * GAP_DONE_WAIT_MS the player is placed as HANDOFF_DONE, or the last answer, said.
- */
 function waitGapDone(done: any) {
   if (gapDoneWait) clearTimeout(gapDoneWait.timer);
   gapDoneWait = {
@@ -1652,10 +1460,6 @@ function waitGapDone(done: any) {
   };
 }
 
-/**
- * The gap walk ends where the new node has the player (HANDOFF_DONE, or HANDOFF_GAP_DONE when it walked a report that
- * came later): the client takes its position and lets the player move again.
- */
 function settleHandoff(data: any) {
   const predicting = getHandoffGap();
   endHandoffGap();
@@ -1667,9 +1471,6 @@ function settleHandoff(data: any) {
   // Drawn where the client walked the player to: that difference is eased out, not snapped, unless it is large.
   const shown = self?.renderPosition ? { x: self.renderPosition.x, y: self.renderPosition.y } : null;
   if (self && Number.isFinite(x) && Number.isFinite(y)) {
-    // A player the client walked through the gap and who still moves keeps the drawn position and the samples: the new
-    // node's next echoes continue them (no rewrite, no ease), so the draw has no jump. Else the node's point is taken.
-    // Decided from the walked position, not the drawn one, which trails it by the playback delay (handoffwalk.ts).
     const moving = getIsKeyPressed() || !!getStickDirection();
     // Weighed against where the node's first echo will be: it makes up the steps it stood through the gap (madeUpPoint).
     const target = madeUpPoint({ x, y }, doneWalk(data?.walk), data?.catchUpMs, atMountSpeed(self));
@@ -1693,8 +1494,6 @@ function settleHandoff(data: any) {
       // Seeded with the point, older than the first echoes, so they are not dropped as older than a frame sample.
       self.moveSamples = seedSamples(x, y, performance.now());
     }
-    // The draw was walked ahead of the node (it stood the player through the gap): kept or reseeded, it goes on at the walking
-    // pace until the node's draw passes it, instead of standing (kept) or stepping back and bursting (reseeded).
     const paceFrom = planPaceArm(predicting, moving, shown);
     if (paceFrom) handoffPace.arm(performance.now(), paceFrom);
     // A key let go in the gap: the draw goes on to the node's point at the walking pace, not eased.
@@ -1713,12 +1512,6 @@ function settleHandoff(data: any) {
     if (!keep && predicting && shown && !stopFrom) startEase(self, shown, { x, y }, performance.now());
   }
   movementAllowed = true;
-  // The new node walks on as the newest gap report it walked said (or resumed the walk the player had at the SWITCH). A
-  // key let go since is told to it now; a key still held is sent by the renderer's next frame (movementAllowed was false,
-  // so its last sent direction is empty). A stick still held keeps walking: its direction is sent, never a stop. Where
-  // the walk is known to be resumed in the direction held, nothing is sent: a repeated move would restart the node's
-  // mover and unsettle its steps (resumesend.ts); the last sent direction is set as if it had been sent, so the next real
-  // change is sent.
   const send = doneSend({
     atSwitch: walkDirectionAtSwitch,
     keyPressed: getIsKeyPressed(),
@@ -1741,15 +1534,11 @@ async function switchNode(data: any) {
   if (switchingStopped || switchInProgress || isReconnecting || !ticket?.token || !data?.publicHost || !data?.wtPort) return;
   // A handoff is the node following the player across a border: it is not a switch loop, and is not counted.
   const handoff = data?.handoff === true;
-  // The old node's overlay answer is not shown any longer, and its poll waits for the new node.
-  // A handoff keeps the grid drawn (the next answer replaces it), so the overlay does not go blank; another switch clears it.
   pauseClusterRefresh(handoff);
   handoffSettle.cancel();
   cancelKeptWalk();
   if (handoff) {
     handoffMarks = { switch_rx: performance.now(), preopened: false };
-    // The local player is walked on (renderer.ts) until the new node has them; a held key keeps its direction. A walk begun
-    // at HANDOFF_BEGIN goes on as it began: the node took the walk it resumes from the player as they were at the drain.
     if (handoffBegun) handoffGap = handoffGap && data?.resume === true;
     else startHandoffGap(data?.resume === true, data?.report === true, data?.gapUpdates === true);
     handoffBegun = false;
@@ -1766,8 +1555,6 @@ async function switchNode(data: any) {
     saveSwitchCount(switches + 1);
     // A plain switch is a full login, even when an earlier resumed handoff never finished.
     handoffResume = false;
-    // No gap here (the old node is left at once): the next node's clock is learned afresh. A handoff does it at
-    // HANDOFF_DONE instead, since its gap is drawn with the old lateness.
     resetClockEpoch();
   } else {
     handoffResume = data?.resume === true;
@@ -2100,9 +1887,6 @@ async function handleLoadPlayersPacket(data: any) {
   }
 }
 
-// Death/ghost/revive transitions leave a stale mount layer and frozen pose on
-// observers (self rebuilds on spawn snapshots, they don't). Reset to a clean
-// unmounted idle. Mirrors the dismount branch of SPRITE_SHEET_ANIMATION.
 async function resetDeathAnimation(target: any): Promise<void> {
   if (!target) return;
   try {
@@ -2114,9 +1898,6 @@ async function resetDeathAnimation(target: any): Promise<void> {
     if (target.layeredAnimation) {
       target.layeredAnimation.layers.mount = null;
       const { changeLayeredAnimation } = await import("./layeredAnimation.js");
-      // lastDirection can be uppercase ("RIGHT") from movement input while
-      // templates are lowercase: sanitize or the lookup misses and stale
-      // walk frames stick around under the idle name.
       const rawDir = String(target.lastDirection || target.location?.position?.direction || "down").toLowerCase();
       const dirs = ["up", "down", "left", "right", "upleft", "upright", "downleft", "downright"];
       await changeLayeredAnimation(target.layeredAnimation, `idle_${dirs.includes(rawDir) ? rawDir : "down"}`);
@@ -2143,12 +1924,8 @@ function decodeIncomingBytes(bytes: Uint8Array): { type: string; data: any; enve
 
   try {
     const decoded = JSON.parse(packet.decode(bytes));
-    // The full envelope is carried through so handlers can read sibling keys
-    // (slots, chatDecryptionKey, ...) without parsing the same frame again.
     return { type: decoded["type"], data: decoded["data"], envelope: decoded };
   } catch {
-    // Non-JSON frame: ignore it instead of throwing - a throw would kill the
-    // enclosing receive loop and silently stop all stream processing.
     return { type: "UNKNOWN_FRAME", data: null, envelope: null };
   }
 }
@@ -2171,8 +1948,6 @@ async function receiveLoop() {
           const decoded = decodeIncomingBytes(frame);
           await dispatchMessage(decoded.type, decoded.data, frame, decoded.envelope);
         } catch (error) {
-          // Never let one bad frame kill the read loop - that would stop all
-          // stream processing and eventually get the player disconnected.
           if (!closeHandled) {
             console.error("Error dispatching stream frame:", error);
           }
@@ -2222,8 +1997,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       break;
     }
     case "SERVER_TIME": {
-      // One-way push driving time of day. There is no reply: the server
-      // refreshes each player's idle timestamp from any inbound packet.
       if (!data) return;
       updateTime(data, envelope?.utcOffset, inHandoffWindow());
       break;
@@ -2346,9 +2119,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       break;
     }
     case "PROJECTILE": {
-      // Projectiles are now delivered as unreliable datagrams, which can
-      // overtake the reliable-stream spawn packets for their source/target.
-      // Buffer briefly and retry when the participants aren't in the cache yet.
       dispatchProjectileData(data, performance.now() + PENDING_PROJECTILE_TTL_MS);
       break;
     }
@@ -2374,8 +2144,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       appliedWeatherKey = weatherKey(data);
       if (holdWeather(data)) break;
       const weatherEl = document.getElementById('weather') as HTMLCanvasElement;
-      // The same weather with new values (a save in the weather editor, a new reading of the real weather) is
-      // taken as it comes; only a change of weather fades out and in.
       if (weatherEl && data.weather !== getWeatherType()) {
         weatherEl.style.transition = 'opacity 0.8s';
         weatherEl.style.opacity = '0';
@@ -2437,9 +2205,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       break;
     }
     case "NPC_LIST": {
-      // Sibling keys (quests, spriteSheets, icons) ride on the envelope, not
-      // on data - same convention as SPELLS/slots. Fall back to data in case
-      // a path ever delivers the whole payload as data.
       const npcRows = data?.data ?? data;
       const questList = envelope?.quests ?? (data as any)?.quests;
       const spriteSheets = envelope?.spriteSheets ?? (data as any)?.spriteSheets;
@@ -2464,8 +2229,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       // Update live game world NPC
       const cachedNpcs = cache.npcs || [];
       let existingIdx = cachedNpcs.findIndex((n: any) => n.id === updatedNpc.id);
-      // If this is a freshly created NPC, adopt the temporary placeholder
-      // (id === null) instead of spawning a duplicate live NPC.
       if (existingIdx < 0) {
         const placeholderIdx = cachedNpcs.findIndex((n: any) => n.id === null);
         if (placeholderIdx >= 0) {
@@ -2642,9 +2405,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           // Find and update particles with matching name
           for (let i = 0; i < npc.particles.length; i++) {
             if (npc.particles[i].name === updatedParticle.name) {
-              // Replace particle with updated definition
-              // Reset runtime properties (currentLife, initialVelocity) to null
-              // so particles restart fresh with the new definition
               npc.particles[i] = {
                 ...updatedParticle,
                 currentLife: null,
@@ -2699,8 +2459,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       break;
     }
     case "MAP_REBASE": {
-      // Post-save bounds update. shiftX/Y != 0 means a left/up origin re-base;
-      // shiftX/Y == 0 is a pure bounds change (grew or trimmed empty expansion).
       if (window.mapData && data) {
         const shiftX = Number(data.shiftX) || 0;
         const shiftY = Number(data.shiftY) || 0;
@@ -2733,8 +2491,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
             window.mapData.loadedChunks.clear();
           });
         } else {
-          // Bounds-only: drop loaded chunks now outside the bounds so trimmed-away
-          // empty expansion disappears (no re-fetch - keeps in-memory edits).
           const keys = Array.from(window.mapData.loadedChunks.keys()) as string[];
           for (const key of keys) {
             const chunk = window.mapData.loadedChunks.get(key);
@@ -2974,8 +2730,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       break;
     }
     case "SPRITE_SHEET_POSE": {
-      // A pose change on sheets this client holds. Without them the packet is dropped: the server sends the full sheets
-      // whenever they are new or changed.
       try {
         const { changeLayeredAnimation } = await import('./layeredAnimation.js');
         await applyPoseUpdate(cache.players, cache.pendingPlayers, data?.id, data?.animationState, changeLayeredAnimation, data?.poseRev, true);
@@ -2985,8 +2739,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       break;
     }
     case "SPRITE_SHEET_POSE_DATAGRAM": {
-      // The same pose as above, by datagram, with the player's pose revision: applied only if newer than the one shown.
-      // Not awaited past the revision check: the datagram loop also carries the movement datagrams.
       try {
         const { changeLayeredAnimation } = await import('./layeredAnimation.js');
         void applyPoseDatagram(data, cache.players, cache.pendingPlayers, changeLayeredAnimation);
@@ -3040,8 +2792,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
             const { initializeLayeredAnimation, changeLayeredAnimation } = await import('./layeredAnimation.js');
 
             let animationState = sheetPoseState(player, data.poseRev, data.animationState || 'idle');
-            // In a handoff gap the client poses its own player as it walks them (renderer.ts): a node's walk or stand is
-            // of an older gap report, and the new node poses the newest once it walked it (gappose.ts).
             if (data.id === cachedPlayerId && gapReports && getHandoffGap()) {
               animationState = keepGapPose(player.layeredAnimation?.currentAnimationName, animationState);
             }
@@ -3331,8 +3081,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
             }
           }
         }
-        // Sync position fields that Object.assign doesn't remap from data.location (not right after a handoff: the
-        // local position comes from HANDOFF_DONE and the echoes, and this spawn carries an older point)
         if (data.location && selfSpawn.snap) {
           existingByUsername.position.x = Math.round(data.location.x);
           existingByUsername.position.y = Math.round(data.location.y);
@@ -3367,8 +3115,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           window.scrollTo(getCameraX(), getCameraY());
         }
       } else if (existingInPending) {
-        // Player exists in pendingPlayers but hasn't finished loading into cache.players yet.
-        // Update the pending object so effects/position carry through when it finishes loading.
         Object.assign(existingInPending, data);
         if (data.location) {
           existingInPending.position.x = Math.round(data.location.x);
@@ -3395,8 +3141,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           setSelfDead(true);
         } else if (data.isGhost) {
           setSelfGhost(true);
-          // No cinematic replays on relog: the graveyard offer still lands
-          // on its normal delay so the choice isn't lost.
           scheduleGraveyardOffer();
         } else {
           clearCorpseMarker();
@@ -3454,9 +3198,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         marks.printTimer = setTimeout(() => { if (handoffMarks === marks) printHandoffMarks(); }, 3000);
       }
       requestClusterRefresh();
-      // The node walked the gap as an older report said than the newest sent (a change of key on the way): it walks it
-      // again as the newest says and answers (HANDOFF_GAP_DONE). Till then the gap walk goes on as drawn, so nothing is
-      // set back and the node's point is weighed once, where it ends up.
       noteGapChange();
       if (gapSeq > 0 && typeof data?.gapSeq === "number" && data.gapSeq < gapSeq && getHandoffGap()) waitGapDone(data);
       else settleHandoff(data);
@@ -3916,20 +3657,9 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         player.typing = false;
         const sx = Math.round(moveData.x);
         const sy = Math.round(moveData.y);
-        // The server owns movement: this is where the player is. The renderer
-        // draws it smoothly from these timed steps (movementsmoothing.ts), and
-        // a teleport-sized jump snaps there instead of gliding. An out-of-order
-        // step older than one already applied is dropped.
         const sentAt = typeof data.t === "number" ? data.t : null;
-        // After HANDOFF_BEGIN the old node steps the local player no more: a step it sent before (a datagram that came after
-        // the stream's BEGIN) is already walked by the gap walk, and taken it would set the walked position back.
         if (playerId == cachedPlayerId && handoffBegun) break;
-        // The new node walks a gap report that came after HANDOFF_DONE again from the start (HANDOFF_GAP_DONE): its steps
-        // before that are of the walk it replaced, which the gap walk did not take.
         if (playerId == cachedPlayerId && (gapDoneWait || (sentAt !== null && sentAt < ownEchoesFrom))) break;
-        // The local player's walk through a handoff gap may hold predicted steps newer than this echo: they are replaced.
-        // After a kept walk the local player's echoes are dated to continue the predicted samples, not after them (a ghost walks
-        // at the mounted speed, as the engine's MOVEXY steps it).
         const echoAt = playerId == cachedPlayerId
           ? keptWalkDating.date(player.moveSamples ??= [], sx, sy, sampleTime(sentAt), performance.now(), { renderAt: lastRenderTime(), headroom: renderHeadroom(), offset: getClockOffset() }, player.lastDirection, atMountSpeed(player))
           : sampleTime(sentAt);
@@ -4046,9 +3776,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           continue;
         }
 
-        // Our own position comes from the per-tick reliable echo (MOVEXY). The
-        // copy in these batches is a few ms apart from it; taking both would
-        // give two samples per tick and uneven motion again.
         if (playerId == cachedPlayerId) continue;
 
         const sx = Math.round(moveData.x);
@@ -4080,9 +3807,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       }
       break;
     }
-    // Every NPC on the map at once, sent on login (map changes use CREATE_NPC
-    // per NPC). Without this case the login map had no NPCs - and none of
-    // their particle effects - until the player changed maps.
     case "LOAD_NPCS": {
       await isLoaded();
       const list = Array.isArray(data?.npcs) ? data.npcs : [];
@@ -4224,8 +3948,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
           const { resetCameraInitialized } = await import('./renderer.js');
           resetCameraInitialized();
-          // Only when the editor is open, and so opens again on the new map (below): it then looks at where the
-          // player arrives (renderer.ts). An editor opened by hand later starts from the camera, as ever.
           (window as any).__resetEditorCamera = !!teWasActive;
 
           (window as any).__suppressLoadingScreen = useBlackFade;
@@ -4234,8 +3956,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           if (teWasActive) await te!.toggle();
         }
 
-        // New map: drop markers from the previous map; the fresh login
-        // snapshot below reloads the ones inside the AOI.
         import("./skeletons.js").then((m) => m.clearSkeletons());
         hideReviveOfferPopup();
         loaded = await loadMap(data);
@@ -4246,21 +3966,13 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           requestWakeLock();
           const { progressBar } = await import('./ui.js');
           if (progressBar) progressBar.style.width = '100%';
-          // Brief settle so the first baked frames paint before the loading
-          // screen is removed (was 1000ms - loadMap already bakes synchronously).
           await new Promise(resolve => setTimeout(resolve, 200));
-          // Re-arm the first-frame gates: anything drawn from here on is the new
-          // map, so hideLoadingScreen fades only over painted canvas + minimap.
           (window as any).__firstFrameRendered = false;
           (window as any).__minimapRendered = false;
           hideLoadingScreen();
         }
 
         if (loaded) {
-          // The editor that was open before the warp opens again on the new map. Not waited for: opening it waits
-          // for the server's answer (EDITOR_SYNC_READY), and packets are handled one at a time, so this one has to
-          // end before that answer can be read. Waiting here stopped every packet after it for good.
-          // USER REPORT 2026-10-06: "Opening the tile editor while warping, breaks the game".
           if (teWasActive) {
             void Promise.resolve(te.toggle()).catch((error: unknown) => console.error("The tile editor could not be opened again after the warp:", error));
           }
@@ -4287,9 +3999,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         sessionStorage.setItem("connectionId", connectionId);
         const cachedPlayerIdBefore = cachedPlayerId;
         cachedPlayerId = connectionId;
-        // Also where the modules that do not import this one look for it (tooltip.ts, npceditor.ts). It was read
-        // there and never set, so both found no player: an item's level was checked against level 1, and the NPC
-        // editor's "Bring to me" did nothing (USER REPORT 2026-10-07: "Bring to me button doesn't work").
         (window as any).cachedPlayerId = connectionId;
         sessionActive = true;
 
@@ -4312,8 +4021,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         window.location.href = "/";
       }
       break;
-    // USER REQUEST 2026-10-14: the account has no character yet. The server closes the connection after this; it is
-    // no loss to reconnect from (closeHandled), the character page is where the player goes.
     case "CHARACTER_REQUIRED":
       closeHandled = true;
       window.location.href = "/character";
@@ -5073,8 +4780,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
             sendRequest({ type: 'BAG_UNEQUIP', data: { slot: slotName } });
           };
           el.ondblclick = unequip;
-          // A second tap within 300 ms does the same on a touch screen, where a double click does not reliably come
-          // (as for the slots of the bags themselves, ui.ts). USER REPORT 2026-10-07: "I cannot unequip bags on mobile".
           el.ontouchend = (event) => {
             const now = Date.now();
             if (now - ((el as any)._lastTap || 0) < 300) {
@@ -5203,8 +4908,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         if (!data.ghost) {
           ghosted.isDead = false;
         } else {
-          // Released: no longer a corpse (now a visible ghost, once the
-          // pending teleport lands and the spawn confirm arrives).
           ghosted.isDead = false;
           void resetDeathAnimation(ghosted);
         }
@@ -5560,13 +5263,9 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           if (target === cachedPlayerId && Number.isFinite(Number(stats.xp)) && Number.isFinite(Number(stats.level)) && Number.isFinite(Number(stats.max_xp))) {
             updateXp(stats.xp, stats.level, stats.max_xp);
           }
-          // Quest availability is level-gated: refresh quest views live when
-          // our own level changes (markers arrive via QUEST_MARKERS).
           if (target === cachedPlayerId && Number.isFinite(Number(stats.level)) && Number(stats.level) !== oldLevel) {
             import("./quest.js").then((m) => m.refreshQuestViews());
           }
-          // 0 HP means dead-awaiting-release (the server only ever sends it
-          // on death): despawn the body for observers, clear targeting.
           if (stats.health <= 0) {
             t.isDead = true;
             t.targeted = false;
@@ -5899,8 +5598,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
       statUI.style.display = "block";
 
-      // Player preview: self builds from live spriteData, others from their
-      // live animation templates (see preview.ts).
       startStatPreview(String(data.id));
       break;
     }
@@ -6069,8 +5766,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       break;
     }
     case "DRAG_PLAYER_START": {
-      // Called when an admin starts dragging a player
-      // data = { id: playerId, adminId: adminId }
       if (!data || !data.id) break;
 
       const draggedPlayer = Array.from(cache.players).find((p) => p.id === data.id);
@@ -6080,8 +5775,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       break;
     }
     case "DRAG_PLAYER_STOP": {
-      // Called when an admin stops dragging a player
-      // data = { id: playerId, adminId: adminId }
       if (!data || !data.id) break;
 
       const draggedPlayer = Array.from(cache.players).find((p) => p.id === data.id);
@@ -6096,9 +5789,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       break;
     }
     case "DRAG_UPDATE": {
-      // Server sends position updates for dragged players
-      // This handler is called when the client receives movement updates for dragged players
-      // data = { id: playerId, x: number, y: number }
       if (!data || !data.id || data.x === undefined || data.y === undefined) break;
 
       const draggedPlayer = Array.from(cache.players).find((p) => p.id === data.id);
@@ -6113,8 +5803,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       break;
     }
     case "EFFECTS": {
-      // Supports both the legacy array shape (self only) and the
-      // broadcast shape { id, effects } for map-wide effect visibility
       const effectsList = Array.isArray(data) ? data : (data?.effects || []);
       const effectsTargetId = Array.isArray(data) ? cachedPlayerId : (data?.id ?? cachedPlayerId);
 
@@ -6130,8 +5818,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           ...e,
           endTime: nowMs + (Number(e.remaining) || 0) * 1000,
         }));
-        // Vanish state is derived from active effects - this keeps the client
-        // in sync without needing a separate packet (like stealth's STEALTH packet).
         effectsTarget.isVanished = effectsList.some((e: any) => e.id?.startsWith && e.id.startsWith("vanish:"));
       } else if (!cache.pendingEffects.has(effectsTargetId)) {
         const nowMs = Date.now();
@@ -6161,8 +5847,6 @@ if (version) {
 }
 
 let loaded: boolean = false;
-// Gates player movement only: flips true when the loading screen starts fading,
-// independent of `loaded` (which gates rendering/camera and must be ready first).
 let movementAllowed: boolean = false;
 export let selfPlayerSpriteLoaded: boolean = false;
 
@@ -6172,13 +5856,6 @@ export function setSelfPlayerSpriteLoaded(value: boolean) {
 
 let _hideScreenTimer: ReturnType<typeof setTimeout> | null = null;
 
-// Resolves once the main canvas completes a full draw pass (animationLoop
-// sets __firstFrameRendered at its end, past all early-returns) AND the
-// minimap completes one (renderMinimap sets __minimapRendered the same way),
-// or after timeoutMs so a stalled renderer can't trap the player on the
-// loading screen forever. rAF polling keeps this aligned to presented
-// frames; the timeout covers hidden tabs where rAF is throttled. Note the
-// minimap only draws every 15th frame, so it typically lags the main canvas.
 function waitForInitialFrames(timeoutMs: number): Promise<void> {
   return new Promise((resolve) => {
     if ((window as any).__firstFrameRendered && (window as any).__minimapRendered) {
@@ -6205,8 +5882,6 @@ function waitForInitialFrames(timeoutMs: number): Promise<void> {
 async function hideLoadingScreen() {
   const { loadingScreen, progressBar, progressBarContainer } = await import('./ui.js');
 
-  // Gate the fade on real painted frames instead of a fixed delay: the flags
-  // are re-armed after loadMap, so the first true means the new map drew.
   await waitForInitialFrames(5000);
 
   const isMobile = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
@@ -6361,9 +6036,6 @@ export { sendRequest, leaveForCharacterList, cachedPlayerId, getIsLoaded, getMov
 (window as any).itemsByName = itemsByName;
 
 
-// ---------------------------------------------------------------- NPC streaming
-// The server streams NPCs by map chunk (server systems/npcStreaming.ts). NPCs of another map arrive ahead of a warp:
-// they are held here until that map is loaded. An NPC already present is not created twice.
 const preloadedNpcs = new Map<string, any[]>();
 const npcMapKey = (m: any) => String(m ?? "").replace(".json", "");
 

@@ -3,11 +3,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { POSE_DATAGRAM_HEADER, applyPoseDatagram, applyPoseUpdate, decodePoseDatagram, poseMark, reapplyPose, sheetPoseState } from "../webserver/public/js/core/posepacket";
 
-// Viewer pose changes by datagram, the client half: [u8 0x05][u16 count] then per pose [u32 id][u32 revision][u8 n][state].
-// A pose is applied only for a player the client knows and only if its revision is newer than the one shown; a stream
-// pose (an older engine, or a connection without datagrams) and a full sheet are reliable and reset the baseline.
-// The server half is the engine's src/tests/posedgram.test.ts.
-
 const encoder = new TextEncoder();
 
 /** A datagram as the engine's pose_codec.ts lays it out. */
@@ -196,8 +191,6 @@ describe("a late stream copy of an older change", () => {
     // Change N+1 (revision 6, idle_up) arrived by datagram first.
     await applyPoseDatagram(datagram([7, 6, "idle_up"]), w.players, w.pending, w.change);
     expect(p.layeredAnimation.currentAnimationName).toBe("idle_up");
-    // Then the sheet of change N (revision 5, walk_up, a new weapon) arrives on the stream. It is handled as socket.ts does:
-    // poseMark with the sheet's revision, then the state the sheet shows; the look fields are applied from the sheet.
     const sheet = { id: "7", poseRev: 5, animationState: "walk_up", armorWeaponSprite: { name: "sword" } };
     const mark = poseMark(p, sheet.poseRev);
     const state = sheetPoseState(p, sheet.poseRev, sheet.animationState);

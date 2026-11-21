@@ -1,9 +1,6 @@
 import { expect, test } from "bun:test";
 import { GapLog, MAX_GAP_SEGMENTS, HANDOFF_CATCH_UP_MAX_MS, gapStepMs, beginPoint } from "../webserver/public/js/core/handoffwalk";
 
-// The gap report a resumed handoff sends with AUTH (socket.ts sendLogin): what the client walked from the old node's
-// last echo on, which the new node walks the same way before HANDOFF_DONE (the engine's arrival.ts gapPlanOf).
-
 test("a walk held through the gap reports no ended stretch: the node goes on in the direction held", () => {
   const log = new GapLog();
   expect(log.started).toBe(false);

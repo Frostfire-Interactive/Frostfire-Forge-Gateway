@@ -1,9 +1,3 @@
-// Mount editor popup (/mounteditor). Talks to the game window over postMessage; the game window forwards the
-// requests to the server (engine src/systems/mounteditor.ts), which checks every field and saves. The window itself
-// is the shared workbench (tooleditor.ts); the shape is the achievement editor's (achievementeditorbridge.ts).
-//
-// A record is one mount: its name, what its tooltip says, and its icon. What it looks like when ridden is the sprite
-// sheet mount_<name> on the asset server. There are few mounts, so the list is searched here, at every key.
 import { EditorShell, type ListRow, type RecordState } from "./tooleditor.js";
 import { FieldRenderer, setFieldError, type AssetOption, type Field } from "./toolfields.js";
 import { button, card, count, el, note, noticeDialog, shown, tag, thumb, toast } from "./toolkit.js";

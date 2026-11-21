@@ -1,7 +1,3 @@
-// When a walker takes a step: one rule for the footstep sounds (tilesounds.ts) and the footprints (footprints.ts), so a
-// print is laid on the very step its sound is heard (USER REQUEST 2026-10-20: footprints "should be synced with the
-// sound"). No imports.
-
 /** how far a walker goes between two steps (px), and the least time between them (ms: a fast mount does not rattle) */
 export const STEP_PX = 44, STEP_MIN_MS = 190;
 /** standing still this long ends the walk: the next walk starts with a step right away */
@@ -19,12 +15,6 @@ export class Stepper {
     this.last = null;
   }
 
-  /**
-   * The walker is at (x, y) on `map` at `now` (ms): whether they take a step on this frame. The walk is measured along
-   * its longer axis: the server moves a walker its speed on each axis a tick, so a diagonal covers 1.41 times the ground
-   * of a straight walk in the same time, at the same pace of the legs (USER FEEDBACK 2026-10-03, "Diagonal movement
-   * doubles the audio"). A jump (a warp, a teleport, a server correction) is not a walk.
-   */
   step(x: number, y: number, map: string, now: number): boolean {
     const moved = this.last && this.last.map === map ? Math.max(Math.abs(x - this.last.x), Math.abs(y - this.last.y)) : 0;
     this.last = { x, y, map };

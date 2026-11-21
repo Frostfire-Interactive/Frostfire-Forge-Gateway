@@ -1,8 +1,3 @@
-// The vendor window: what an NPC sells, and what this player sold lately and
-// can buy back. The server holds the stock and makes every deal; it sends the
-// window's contents after each one (VENDOR_STOCK), along with the player's
-// bags and coins. Selling is done from the bags: a right-click on an item
-// there, while this window is open, sells all of it that is spare.
 import { config } from "../web/global.js";
 import { sendRequest, cachedPlayerId } from "./socket.js";
 import Cache from "./cache.js";

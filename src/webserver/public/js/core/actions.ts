@@ -183,13 +183,6 @@ const contextActions: Record<string, { allowed_self: boolean, admin_only?: boole
   },
 };
 
-/**
- * Puts a menu where it was asked for (px on the screen), moved as far as it takes to be whole on the screen. It
- * opens to the right of and below the point, and on the other side of it where there is no room. Measured once it
- * is on the page, because its entries decide its size: each menu used to guess one (200 by 150), and the menu on a
- * player has grown to nine entries, taller than that on any phone. USER REPORT 2026-10-07: "the right click menu on
- * mobile is going off the screen in some cases".
- */
 function placeMenu(menu: HTMLElement, x: number, y: number): void {
   const width = window.visualViewport?.width || window.innerWidth, height = window.visualViewport?.height || window.innerHeight;
   const margin = 8;

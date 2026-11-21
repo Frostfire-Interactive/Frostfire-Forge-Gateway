@@ -1,6 +1,3 @@
-// USER REQUEST 2026-10-14: the character page's API (systems/characters.ts), against a real SQLite database in memory,
-// through the same transaction code the database worker runs. Characters are keyed by id: status(accountId, characterId)
-// and create(accountId, characterId, classId); the account's own row holds only the account.
 import { beforeEach, expect, mock, test } from "bun:test";
 import { SQL } from "bun";
 import { GuardError, runTransaction } from "../controllers/sqltransaction";

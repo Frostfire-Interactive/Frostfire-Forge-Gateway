@@ -1,7 +1,3 @@
-// The achievements window (key Y): every achievement there is, earned ones with the date they were earned, the
-// others with a progress bar. The list is asked for (ACHIEVEMENTS_LIST) each time the window opens, and again after
-// one is earned while it is open. It closes only by its X or by its key (and Esc), never by a click outside it.
-// Design: engine repo, docs/superpowers/specs/2026-10-17-achievements-design.md.
 import { sendRequest } from "./socket.js";
 import { rewardText, showEarned, type Earned } from "./achievementpopup.js";
 
@@ -70,11 +66,6 @@ export function onAchievements(data: any): void {
   }
 }
 
-/**
- * A link to an achievement in chat ("<name> has completed [<achievement>]") was clicked: the reader's own window
- * opens (as Y opens it, the other windows closing) and scrolls to that achievement with the reader's own progress,
- * marked for a moment. It is found once the fresh list arrives.
- */
 export function focusAchievement(id: number): void {
   if (!Number.isFinite(id)) return;
   const open = (window as any).openAchievementsWindow as (() => void) | undefined;

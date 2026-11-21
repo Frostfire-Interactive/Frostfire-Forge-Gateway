@@ -1,17 +1,3 @@
-// World zoom: Ctrl + mouse wheel (and Ctrl + plus, minus, 0) zooms the game world in, never the page's UI. USER REQUEST
-// 2026-10-15: "implement (control + Scroll) to zoom in the game but previously had issues where positions and the map
-// didn't line up".
-//
-// Everything that draws the world, and everything that turns a place on the screen into a place in the world, goes
-// through this one module, so the two cannot disagree:
-//   - the game canvas's base transform (applyWorldTransform, once a frame): device pixels x the touch screens' own
-//     0.85 x the player's zoom, about the middle of the screen. The WebGL map, the sprites, the ghost and upper
-//     canvases and the light map all read that transform, so they follow it with no change of their own.
-//   - the camera's offset (worldOffset) and the centring of a map narrower than the view (mapCenterOffsetX).
-//   - worldToScreen and screenToWorld, for clicks, hovers, badges drawn in screen pixels and HTML laid over the world.
-//
-// Only zooming in: the server sends what is round the player for a screen at zoom 1, and the chunks loaded, the
-// culling and the light map are all worked out for that view. A closer view is inside all of them.
 import { frameSize } from "./cutsceneframe.js";
 
 /** The closest the world comes: three times its normal size, or the nearest pixel-perfect level under that. */
@@ -33,13 +19,6 @@ export function canvasDpr(): number {
   return isTouch() ? Math.min(raw, 2) : raw;
 }
 
-/**
- * The zoom levels a step moves between, for this screen. USER REPORT 2026-10-15: "some zoom levels cause the tiles to
- * no longer look pixel perfect". A level is pixel perfect when one pixel of the art is a whole number of the screen's
- * own pixels: at 1.25 on a plain screen an art pixel is 1.25 screen pixels, drawn some one and some two wide. So past
- * the normal size (1, as it always was) the levels are the ones that make an art pixel 2, 3, 4... screen pixels: 2 and
- * 3 on a plain screen, 1.5, 2, 2.5 and 3 on a 200% one, 1.6 and 2.4 on a 125% one.
- */
 function levels(): number[] {
   const perArtPixel = canvasDpr() * (isTouch() ? 0.85 : 1);
   const out = [1];
@@ -96,10 +75,6 @@ function screenSize(): { w: number; h: number } {
   };
 }
 
-/**
- * How much of the world the camera keeps in view, in world pixels, for its clamp at the map's edges and the centring
- * of a small map: the screen over the player's zoom. (The touch screens' 0.85 is left out, as it always was.)
- */
 export function viewWidth(): number {
   return window.innerWidth / userZoom();
 }
@@ -121,10 +96,6 @@ export function snapWorld(v: number): number {
   return Math.round(v * z) / z;
 }
 
-/**
- * The translation from world to the canvas's base transform for a camera on (camX, camY): every draw of the world
- * translates by it (renderer.ts).
- */
 export function worldOffset(camX: number, camY: number): { x: number; y: number } {
   return {
     x: snapWorld(window.innerWidth / 2 - camX + mapCenterOffsetX()),
@@ -132,12 +103,6 @@ export function worldOffset(camX: number, camY: number): { x: number; y: number 
   };
 }
 
-/**
- * Sets the game canvas's base transform for this frame, and moves the shown zoom towards the one asked for. Called
- * once at the start of every frame, before anything is drawn (renderer.ts), and when the canvas is resized.
- *
- * screen = middle + zoom x (world + offset - middle): the zoom is about the middle of the screen, where the camera is.
- */
 export function applyWorldTransform(ctx: CanvasRenderingContext2D, now = performance.now()): void {
   // (a recording's frame has a density of its own, which is no new screen: the player's zoom is theirs to come back to)
   if (!frameSize() && canvasDpr() !== levelsFor) {
@@ -165,12 +130,6 @@ export function worldToScreen(worldX: number, worldY: number): { x: number; y: n
   return { x: w / 2 + z * (worldX + o.x - w / 2), y: h / 2 + z * (worldY + o.y - h / 2) };
 }
 
-/**
- * Takes the player's zoom back out of a drawing context about the world point (x, y), for marks that keep one size on
- * the screen: what is drawn next round (x, y), in world px, comes out as it does at zoom 1, while (x, y) itself stays
- * where the zoom puts it. USER REQUEST 2026-10-20: damage and healing numbers and the buff and debuff icons "should NOT
- * get massive when zooming in". Call between save() and restore().
- */
 export function unzoomAbout(ctx: CanvasRenderingContext2D, x: number, y: number): void {
   const k = 1 / userZoom();
   ctx.translate(x, y);
@@ -216,8 +175,6 @@ export function installWorldZoom(): void {
     // the page itself never zooms
     event.preventDefault();
     if (editing()) return;
-    // a mouse notch is one step, whatever size the browser gives it; a touchpad pinch sends many small movements,
-    // gathered up until they make one
     const delta = event.deltaMode === 1 ? event.deltaY * 40 : event.deltaY;
     if (Math.abs(delta) >= WHEEL_STEP) {
       wheelRest = 0;

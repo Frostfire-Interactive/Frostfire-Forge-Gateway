@@ -1,11 +1,3 @@
-// Corpse loot window for server-authoritative creatures; all taking is
-// validated server-side.
-//
-// A corpse with loot is opened with E beside it (an E badge shows over it) or a
-// left click on it. The window lists what is on the corpse, and a click on a row
-// takes that one thing. With Auto loot on (the settings menu) everything is
-// taken at once and the window is never shown. Each item taken shows a
-// notification with its name in its quality's colour.
 import { sendRequest, cachedPlayerId } from "./socket.js";
 import { itemFrame, qualityOf } from "./itemframe.js";
 import Cache from "./cache.js";
@@ -31,10 +23,6 @@ let activeCreatureId: number | null = null;
 
 const autoLoot = () => !!autoLootCheckbox?.checked;
 
-/**
- * Loot a corpse: with Auto loot, take everything at once; otherwise ask for
- * what is on it, which opens the window.
- */
 export function lootCorpse(creatureId: number): void {
   if (autoLoot()) sendRequest({ type: "CREATURE_LOOT_TAKE", data: { id: creatureId } });
   else sendRequest({ type: "CREATURE_LOOT", data: { id: creatureId } });
@@ -74,12 +62,6 @@ export function lootNearestCorpse(): boolean {
 
 const TOUCH = window.matchMedia?.("(hover: none) and (pointer: coarse)").matches ?? false;
 
-/**
- * The Interact key's badge over the corpse that key would loot, in screen space, as a mailbox's and a
- * gathering node's are (mail.ts renderMailboxHint). Not while its window is open,
- * and not on a touch screen (a tap loots). Whether one was drawn: the key loots before
- * it talks, opens a mailbox or gathers, so their badges stay hidden then.
- */
 export function renderCorpseLootHint(ctx: CanvasRenderingContext2D): boolean {
   const corpse = nearestLootableCorpse();
   if (!corpse) return false;
@@ -151,12 +133,6 @@ function lootRow(label: string, onTake: () => void): HTMLButtonElement {
   return row;
 }
 
-/**
- * What is on a corpse, when it is opened and again after each take: the window
- * shows what is left, and closes once nothing is. A click on a row takes that
- * one thing. With Auto loot on it is only kept up to date when it was already
- * open; otherwise it is not shown.
- */
 export function showCreatureLoot(creatureId: number, items: any[], copper: number): void {
   const wasOpen = activeCreatureId === creatureId;
   close();

@@ -1,15 +1,8 @@
-// Item editor popup. Talks to the game window over postMessage; the game
-// window forwards everything to the server, which validates and persists.
-// The window itself is the shared workbench (tooleditor.ts); this file holds
-// what is the item editor's own: its fields, its rules and its conversation
-// with the server.
 import { qualityOf } from "./itemframe.js";
 import { EditorShell, type ListRow, type RecordState } from "./tooleditor.js";
 import { FieldRenderer, coinWords, setFieldError, sheetOptions, type AssetOption, type Field } from "./toolfields.js";
 import { button, card, count, el, note, noticeDialog, shown, tag, thumb, toast, words } from "./toolkit.js";
 
-// Fallbacks so the dropdowns are never empty, even if the server's option lists
-// arrive late or an item carries a value that is no longer offered.
 const DEFAULT_TYPES = ["consumable", "equipment", "material", "quest", "miscellaneous"];
 const DEFAULT_QUALITIES = ["common", "uncommon", "rare", "epic", "legendary"];
 const DEFAULT_SLOTS = [
@@ -39,12 +32,6 @@ const STATS: Array<[key: string, label: string, unit?: string]> = [
   ["stat_avoidance", "Avoidance"],
 ];
 
-/**
- * The server answers a refused save in sentences, not by field. Each of its
- * sentences is about one field: this says which, so that field can be marked
- * and its tab pointed at. A sentence that matches nothing is still shown at
- * the top of the page.
- */
 const PROBLEM_FIELDS: Array<[RegExp, string]> = [
   [/^(Name |An item with that name)/, "name"],
   [/^Type /, "type"],
@@ -182,9 +169,6 @@ class ItemEditorBridge {
   }
 
   private onDeleteResult(msg: any, name: string): void {
-    // The reply names the deleted item: never adopt it as the open one, and
-    // leave the open item's unsaved edits alone.
-    // Why it was refused is something to read, so it stays until it is closed.
     if (!msg.ok) return void noticeDialog(`${name} was not deleted`, msg.errors?.length ? msg.errors : ["The server refused to delete it."]);
     this.total = Math.max(0, this.total - 1);
     this.shell.setCount(this.total);
@@ -233,11 +217,6 @@ class ItemEditorBridge {
 
   // ------------------------------------------------------------------ fields
 
-  /**
-   * The icons to pick from. The one the item has is framed in the quality
-   * being edited, as it will look in game, and is offered even when it is not
-   * in the list (different case, an extension, or the list failed to load).
-   */
   private iconAssets(): AssetOption[] {
     const current = String(this.draft?.icon ?? "");
     const quality = this.draft?.quality;
@@ -359,11 +338,6 @@ class ItemEditorBridge {
 
   // ------------------------------------------------------------------ search
 
-  /**
-   * Icon URL for a stored icon name. The listed icons win, but an item whose
-   * icon is not in the list (different case, an extension, or the list failed to
-   * load) still gets a URL built the same way the game builds item icons.
-   */
   private iconFor(name: unknown): string | null {
     const wanted = String(name ?? "").trim();
     if (!wanted) return null;
@@ -667,8 +641,6 @@ class ItemEditorBridge {
   private beginRequest(kind: "save" | "delete", packet: string, data: any, name: string): void {
     this.pending = { kind, packet, name, adds: kind === "save" && this.originalName === null };
     if (this.pendingTimer) clearTimeout(this.pendingTimer);
-    // No result ever comes back if the server rejects the packet outright
-    // (e.g. permissions): don't leave Save blocked forever.
     this.pendingTimer = setTimeout(() => {
       if (this.pending?.packet !== packet) return;
       this.endRequest();

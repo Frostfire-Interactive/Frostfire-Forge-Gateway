@@ -6,14 +6,9 @@ import {
 } from "../gateway/blockroute";
 import { HerdSpread, ROUTE_TIMEOUT_MS, fetchGatewayRoute, pickRegionNode, savedPointOf, type PickDeps } from "../webserver/regionpick";
 
-// The gateway side of "a login goes straight to the node that owns the saved point": the owner table the nodes
-// report (POST /blocks), the lookup (GET /route) and the webserver's pick.
-
 const KEY = "test-key";
 const isValidAuthKey = (key: unknown) => key === KEY;
 
-// The same report the engine's test (cluster-ownerroute.test.ts) builds from a table: 3 x 2 blocks, row by row.
-//   row 0: node-1 node-2 (none)    row 1: node-2 node-1 node-1
 const FIXTURE = { map: "overworld", epoch: 7, blockPx: 4096, blocksX: 3, blocksY: 2, nodes: ["node-1", "node-2"], owners: "01.100" };
 
 const report = (over: Record<string, unknown> = {}) => ({ id: "node-1", authKey: KEY, ...FIXTURE, ...over });
@@ -189,8 +184,6 @@ test("/blocks refuses malformed and oversized bodies", async () => {
   expect(biggest.status).toBe(200);
 });
 
-// The Mystika world: 794 maps with a block table, 790 of them houses of one block each, and the overworld, the
-// underworld and the test world of 40 x 40 blocks. The store must hold every one of them, and far more.
 const MEASURED_MAPS = 794;
 
 test("a region holds every map a world reports, four times the real count, and /route answers the overworld's owner", async () => {
@@ -679,9 +672,6 @@ test("only a node of the region with a heartbeat inside the timeout is live", ()
   expect([...liveNodesOf(servers, "us", now, 90_000)]).toEqual(["node-4"]);
   expect([...liveNodesOf(servers, "asia", now, 90_000)]).toEqual([]);
 });
-
-// ---- the glue in the two server files ------------------------------------------------------------------------------
-// The servers start listeners when loaded, so these read their source, as the engine's wiring checks do.
 
 const source = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 /** The text from `start` up to `until`. */

@@ -1,13 +1,3 @@
-// What the NPC editor suggests while a gossip line or a script is typed: the
-// details of the player that a gossip line can hold (${player.name}), and the
-// members of the NPC a script can use (dialogue(), position.x). The list
-// appears under the text box at the caret's word; the arrow keys move through
-// it, Enter or Tab takes one, Escape closes it. Styles: .ne-complete in
-// css/npceditor.css.
-//
-//   const completer = new Completer();
-//   completer.attach(textarea, GOSSIP_RULES, () => { /* the text was changed by a suggestion */ });
-//   completer.hide();        // when the page is drawn again
 import { el } from "./toolkit.js";
 
 export interface Suggestion {
@@ -131,11 +121,6 @@ function scriptCandidates(token: string): Suggestion[] {
   return out;
 }
 
-/**
- * A script runs with the NPC as `this`, so the candidates are plain members of
- * the NPC and nothing is wrapped around them. Only at the end of a word:
- * typing in the middle of one must not open the list or rewrite the text.
- */
 export const SCRIPT_RULES: CompleterRules = {
   token: (before, after) => (after && /[A-Za-z0-9_]/.test(after[0]) ? null : /([A-Za-z_][A-Za-z0-9_.]*)$/.exec(before)?.[1] ?? null),
   candidates: scriptCandidates,

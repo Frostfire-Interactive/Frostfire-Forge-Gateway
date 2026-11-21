@@ -1,6 +1,3 @@
-// Money as the game shows it: an amount counted in copper, written out as
-// gold, silver and copper with their coin icons. Nothing is written for none.
-
 export function coinHtml(totalCopper: number): string {
   const total = Math.max(0, Math.floor(Number(totalCopper) || 0));
   if (total <= 0) return "";

@@ -1,9 +1,3 @@
-// Player subscriptions, the Gateway half: the tables and columns the feature needs, the Stripe calls,
-// the webhook, and what the account page and the login pre-check ask. The engine reads the same
-// columns and tables (accounts.subscribed, subscription_locks, subscription_status).
-//
-// Stripe is called with plain fetch. The secret key and the webhook secret are never logged and never
-// leave this process, and a Stripe answer is never logged as a whole: only the status and error code.
 import query from "../controllers/sqldatabase";
 import log from "../modules/logger";
 import { encodeForm, stripeSettings, subscriptionToAccountState, verifyStripeSignature, type StripeSettings } from "../modules/stripe";
@@ -31,11 +25,6 @@ async function hasColumn(name: string): Promise<boolean> {
   return Number(rows[0]?.count) > 0;
 }
 
-/**
- * Makes sure the three accounts columns and the two tables exist. Safe on every start, never throws: when
- * something cannot be added it logs one warning and leaves the feature off. The engine does the same
- * step; whichever starts first does the work.
- */
 export async function ensureSubscriptionSchema(): Promise<boolean> {
   ready = false;
   try {
@@ -220,10 +209,6 @@ export type SubscriptionInfo = {
 
 const OFF: SubscriptionInfo = { enabled: false, subscribed: false, ends: null, loginLocked: false, guest: false };
 
-/**
- * What the account page and the login pre-check need. An admin is role 1 (the same column the engine reads
- * for isAdmin); a guest counts as not subscribed, as in the engine. Corrects a stale flag on the way.
- */
 export async function getSubscriptionInfo(username: string): Promise<SubscriptionInfo> {
   if (!ready || !stripeSettings()) return OFF;
   try {
@@ -318,11 +303,6 @@ function idOf(value: any): string {
   return typeof value === "string" ? value : typeof value?.id === "string" ? value.id : "";
 }
 
-/**
- * The webhook. `raw` is the exact request body (read once, as text): the signature covers those bytes.
- * Every subscription event re-reads the subscription from Stripe and sets the account from it, so the
- * order of events and repeats do not matter. Unknown event types answer 200.
- */
 export async function processStripeWebhook(raw: string, signature: string | null): Promise<Reply> {
   const settings = stripeSettings();
   if (!ready || !settings) return { status: 404, body: { message: "Not found" } };

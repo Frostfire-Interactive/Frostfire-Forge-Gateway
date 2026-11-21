@@ -19,15 +19,11 @@ const config: GatewayConfig = {
   authKey: process.env.GATEWAY_AUTH_KEY || null
 };
 
-// Game servers prove themselves with this key. Without one every /register,
-// /heartbeat and /unregister call would be open, so the gateway does not run.
 if (typeof config.authKey !== "string" || config.authKey.trim() === "") {
   console.error("[Gateway] GATEWAY_AUTH_KEY is missing or empty. Set a strong random value in the gateway environment. Refusing to start.");
   process.exit(1);
 }
 
-// Constant-time key check. Both sides are hashed first, so keys of different
-// lengths compare without throwing, and a non-string key never matches.
 function isValidAuthKey(provided: unknown): boolean {
   if (typeof provided !== "string" || typeof config.authKey !== "string") return false;
   const providedDigest = crypto.createHash("sha256").update(provided).digest();
@@ -37,8 +33,6 @@ function isValidAuthKey(provided: unknown): boolean {
 
 const gameServers: Map<string, GameServer> = new Map();
 
-// Cluster mode: which node of each region owns which block (POST /blocks), for GET /route. Memory only: the nodes send
-// every table again when they register, so a restarted gateway learns them back.
 const blockRoutes = new BlockRoutes();
 
 // The ids of a region's nodes with a heartbeat inside the timeout: the only nodes /route may name.
@@ -56,14 +50,9 @@ const migrationHistory: Array<{
   clientCount: number;
 }> = [];
 
-// Dashboard sessions belong to an admin account that is signed in on the
-// website: the gateway reads the same "token" cookie (cookies are shared across
-// ports of one host) and never handles a password itself.
 type DashboardSession = { username: string; expires: number; checkedAt: number };
 const dashboardSessions: Map<string, DashboardSession> = new Map();
 const DASHBOARD_SESSION_TIMEOUT = 3600000;
-// How often a live session confirms the account is still signed in and still
-// allowed, so removing the role or permission locks the dashboard promptly.
 const DASHBOARD_ACCESS_RECHECK = 60000;
 const DASHBOARD_PERMISSIONS = ["server.gateway", "server.*"];
 
@@ -72,8 +61,6 @@ function readCookie(req: Request, name: string): string | null {
   return match ? match[1] : null;
 }
 
-// The account signed in on the website, or null. Guests and accounts that
-// still owe a second factor do not count as signed in.
 async function getSignedInAccount(req: Request): Promise<string | null> {
   const token = readCookie(req, "token");
   if (!token) return null;
@@ -84,8 +71,6 @@ async function getSignedInAccount(req: Request): Promise<string | null> {
   return username;
 }
 
-// Dashboard access needs an admin account (role 1) that holds server.gateway
-// or server.*, and is not banned.
 async function hasDashboardAccess(username: string): Promise<boolean> {
   const accounts = (await query("SELECT role, banned FROM accounts WHERE username = ? LIMIT 1", [username])) as any[];
   if (Number(accounts?.[0]?.role) !== 1 || Number(accounts[0].banned) === 1) return false;
@@ -255,8 +240,6 @@ type ServerStatus = {
   regionId?: string;
 };
 
-// The nodes of one cluster region, as /status lists them, collapsed into the one realm players see. Its host and
-// ports are those of the least-loaded online node (what realm selection pings); its counts are the region's.
 function collapseRegions(servers: ServerStatus[]) {
   const byRegion = new Map<string, ServerStatus[]>();
   for (const server of servers) {
@@ -478,8 +461,6 @@ const serverConfig: any = {
     }
 
 
-    // Who is asking, and whether they may open the dashboard. The login page
-    // uses this to decide what to show.
     if (url.pathname === "/api/session" && req.method === "GET") {
       const headers = { "Content-Type": "application/json", "Cache-Control": "no-store" };
       const loginUrl = getWebsiteLoginUrl(req);

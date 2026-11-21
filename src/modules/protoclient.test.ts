@@ -2,12 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { CREATURE_MOVE_HEADER, decodeCreatureMoves } from "../webserver/public/js/core/creaturemoves";
 import { applyPose, findPosePlayer, poseMark, reapplyPose } from "../webserver/public/js/core/posepacket";
 
-// The client's half of the protocol packet wave (the engine's half is its own src/tests/packet-proto.test.ts; each repo
-// tests itself):
-//   B. CREATURE_MOVE as a binary datagram: [u8 0x04][u16 count, little endian] then per creature 13 bytes
-//      [u32 id][i32 x][i32 y][u8 flags], flags: bits 0-2 the direction, bit 3 moving.
-//   A. SPRITE_SHEET_POSE: a pose change alone, for players whose sheets the client holds.
-
 const DIRS = ["down", "up", "left", "right", "downleft", "downright", "upleft", "upright"];
 
 /** A datagram laid out as the engine's socket/creature_move_codec.ts lays it out. */

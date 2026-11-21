@@ -1,13 +1,3 @@
-// The game's notifications: short messages from the server, and what the connection is doing.
-//
-// They are stacked at the bottom right, over everything else on the page. A new one is added at
-// the bottom, which moves the ones before it up. Each closes by itself once it has had time to be
-// read, or at once from the x beside it.
-//
-// USER REQUEST 2026-10-06: "They should be on the bottom right and as multiple come in, shift them
-// upwards. Allow closing them early too with an x next to each one. It should be on top of all
-// layers."
-
 /** How long a notification stays (ms): this, and a little for each character of it. */
 const BASE_MS = 5000;
 const PER_CHARACTER_MS = 100;
@@ -69,13 +59,6 @@ function leaveGame(): void {
   else window.location.href = "/";
 }
 
-/**
- * Shows a notification. `autoClose`: it closes by itself; one that does not stands until it is
- * closed, or until the next standing one takes its place (the connection's attempts follow each
- * other in one notification, not a pile of them). `reconnect`: the game is left once it has been
- * shown for its time, whether or not it was closed. `fill`: draws the text itself (a coloured item
- * name, say); `message` is still what it is known and read out by.
- */
 export function showNotification(message: string, autoClose: boolean = true, reconnect: boolean = false, fill?: (body: HTMLDivElement) => void): void {
   const text = String(message ?? "");
   const lasts = BASE_MS + text.length * PER_CHARACTER_MS;

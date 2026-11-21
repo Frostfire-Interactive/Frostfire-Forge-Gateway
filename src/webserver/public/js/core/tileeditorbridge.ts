@@ -1,16 +1,3 @@
-// Map editor popup: the tile palette, the layers and the tools. The painting
-// itself happens in the game window (js/core/tileeditor.ts); this window says
-// what to paint with. The two talk over postMessage, and none of that
-// conversation is changed here.
-//
-// The window is built from the shared kit (css/tools.css, js/core/toolkit.ts)
-// but not from the editor workbench, which is for a list of records and a
-// form: this is a tool window. What is its own is in css/mapeditor.css (me-*).
-//
-// The game window tells this one little: the map's tilesets and layers, which
-// layer is selected, which layers are locked or have unsaved edits, and the
-// tiles picked up from the map. It does not answer a Save, a tool change or
-// the choice of an object layer, so what is shown here is only what it said.
 import { arrowKeys, brandName, button, confirmDialog, count, el, empty, icon, iconButton, num, oneStop, openDialog, pill, screen, segments, setBusy, setIcon, thumb, toast, tooltip, type IconName } from "./toolkit.js";
 import { FieldRenderer, setFieldError } from "./toolfields.js";
 import { drawPrint } from "./footprintdraw.js";
@@ -33,23 +20,8 @@ const OBJECTS: Array<{ type: string; glyph: IconName }> = [
 /** How large the tiles of the palette can be shown: whole multiples, so every pixel stays a square. */
 const ZOOMS = [1, 2, 3, 4];
 const ZOOM_KEY = "ff-map-editor-zoom";
-/**
- * The two tabs of the window: Tiles (the tools and the palette to paint with) and Sounds (USER REQUEST 2026-10-19: "a
- * separate tab that allows selecting multiple tiles to share a sound (picked from asset server)"): tiles of the palette
- * picked and given one footstep sound, for every map at once (js/core/tilesounds.ts).
- */
 type View = "paint" | "sounds" | "fishing" | "footprints";
 const VIEW_KEY = "ff-map-editor-view";
-/**
- * The Fishing tab (USER REQUEST 2026-10-20: "Fishing editor choose type of fish (multiple choice with % chance
- * editable) rewarded on what tile (similar to tileset sound editor) (item listed as material)"): tiles of the palette
- * picked and given what can be caught from them, material items with a chance each, for every map at once (engine
- * src/systems/fishing). A tile with catches is water a player can cast a line into.
- *
- * A fishable tile also names the items that fish it (USER REQUEST 2026-10-21: "require a list of set items that can be
- * used for fishing selected in the fishing section inside the tile editor"): weapons, one of which a player must have
- * equipped to cast there. They are chosen in the Catches dialog and applied with the catches.
- */
 interface Catch { item: string; chance: number }
 interface FishItem { name: string; image: string | null; quality: string | null }
 /** At most this many catches on a tile, and a chance from and to (%), and at most this many items fishing it: the server's limits. */
@@ -69,11 +41,6 @@ function shares(list: Catch[]): number[] {
   return list.map((c) => (total > 0 && c.chance > 0 ? (c.chance / total) * 100 : 0));
 }
 const percent = (n: number): string => `${Math.round(n * 10) / 10} %`;
-/**
- * The Footprints tab (USER REQUEST 2026-10-20: "a section in the editor to be able to add footsteps on certain tiles"):
- * tiles of the palette picked and given the prints players leave on them, for every map at once (engine
- * src/systems/footprints.ts, game window js/core/footprints.ts): a style, a colour, a darkness and a fade time.
- */
 type PrintStyle = "boot" | "bare" | "hole";
 interface Footprint { style: PrintStyle; color: string; opacity: number; fade: number }
 const PRINT_STYLES: Array<[PrintStyle, string]> = [["boot", "Boots"], ["bare", "Bare feet"], ["hole", "Deep holes"]];
@@ -84,11 +51,6 @@ const PRINT_SAVE_WAIT_MS = 6000;
 /** A footprint setting as text, the same for the same setting: to tell them apart and to colour them. */
 const printKey = (print: Footprint | null | undefined): string => (print ? `${print.style}|${print.color}|${print.opacity}|${print.fade}` : "");
 const styleWords = (style: PrintStyle): string => PRINT_STYLES.find(([value]) => value === style)?.[1] ?? style;
-/**
- * The preview: its size on screen (px), how many times the ground is magnified in it, how far the walker starts outside
- * it and how fast they walk (ground px, px/s), the game's step and feet apart (js/core/steps.ts STEP_PX, footprints.ts
- * FOOT_APART), and the longest a print takes to fade in it (s): a longer fade is shown sped up.
- */
 const PREVIEW_W = 192, PREVIEW_H = 48, PREVIEW_SCALE = 2, PREVIEW_START = 6, PREVIEW_SPEED = 60;
 const PREVIEW_STRIDE = 44, PREVIEW_APART = 4, PREVIEW_FADE_MAX = 3;
 /** How much of its time a print stays as laid before it fades (the game's HOLD). */
@@ -213,10 +175,6 @@ class TileEditorBridge {
   private preview: HTMLAudioElement | null = null;
   private fields = new FieldRenderer({ rerender: () => {} });
 
-  /**
-   * The Fishing tab: its bar, the fishable tiles of every map (tileset key -> tile id -> catches), the items that fish
-   * them (the same, -> weapon names), the material items, and the weapons.
-   */
   private fishBar = el("div", "me-toolbar-set");
   private fishTiles: Record<string, Record<string, Catch[]>> = {};
   private fishTools: Record<string, Record<string, string[]>> = {};
@@ -253,10 +211,6 @@ class TileEditorBridge {
   private printSaveTimer: ReturnType<typeof setTimeout> | null = null;
   /** A save on its way: the tiles and the prints they are to have, null for none. */
   private printSaving: { key: string; ids: number[]; print: Footprint | null } | null = null;
-  /**
-   * The preview on the Footprints bar (USER REQUEST 2026-10-20: "Add a preview section"): someone walking across the
-   * first picked tile, leaving the bar's prints as the game draws them (js/core/footprintdraw.ts).
-   */
   private printPreview = el("canvas", "me-print-preview");
   private previewPrints: Array<{ x: number; side: number; born: number }> = [];
   private previewWalk = { x: -PREVIEW_START, walked: 0, side: 1, waitUntil: 0 };
@@ -321,12 +275,6 @@ class TileEditorBridge {
     });
   }
 
-  /**
-   * The zone map window (/zone-map, zonemap.ts): the whole map to draw zone borders on. Opened from here because this
-   * click is the user's (the game window could not open it); it talks to the game window itself. Zones are drawn and
-   * edited there only (USER REQUEST 2026-11-18: "Disable the in-world zone editing, it should always be the popup
-   * version"); Zones in the row of views opens it.
-   */
   private zoneMapWindow: Window | null = null;
   private zonesTab = el("button", "tl-seg-item me-zones-open");
   private openZoneMap() {
@@ -507,8 +455,6 @@ class TileEditorBridge {
       tab.addEventListener("click", () => this.setView(id));
       this.viewTabs.appendChild(tab);
     }
-    // Zones is not a view of this window: it opens the zone map window (USER REQUEST 2026-11-18: "make it an item in
-    // this button section"). It is never marked as the view in use, and the arrow keys pass over it.
     this.zonesTab.type = "button";
     this.zonesTab.title = "Open the zone map: the whole map in its own window, to draw zone borders";
     this.zonesTab.append(icon("map", 15), el("span", "", "Zones"));
@@ -635,11 +581,6 @@ class TileEditorBridge {
     }, WAIT_MS);
   }
 
-  /**
-   * What the palette shows in place of a tileset it cannot draw: that the map
-   * has none, that the picture of this one is on its way, or that it never
-   * came. With a tileset to draw, the note is taken away.
-   */
   private paintStage() {
     if (!this.inited) return;
     if (this.pictureTimer) clearTimeout(this.pictureTimer);
@@ -975,11 +916,6 @@ class TileEditorBridge {
     this.paintStatus();
   }
 
-  /**
-   * Save: the game window is asked to, as ever. It answers by saying the layers
-   * have no unsaved edits left; when it says nothing, it did not save (it
-   * shows why itself), and that is said here rather than left to be guessed.
-   */
   private save() {
     this.send({ type: 'command', name: 'save' });
     if (this.saveTimer) clearTimeout(this.saveTimer);
@@ -1710,12 +1646,6 @@ class TileEditorBridge {
 
   // ------------------------------------------------------------- New map
 
-  /**
-   * New map (USER REQUEST 2026-10-19: "Add support for creating new maps within the editor. Allow defining map size,
-   * infinite or not and optionally allow creating .world maps. Each map should be blank and upon creation, warp to
-   * them."): a form, then the game window asks the server (CREATE_MAP), which makes it blank on the asset server and
-   * moves the admin onto it. Loading the new map closes this window and opens the editor again there.
-   */
   private async newMap() {
     if (!this.inited || this.creatingMap) return;
     if (this.unsavedLayers.size > 0) {
@@ -1975,8 +1905,6 @@ class TileEditorBridge {
         ctx.strokeStyle = `hsla(${hue}, 90%, 65%, 1)`;
         ctx.lineWidth = 1;
         ctx.strokeRect(x + 1.5, y + 1.5, tw - 3, th - 3);
-        // (USER REPORT 2026-10-19, sounds set on snow tiles looked "gone after reload": a tint is lost on pale tiles) a
-        // solid corner in the sound's colour, outlined dark, marks a tile set here on any art
         const k = Math.max(5, Math.round(Math.min(tw, th) * 0.45));
         ctx.beginPath();
         ctx.moveTo(x + tw, y + th - k);
@@ -2212,8 +2140,6 @@ class TileEditorBridge {
     this.fields.openAssetPicker("Footstep sound", options, (option) => {
       this.chosenSound = String(option.value);
       this.paintSoundBar();
-      // Enter in the picker's search picks a sound: the same key press must not also press the button focused after
-      // it (it did: Apply ran at once). The focus moves to Apply once the key is done with.
       (document.activeElement as HTMLElement | null)?.blur();
       setTimeout(() => this.soundApplyBtn.focus(), 0);
     }, { icons: false, current: this.chosenSound ?? undefined, fallback: "megaphone" });
@@ -2228,10 +2154,6 @@ class TileEditorBridge {
     this.preview.play().catch(() => toast(`${this.chosenSound} could not be played.`, "error"));
   }
 
-  /**
-   * Give the picked tiles a sound ("" for none), or with null take them off the list. The game window passes it to
-   * the server, which keeps it on the asset server and sends the list again to everyone (handleTileSoundsUpdate).
-   */
   private applySound(sound: string | null) {
     const tileset = this.tilesets[this.currentTilesetIndex];
     const ids = [...(this.soundPicked.get(this.currentTilesetIndex) ?? [])].sort((a, b) => a - b);
@@ -2262,8 +2184,6 @@ class TileEditorBridge {
   /** The list of tile sounds as it is now, after a save (this window's or anyone's). */
   private handleTileSoundsUpdate(msg: any) {
     this.tileSounds = msg.tileSounds && typeof msg.tileSounds === "object" ? msg.tileSounds : {};
-    // Only the list with this window's change in it answers its save: the list also comes when the game window first
-    // fetches it, and after anyone else's save, and neither of those says this one was kept
     const saved = this.soundSaving;
     const row = saved ? this.tileSounds[saved.key] ?? {} : {};
     if (saved && saved.ids.every((id) => (saved.sound === null ? row[String(id)] === undefined : row[String(id)] === saved.sound))) {
@@ -2318,10 +2238,6 @@ class TileEditorBridge {
     return list && list.length ? this.fishWords(list, this.fishTools[key]?.[String(id)] ?? []) : "not fishable";
   }
 
-  /**
-   * The catches and the items that fish them the picked tiles share, null when they differ (no catches when none is
-   * fishable).
-   */
   private pickedCatches(): { catches: Catch[]; tools: string[] } | null {
     const tileset = this.tilesets[this.currentTilesetIndex];
     const picked = this.fishPicked.get(this.currentTilesetIndex);
@@ -2340,10 +2256,6 @@ class TileEditorBridge {
     return shared;
   }
 
-  /**
-   * On the palette: each fishable tile in the colour of its catches and the items that fish it, with a wave in its
-   * corner, then what is picked.
-   */
   private drawFishing(tileset: any, tw: number, th: number, cols: number) {
     const ctx = this.tilesetCtx;
     const toolRow = this.fishTools[this.keyOf(tileset)] ?? {};
@@ -2502,10 +2414,6 @@ class TileEditorBridge {
     this.paintPicked();
   }
 
-  /**
-   * The Catches dialog: the material items the picked tiles give, each with its chance. The chances are shares: when
-   * they do not add up to 100 %, each counts for its part of their sum, and the dialog shows what that comes to.
-   */
   private editCatches() {
     this.loadFishing();
     if (this.fishState !== "loaded") {
@@ -2644,10 +2552,6 @@ class TileEditorBridge {
     paintTools();
   }
 
-  /**
-   * Give the picked tiles catches and the items that fish them, or with null make them not fishable. The game window
-   * passes it to the server, which saves it and answers with every fishable tile as it is now (handleFishingUpdate).
-   */
   private applyFishing(catches: Catch[] | null) {
     const tileset = this.tilesets[this.currentTilesetIndex];
     const ids = [...(this.fishPicked.get(this.currentTilesetIndex) ?? [])].sort((a, b) => a - b);
@@ -2679,10 +2583,6 @@ class TileEditorBridge {
     this.paintFishBar();
   }
 
-  /**
-   * Every fishable tile as it is now, with the items that fish it, the material items and the weapons: the answer to
-   * the first ask and to every save of this window.
-   */
   private handleFishingUpdate(msg: any) {
     this.fishTiles = msg.tiles && typeof msg.tiles === "object" ? msg.tiles : {};
     this.fishTools = msg.tools && typeof msg.tools === "object" ? msg.tools : {};
@@ -2940,10 +2840,6 @@ class TileEditorBridge {
     this.paintPicked();
   }
 
-  /**
-   * Give the picked tiles footprints, or with null take them away. The game window passes it to the server, which saves
-   * it and sends every player the list as it is now (handleFootprintsUpdate).
-   */
   private applyPrints(print: Footprint | null) {
     const tileset = this.tilesets[this.currentTilesetIndex];
     const ids = [...(this.printPicked.get(this.currentTilesetIndex) ?? [])].sort((a, b) => a - b);

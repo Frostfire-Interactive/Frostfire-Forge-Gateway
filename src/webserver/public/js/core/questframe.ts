@@ -1,5 +1,3 @@
-// NPC-facing quest popup: offer / incomplete / turn-in modes plus the gossip
-// menu, rendered into the two-page #quest-frame-container book panel.
 import { sendRequest } from "./socket.js";
 import Cache from "./cache.js";
 import { coinHtml } from "./coins.js";
@@ -88,8 +86,6 @@ function rewardsScrollHtml(quest: QuestDef): string {
   return html + `</div>`;
 }
 
-// XP and copper live in the pinned footer under the icons, never floating at
-// the top of the page. Money shows real coin icons, not letter shorthands.
 export { coinHtml };
 
 function payoutHtml(quest: QuestDef): string {
@@ -171,8 +167,6 @@ export function openOffer(npcId: number | null, quest: QuestDef, canAccept: bool
     left.innerHTML = `<div class="quest-scroll ui"><div class="quest-text ui">${escapeHtml(quest.offer_text)}</div>` + objectivesHtml(quest) + `</div>`;
     right.innerHTML = `<div class="quest-scroll ui">${rightBody}</div>` + footHtml(reasonNote + payout, buttons);
   } else {
-    // No right-side content: description spans the full book width with the
-    // buttons pinned under it.
     right.innerHTML = "";
     right.style.display = "none";
     left.innerHTML = `<div class="quest-scroll ui"><div class="quest-text ui">${escapeHtml(quest.offer_text)}</div>` + objectivesHtml(quest) + `</div>` + footHtml(reasonNote, buttons);
@@ -264,9 +258,6 @@ export function openGossip(npcId: number, name: string | null, gossipText: strin
   frameState.mode = "gossip";
   frameState.npcId = npcId;
   frameState.questId = null;
-  // Locked quests are never listed: under-leveled ones stay hidden until the
-  // player qualifies, and prerequisite-locked ones until the chain reaches
-  // them (markers and views refresh live on level-up and turn-in).
   const level = selfLevel();
   frameState.gossip = Array.isArray(quests)
     ? quests.filter((offer: any) => Number(offer?.requiredLevel || 0) <= level && offer?.reason !== "missing_prerequisite")
@@ -335,9 +326,6 @@ export function closeQuestFrame(): void {
   hideFrame();
 }
 
-// Walking away from the NPC closes the frame. A little beyond the server's
-// interact radius so it doesn't flicker at the boundary; accept/turn-in past
-// the radius are still rejected server-side with an error note.
 const FRAME_CLOSE_RADIUS = 160;
 
 export function checkFrameProximity(playerX: number, playerY: number): void {
@@ -387,8 +375,6 @@ export function onOffer(data: any): void {
   if (!quest) return;
   cacheQuestDef(quest);
   setLastNpcId(data?.npcId ?? getLastNpcId());
-  // Locked quests are never offered or shown, even when the server would
-  // display them as unavailable: below-level or prerequisite-locked.
   if (quest.required_level > selfLevel() || data?.reason === "missing_prerequisite") {
     hideFrame();
     return;
@@ -415,10 +401,6 @@ export function onTurnInOffer(data: any): void {
 
 export function onGossip(data: any): void {
   const quests = data?.quests || [];
-  // No quests: bubble only. The chain was already advanced when the player
-  // interacted (tryInteractNpc / tap), so advancing again here would skip a
-  // line — the server echo must not move the conversation.
-  // An innkeeper always has something to offer, so its frame opens with no quests too.
   if (quests.length === 0 && data?.innkeeper !== true) return;
   openGossip(Number(data?.npcId), data?.name ?? null, data?.gossipText ?? null, quests, data?.vendor === true, data?.innkeeper === true);
 }

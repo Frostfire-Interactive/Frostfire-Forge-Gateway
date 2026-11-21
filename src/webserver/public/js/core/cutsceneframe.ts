@@ -1,14 +1,3 @@
-// Lays the game out for the frame of a recording: the world is drawn for a screen of that size and shape, whatever the
-// window's, so a file larger than the window is not an enlarged picture of it, and one of another shape shows more of
-// the world and not less. The browser shrinks what is drawn to fit the window, so the view can still be watched.
-//
-// The world reads the window's size and density in a great many places, and one that was missed would put things out
-// of line. So while there is a frame the window itself gives the frame's: nothing needs telling, and nothing is left
-// out. The interface is not in a recording and is left as it was: it hears of the frame from no "resize" event, only
-// the world's canvases from "viewframe", and everything is put right by a real "resize" when the frame is left.
-//
-// Nothing else is imported here: renderer.ts, worldzoom.ts and map.ts all read this, and so must not start in a cycle.
-
 const NAMES = ["innerWidth", "innerHeight", "devicePixelRatio"] as const;
 
 interface Frame {
@@ -22,12 +11,6 @@ interface Frame {
 let frame: Frame | null = null;
 let held: { name: string; was: PropertyDescriptor | undefined }[] = [];
 
-/**
- * The window's view always fits inside the frame. A file at least that large keeps art pixels a whole number of its
- * own: 2 on a window of half its size, and 1 on a window of 3/4, which then sees more of the world. USER REPORT
- * 2026-10-15, worldzoom.ts: "some zoom levels cause the tiles to no longer look pixel perfect". A file smaller than the
- * window is the window's view, drawn at the window's size and shrunk when the frame is composed.
- */
 function fit(width: number, height: number): Frame {
   const ratio = Math.min(width / window.innerWidth, height / window.innerHeight);
   if (ratio < 1) return { w: Math.ceil(width / ratio), h: Math.ceil(height / ratio), density: 1 };

@@ -1,9 +1,6 @@
 import { expect, test } from "bun:test";
 import { doneSend, doneWalk } from "../webserver/public/js/core/resumesend";
 
-// HANDOFF_DONE names the walk: the direction the new node walks the player in, or null. doneSend decides from it exactly;
-// without it (an older engine) the facing rule stays (stickstep.test.ts).
-
 const NONE = { send: null, lastSent: null, keyResumed: null };
 const key = (keyDirection: string) => ({ keyPressed: true, keyDirection, stick: "" });
 const stick = (s: string) => ({ keyPressed: false, keyDirection: "", stick: s });

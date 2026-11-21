@@ -1,16 +1,3 @@
-// Creature editor popup. Talks to the game window over postMessage; the game
-// window forwards everything to the server, which validates and persists.
-// The window itself is the workbench of the tool windows, drawn by
-// tooleditor.ts as an editor of several kinds of record; this file holds what
-// is the creature editor's own: its four kinds of record, their fields and
-// rules, the tools that act in the game window, and the conversation with the
-// server.
-//
-// It is four editors in one. Creatures are the large one: a creature has
-// pages (General, Appearance, Rewards) and two lists of records of its own,
-// its abilities and its spawn points, each saved by its own request when Save
-// is pressed. Patrol paths, link groups and spawn pools are what spawn points
-// refer to, and fit one page each.
 import { EditorShell, type Kind, type ListRow, type RecordState } from "./tooleditor.js";
 import { coins, FieldRenderer, orderFields, setFieldError, sheetOptions, type AssetOption, type Field, type Option } from "./toolfields.js";
 import { button, card, count, duration, el, empty, icon, iconButton, note, noticeDialog, num, pill, short, shown, subcard, svg, switchControl, tag, thumb, titleCount, toast, tooltip, words } from "./toolkit.js";
@@ -87,12 +74,6 @@ const MOVEMENT_WORDS: Record<string, string> = { idle: "Idle", wander: "Wander",
 const PAUSE_WORDS: Record<string, string> = { continuous: "Continuous", pause: "Pause at each" };
 const LAYER_WORDS: Record<string, string> = { per_layer: "Per layer", shared: "Shared" };
 
-/**
- * The server answers a refused save in sentences, not by field. Each of its
- * sentences is about one field: these say which, so that field can be marked
- * and its tab pointed at. A sentence that matches nothing is still shown at
- * the top of the page.
- */
 const TEMPLATE_PROBLEMS: Array<[RegExp, string]> = [
   [/^Name /, "name"],
   [/^Minimum level /, "level_min"],
@@ -145,11 +126,6 @@ const where = (x: unknown, y: unknown): string => `${num(Number(x) || 0)}, ${num
 /** The words of the game written for reading, stored as they were: "rare_elite" is listed as "Rare elite". */
 const choices = (values: string[], said: Record<string, string> = {}) => (): Option[] => values.map((value) => ({ value, label: said[value] ?? words(value) }));
 
-/**
- * A body or head listed with a template is that animation template, not a look:
- * creatures are drawn on their own base templates. Worn sheets do carry a
- * template, and what the creature already uses stays listed.
- */
 function pickableSheets<T extends { name: string; template?: boolean }>(sheets: T[], slot: string, current: string): T[] {
   if (slot !== "body" && slot !== "head") return sheets;
   return sheets.filter((sheet) => !sheet.template || sheet.name === current);
@@ -171,19 +147,9 @@ class CreatureEditorBridge {
   private abilitiesDirty = false;
   /** Which abilities are opened to their fields, by position. */
   private openAbilities = new Set<number>();
-  /**
-   * The spawn open on the selected creature's Spawns tab. Its creature is
-   * implied (the selected one), so it has no creature picker.
-   */
   private spawnDraft: any = null;
   private spawnDirty = false;
 
-  /**
-   * The save or delete in flight. Save waits for its result: a new entry has
-   * no id until then, so a second Save would insert it again. `draft` and
-   * `spawn` are what it was sent for: its result only counts for them while
-   * they are still the ones open.
-   */
   private pending: { kind: SaveKind; packet: string; name: string; draft: any; spawn: any } | null = null;
   private pendingTimer: ReturnType<typeof setTimeout> | null = null;
   /** Kind to open once the in-flight save succeeds ("Save and leave" in the leave question). */
@@ -284,8 +250,6 @@ class CreatureEditorBridge {
   }
 
   private onResult(msg: any): void {
-    // Only the in-flight save/delete's own result counts: others (Go to)
-    // must not clear unsaved changes or release the pending save.
     if (!this.pending || (msg.action && msg.action !== this.pending.packet)) {
       if (!msg.ok) this.report(msg.errors?.length ? msg.errors : ["The server refused that."]);
       return;
@@ -324,8 +288,6 @@ class CreatureEditorBridge {
         if (!this.draft.id) this.draft.id = msg.id;
       }
     }
-    // One Save covers the whole creature: fields first (a new creature
-    // needs its id), then abilities, then the open spawn.
     if (!deleted && here && this.saveNextDirty()) return;
 
     if (!deleted && here) {
@@ -753,10 +715,6 @@ class CreatureEditorBridge {
     if (this.kind === "templates" || this.kind === "linkGroups") this.shell.focusField("name");
   }
 
-  /**
-   * Another kind was picked in the navigation. That drops the selection, so
-   * unsaved changes get a Save / Discard / Stay question first.
-   */
   private async requestKind(kind: KindId): Promise<void> {
     if (kind === this.kind) return;
     if (!this.hasUnsaved || !this.draft) return this.switchKind(kind);
@@ -888,11 +846,6 @@ class CreatureEditorBridge {
     return grid;
   }
 
-  /**
-   * One form field. It edits `target[field.key]`; `path` is where its problems
-   * are reported and how the page finds it again, and `part` is what a change
-   * to it leaves unsaved.
-   */
   private field(def: Field, target: any = this.draft, path: string = def.key, part: Part = "record"): HTMLElement {
     const wrap = this.fields.renderField({ ...def, path }, target, () => this.touched(path, wrap, part), { error: this.fieldErrors[path] });
     return wrap;
@@ -1054,10 +1007,6 @@ class CreatureEditorBridge {
     return parts.join(" · ");
   }
 
-  /**
-   * The selected creature's abilities, one to a line that opens to its
-   * fields, edited together and saved together with the Save button.
-   */
   private renderAbilities(main: HTMLElement): void {
     const list = this.abilityDraft;
     const part = card(main, "Abilities", "What it casts in a fight, and when. They are saved together, with the creature.");
@@ -1168,10 +1117,6 @@ class CreatureEditorBridge {
     return td;
   }
 
-  /**
-   * The selected creature's spawn points: a table to pick from, and under it
-   * the picked one's fields. The Save button stores it along with the creature.
-   */
   private renderSpawns(main: HTMLElement): void {
     if (!this.draft.id) {
       const first = el("section", "tl-card");
@@ -1551,8 +1496,6 @@ class CreatureEditorBridge {
   private save(): void {
     if (!this.draft || this.pending) return;
     if (this.kind === "templates") {
-      // The creature's own fields go first when changed (a new creature needs
-      // its id); abilities and the open spawn follow from the result handler.
       if (this.dirty || !this.draft.id) this.sendEntry("template");
       else if (!this.saveNextDirty()) toast("Nothing has changed since it was last saved.");
       return;
@@ -1656,8 +1599,6 @@ class CreatureEditorBridge {
   private beginRequest(kind: SaveKind, packet: string, data: any, name: string): void {
     this.pending = { kind, packet, name, draft: this.draft, spawn: this.spawnDraft };
     if (this.pendingTimer) clearTimeout(this.pendingTimer);
-    // No result ever comes back if the server rejects the packet outright
-    // (e.g. permissions): don't leave Save blocked forever.
     this.pendingTimer = setTimeout(() => {
       if (this.pending?.packet !== packet) return;
       const saving = kind !== "delete" && kind !== "spawnDelete";

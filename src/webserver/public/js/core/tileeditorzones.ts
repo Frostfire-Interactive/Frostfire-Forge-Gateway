@@ -1,5 +1,3 @@
-// The map editor's Zones layer, its geometry and saving: snapping a click to a tile corner, finding the point or edge
-// under the cursor, moving a zone, and what a save sends. Positions are in tiles. No DOM here.
 import type { ClientZone } from "./zonelogic.js";
 import { ringAnd, ringMinus, ringRelation } from "./zoneoverlap.js";
 
@@ -91,10 +89,6 @@ function ringArea(ring: number[][]): number {
   return Math.abs(twice) / 2;
 }
 
-/**
- * A zone's rings with every ring that lies inside another one left out (fillHoles in the engine's modules/zones.ts).
- * A ring inside another would be a hole, so this fills the holes. Rings that lie apart are kept, in their order.
- */
 export function fillHoles(outline: number[][][]): number[][][] {
   const largestFirst = outline.map((_, i) => i).sort((a, b) => ringArea(outline[b]) - ringArea(outline[a]));
   const kept: number[] = [];
@@ -116,10 +110,6 @@ export const ZONE_LIMITS = { minPoints: 3, maxPoints: 512, name: 64, text: 80, k
 
 const tooLong = (value: unknown, max: number) => typeof value === "string" && value.trim().length > max;
 
-/**
- * The names of the zones the server would refuse, so a save is stopped before it is sent (a refused save loses its
- * tiles too): a ring of too few or too many points, a field too long, or a name another zone has in any case.
- */
 export function zoneProblems(zones: Record<string, ClientZone>): string[] {
   const seen = new Set<string>();
   return Object.entries(zones).filter(([name, zone]) => {
@@ -133,8 +123,6 @@ export function zoneProblems(zones: Record<string, ClientZone>): string[] {
   }).map(([name]) => name);
 }
 
-/** Which side of the line from a to b the point c is on: above 0 one side, below 0 the other, 0 on the line. Zone
- * points are whole tiles, so this is exact. */
 function side(a: number[], b: number[], c: number[]): number {
   return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
 }
@@ -151,16 +139,12 @@ function edgesMeet(a: number[], b: number[], c: number[], d: number[]): boolean 
   return (s1 === 0 && between(c, d, a)) || (s2 === 0 && between(c, d, b)) || (s3 === 0 && between(a, b, c)) || (s4 === 0 && between(a, b, d));
 }
 
-/** Whether the edges from `from` to `at` and from `at` to `to`, which follow each other, run back over each other: one
- * of them has no length, or the second turns straight back along the first. */
 function foldsBack(from: number[], at: number[], to: number[]): boolean {
   const same = (p: number[], q: number[]) => p[0] === q[0] && p[1] === q[1];
   if (same(from, at) || same(at, to)) return true;
   return side(from, at, to) === 0 && (from[0] - at[0]) * (to[0] - at[0]) + (from[1] - at[1]) * (to[1] - at[1]) > 0;
 }
 
-/** Whether edges of `rings` meet where they should not (outlineCrosses). `closed`: each ring's last point joins its
- * first; else each is a path that stops at its last point. */
 function edgesCross(rings: number[][][], closed: boolean): boolean {
   const edges: Array<{ ring: number; index: number; a: number[]; b: number[] }> = [];
   rings.forEach((ring, r) => {
@@ -187,13 +171,6 @@ function edgesCross(rings: number[][][], closed: boolean): boolean {
   return false;
 }
 
-/**
- * Whether a zone's border crosses or touches itself: two of its edges meet anywhere but the point two edges that
- * follow each other share, or one edge runs back along the one before it. A border like that leaves part of what it
- * goes round out of the zone (a five-pointed star drawn point to point has its middle left out): every zone test
- * counts a place in when it is inside an odd number of edges. Rings are taken as written, without their first point
- * again at the end. Edges of different rings never meet.
- */
 export function outlineCrosses(outline: number[][][]): boolean {
   return edgesCross((outline || []).map((ring) => {
     const first = ring[0], last = ring[ring.length - 1];
@@ -206,17 +183,10 @@ export function pathCrosses(points: number[][]): boolean {
   return edgesCross([points], false);
 }
 
-/** Whether an edit makes a zone's border cross: it crosses after and did not before (`before` null: a new zone). A zone
- * saved crossing before this was checked can still be edited, to set it right a point at a time. */
 export function makesCross(before: number[][][] | null, after: number[][][]): boolean {
   return outlineCrosses(after) && !(before && outlineCrosses(before));
 }
 
-/**
- * Whether an edit sent by the zone map window can be made: null when it can, else why not. `oldName` is the zone the
- * edit changes (null for a new zone), `zone` the zone after it (null to delete it). A name is free when no other
- * zone has it in any case; every point is a whole tile corner inside the map (0 to the map's size, edges included).
- */
 export function checkZoneEdit(zones: Record<string, ClientZone>, oldName: string | null, zone: ClientZone | null, mapW: number, mapH: number): string | null {
   if (oldName !== null && !zones[oldName]) return "That zone is no longer there";
   if (!zone) return oldName === null ? "Nothing to change" : null;
@@ -241,13 +211,6 @@ export function checkZoneEdit(zones: Record<string, ClientZone>, oldName: string
   return null;
 }
 
-/**
- * A zone edit fitted to the other zones of the map, so that no two zones lie partly over each other. Where a ring of
- * the zone lies partly over a ring of another zone, it is cut back to that zone's edge when most of it is outside, and
- * cut down to lie inside that zone when most of it is inside. A zone inside another one, around it or apart from it is
- * left as it is. `oldName` is the zone the edit changes (null for a new zone): it is not fitted to itself. Gives the
- * zone with its fitted outline, or why it cannot be fitted.
- */
 export function fitZoneEdit(zones: Record<string, ClientZone>, oldName: string | null, zone: ClientZone): ClientZone | string {
   const others = Object.entries(zones).filter(([name]) => name !== oldName).map(([, other]) => other);
   let outline = zone.outline;

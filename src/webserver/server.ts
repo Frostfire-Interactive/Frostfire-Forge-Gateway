@@ -26,9 +26,6 @@ const settings = {
   },
 };
 
-// Binary public assets (images, fonts) are served from disk per request.
-// Bundled HTML/CSS/JS snapshots its referenced assets at startup, so files
-// added later (e.g. new ui/ art) would otherwise 404 until the next build.
 const PUBLIC_ASSET_PREFIXES = ["/img/", "/fonts/"];
 const PUBLIC_ASSET_TYPES: Record<string, string> = {
   ".png": "image/png",
@@ -94,19 +91,10 @@ import manageprofile_html from "./public/manage-profile.html";
 import twofachallenge_html from "./public/2fa-challenge.html";
 import docs_html from "./public/docs.html";
 
-// Service worker source lives at js/web/service-worker.ts and is transpiled to
-// service-worker.js alongside the other web scripts (src/utility/transpiler.ts).
-// It must be served from the ROOT scope, so it can't be part of the bundled
-// HTML page - a dedicated route serves the transpiled file as text. Read as
-// text, never `import` it: importing a real .js module executes it here in the
-// server process (it references `self`/`caches`), crashing startup -> 502.
 const service_worker_js = await Bun.file(
   new URL("./public/js/web/service-worker.js", import.meta.url)
 ).text();
 
-// 2FA/email verification codes are stored uppercase and compare
-// case-insensitively, so "ab12cd" matches "AB12CD" on any database
-// (SQLite string comparison is case-sensitive, unlike MySQL's default).
 function codesMatch(stored: unknown, supplied: unknown): boolean {
   if (typeof stored !== 'string' || typeof supplied !== 'string') return false;
   return stored.toUpperCase() === supplied.toUpperCase();
@@ -116,16 +104,12 @@ function getClientIP(req: Request): string | undefined {
   return req.headers.get("X-Real-Client-IP") || undefined;
 }
 
-// The key the limits below count by. The proxy always sets the address; without it (a request
-// straight to the internal port) every such request shares one key instead of going unlimited.
 function limitKey(req: Request): string {
   return getClientIP(req) || "no-address";
 }
 
 const MINUTE = 60_000;
 const limits = {
-  // /login: every attempt from an address, and the wrong passwords for one name from one address. A
-  // name's failures from other addresses never block it, so nobody can lock an account from elsewhere.
   login: new RateLimit(10, 10 * MINUTE),
   loginFailures: new RateLimit(5, 15 * MINUTE),
   register: new RateLimit(5, 60 * MINUTE),
@@ -150,10 +134,6 @@ function getRequestOrigin(req: Request): { rpId: string; origin: string } {
   return { rpId: host, origin: `${proto}://${host}` };
 }
 
-/**
- * The token cookie: as long-lived as the token, Lax, and Secure when the site is served over HTTPS. Not
- * HttpOnly: the game client reads it to authenticate its WebTransport session.
- */
 function tokenCookie(token: string): string {
   const secure = process.env.HTTP_USE_SSL === "true" ? "; Secure" : "";
   return `token=${token}; Path=/; SameSite=Lax; Max-Age=${Math.floor(TOKEN_LIFETIME_MS / 1000)}${secure}`;
@@ -177,8 +157,6 @@ async function getUsernameFromToken(req: Request): Promise<string | null> {
   return result[0].username;
 }
 
-// Whether the request is signed in as a guest account (`guest_mode`, as the account was made). No sign-in is not a
-// guest: the route itself answers that with 401.
 async function isGuestRequest(req: Request): Promise<boolean> {
   const username = await getUsernameFromToken(req);
   if (!username) return false;
@@ -205,9 +183,6 @@ async function requireAuth(req: Request): Promise<{ username: string } | Respons
   return { username };
 }
 
-// Client console forwarding (js/core/clientlog.ts): lets players' browser
-// errors - e.g. on phones without devtools - land in the server log. Only
-// logged-in players may post, and each is rate-limited.
 const CLIENT_LOG_MAX_BODY = 32 * 1024;
 const CLIENT_LOG_MAX_ENTRIES = 50;
 const CLIENT_LOG_MAX_MESSAGE = 2000;
@@ -236,8 +211,6 @@ async function handleClientLog(req: Request): Promise<Response> {
     clientLogBudget.set(username, budget);
   }
 
-  // One line per entry, control characters flattened so a client can't forge
-  // extra log lines.
   const clean = (value: unknown) => {
     let out = "";
     for (const ch of String(value ?? "").slice(0, CLIENT_LOG_MAX_MESSAGE)) {
@@ -257,9 +230,6 @@ async function handleClientLog(req: Request): Promise<Response> {
   return new Response(null, { status: 204 });
 }
 
-// Documentation content for /docs: the manifest by default, one page with
-// ?page=<id>, the search index with ?search. The Player Guide is public; every
-// other section is only readable by a fully signed-in, non-guest account.
 async function handleDocs(req: Request) {
   const username = await getUsernameFromToken(req);
   const authenticated = !!username && !username.startsWith("guest_") && !(await player.isTwoFactorPending(username));
@@ -290,9 +260,6 @@ async function handleDocs(req: Request) {
   return new Response(docs.body, { status: 200, headers });
 }
 
-// The gateway dashboard is served by src/gateway/server.ts on its own port.
-// /gateway sends the visitor there on the host they are already using; the
-// gateway shows its login page first when there is no dashboard session.
 function redirectToGateway(req: Request) {
   const ssl = process.env.HTTP_USE_SSL === "true";
   const port = ssl ? process.env.GATEWAY_PORTSSL || "9443" : process.env.GATEWAY_PORT || "9999";
@@ -335,9 +302,6 @@ const askGatewayRoute = (realm: string, point: SavedPoint, signal: AbortSignal) 
 
 const regionHerd = new HerdSpread();
 
-// When `realm` names a cluster region: the online node that owns the account's saved point, else its online node with
-// the fewest connections (regionpick.ts), which the ticket is bound to.
-// null for any other realm (the ticket is not bound); "unavailable" for a region with no online node.
 function pickRegionNode(realm: string | null, saved: SavedPoint | null = null): Promise<any | null | "unavailable"> {
   return pickNode(realm, saved, {
     fetchStatus: fetchGatewayStatus,
@@ -396,9 +360,6 @@ const routes = {
       try {
 
         const data = await fetchGatewayStatus();
-        // A cluster region is one realm: its entry stands in for the nodes that serve it (and for any server that
-        // shares its id, so no id is listed twice).
-        // Shown as "<GAME_NAME>-<region>"; the id stays the region's, which the client connects by.
         const gameName = process.env.GAME_NAME || "Frostfire Forge";
         const regions = (Array.isArray(data.regions) ? data.regions : [])
           .map((region: any) => ({ ...region, name: `${gameName}-${region.id}` }));
@@ -431,9 +392,6 @@ const routes = {
   "/api/gateway/connection-token": {
     GET: async (req: Request) => {
       try {
-        // A ticket is for a logged-in account only, one past every login step: the
-        // game server lets the ticket log in that account and no other (see the
-        // engine's src/socket/ticket.ts, which checks the same signed string).
         const accountToken = getTokenFromRequest(req);
         const username = accountToken ? await getUsernameFromToken(req) : null;
         if (!accountToken || !username) {
@@ -451,8 +409,6 @@ const routes = {
             headers: { "Content-Type": "application/json" }
           });
         }
-        // The saved point is read with the rest: it names the node a cluster realm sends this login to. A database
-        // without those columns is read as before and sends the login to the least-loaded node.
         let accountRow: any[];
         try {
           accountRow = await query("SELECT a.email_verified, a.guest_mode, c.map, c.position, c.is_dead, c.corpse_map, c.corpse_x, c.corpse_y FROM accounts a LEFT JOIN characters c ON c.id = a.active_character_id WHERE a.username = ? LIMIT 1", [username]) as any[];
@@ -482,8 +438,6 @@ const routes = {
         const token = crypto.randomBytes(32).toString("hex");
         const timestamp = Date.now();
         const expiresAt = timestamp + (60 * 1000);
-        // Signed with the ticket, so the client cannot claim another: the page's own origin, and
-        // the account (the SHA-256 of its token, never the token itself).
         const origin = getRequestOrigin(req).origin;
         const account = crypto.createHash("sha256").update(accountToken).digest("hex");
 
@@ -496,8 +450,6 @@ const routes = {
             headers: { "Content-Type": "application/json" }
           });
         }
-        // A ticket for a cluster region is for one node of it: the node id is signed with the rest (the engine's
-        // ticketPayload appends it only when it is set) and the client connects to that node.
         const node = await pickRegionNode(tryParseURL(req.url)?.searchParams.get("realm") ?? null, savedPointOf(accountRow[0]));
         if (node === "unavailable") {
           return new Response(JSON.stringify({
@@ -633,13 +585,9 @@ const routes = {
   },
 } as Record<string, any>;
 
-// The subscription columns and tables must exist before a request reads them. Never fails the start.
-// accounts.token_expires before the first login reads it (the engine adds it too).
 await ensureTokenExpiryColumn();
 await startSubscriptions();
 
-// Otherwise guests are removed only when the engine starts. Once an hour, the ones a day old that
-// nobody is playing (player.purgeOldGuests). A failure is logged and tried again the next hour.
 setInterval(async () => {
   try {
     const removed = await player.purgeOldGuests();
@@ -828,8 +776,6 @@ async function createGuestAccount(req: Request) {
     const domain = process.env.DOMAIN?.replace(/^https?:\/\//, "");
     const guest_email = `${guest_username}@${domain}`;
     const guest_password = `guest_${randomBytes(12)}`;
-    // Guests never log in with a password - use a cheap hash instead of Argon2
-    // (which pins a core during benchmark login ramps).
     const guest_password_hash = hashGuestPassword(guest_password);
 
     const user = await player.register(guest_username.toLowerCase(), guest_password_hash, guest_email, req, true) as any;
@@ -857,12 +803,6 @@ async function createGuestAccount(req: Request) {
   }
 }
 
-// Load-test helper: provision many guest accounts in one request. Guarded by
-// the game-server shared secret so it is not a public account-spam vector.
-// A normal /guest-login is ~15 serialised SQL round-trips; at benchmark ramp
-// rates (thousands of clients) that saturates the DB worker pool and clients
-// time out with a 1000 close. This batches the whole set into 7 multi-row
-// INSERTs and returns the tokens for the benchmark to AUTH with directly.
 async function createGuestAccountsBulk(req: Request) {
   try {
     if (!settings.guest_mode?.enabled) {
@@ -1297,8 +1237,6 @@ async function handleSubscriptionPortal(req: Request) {
   return subscriptionReply(await createPortal(auth.username));
 }
 
-// No cookie and no 2FA: Stripe signs the request. The body is read once, as text, because the
-// signature covers its exact bytes.
 async function handleStripeWebhook(req: Request) {
   const raw = await req.text();
   return subscriptionReply(await processStripeWebhook(raw, req.headers.get("Stripe-Signature")));
@@ -1335,8 +1273,6 @@ async function handleChangeEmail(req: Request) {
     return new Response(JSON.stringify({ message: "Email already in use" }), { status: 400 });
   }
 
-  // The code sent to the current email confirms the change. A stronger factor,
-  // when set up, must confirm it first: the code is only sent once it has.
   if (!body.oldEmailCode && !body.emailCode) {
     const factor = await strongestFactor(username);
     if (factor !== "email") {
@@ -1851,8 +1787,6 @@ async function handleVerifyWebAuthnLogin(req: Request) {
 
 type SecondFactor = "webauthn" | "totp" | "email";
 
-// The strongest second factor the account has set up: a security key, then an
-// authenticator app, then a code sent to its email, which every account has.
 async function strongestFactor(username: string): Promise<SecondFactor> {
   const credentials = await player.getWebAuthnCredentials(username) as any[];
   if (credentials.length > 0) return "webauthn";
@@ -1861,10 +1795,6 @@ async function strongestFactor(username: string): Promise<SecondFactor> {
   return "email";
 }
 
-// Confirms an account change with the given factor. Returns null once the
-// request carries a valid answer. Otherwise returns the response to send:
-// a 200 that asks for the answer (with the key challenge, or after mailing the
-// code), or a 400 for a wrong answer.
 async function confirmFactor(username: string, factor: SecondFactor, body: any, req: Request, action: string): Promise<Response | null> {
   const reply = (data: object, status: number) =>
     new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });

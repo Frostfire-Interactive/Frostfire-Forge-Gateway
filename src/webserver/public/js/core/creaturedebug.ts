@@ -1,5 +1,3 @@
-// Editor overlays drawn in the game world: spawn markers, the patrol path being
-// drawn, aggro/leash circles and the live threat list.
 import creatureEditor from "./creatureeditor.js";
 import { creatures } from "./creature.js";
 

@@ -1,8 +1,3 @@
-// The marker over whatever the player has targeted: a player, a creature, or a corpse.
-// USER REQUEST 2026-10-18: "redesign the targeted red circle, it looks really bad and out of place",
-// then picked the arrow over the head from three mock-ups. A glossy pixel arrow, in the style of the
-// quest markers and UI frames (a body colour, a light edge, a dark brown outline), bobbing just over
-// the top of the target's sprite. Drawn in world pixels, over the top tile layers (renderer.ts).
 import { getVisibleLayersSorted } from "./layeredAnimation.js";
 
 /** One arrow's colours: its body, the light edge across its top left, and its outline. */
@@ -22,10 +17,6 @@ export const TARGET_ARROWS: Record<"hostile" | "neutral" | "friendly" | "tapped"
   player: { body: "#f0a020", light: "#ffd27a", dark: "#4a2a10" },
 };
 
-/**
- * The arrow's rows, top to bottom, as [from, to] columns about its middle: only its head, pointing
- * down, with no stem over it. Its tip is the last row.
- */
 const ROWS: Array<[number, number]> = [[-6, 6], [-5, 5], [-4, 4], [-3, 3], [-2, 2], [-1, 1], [0, 0]];
 /** The light pixels, as [column, row]: along the top left of the head. */
 const SHINE: Array<[number, number]> = [[-5, 0], [-4, 0], [-3, 0], [-2, 0], [-4, 1], [-3, 1], [-3, 2]];
@@ -35,11 +26,6 @@ const BOB_MS = 900;
 /** Room left between the tip, at rest, and the top of the sprite (px). */
 export const ARROW_GAP = 8;
 
-/**
- * The arrow with its tip at (x, tipY), in world pixels; it bobs up from there, never down into the
- * head. Keeps the canvas's own alpha (a creature fading in fades its arrow with it) and leaves its
- * state as it found it.
- */
 export function drawTargetArrow(ctx: CanvasRenderingContext2D, x: number, tipY: number, palette: ArrowPalette, now: number = performance.now()): void {
   const bob = Math.round(((1 - Math.cos((now / BOB_MS) * Math.PI * 2)) / 2) * BOB);
   const ax = Math.round(x);
@@ -85,11 +71,6 @@ function firstOpaqueRow(img: HTMLImageElement | HTMLCanvasElement): number {
   return row;
 }
 
-/**
- * The world y of the top of what is drawn of a sprite: of its layered animation's current frames, or
- * of its single image, drawn centred on (x, centreY) at `scale` as players and creatures are. Null
- * when nothing of it is loaded.
- */
 export function spriteArtTop(anim: any | null, staticImage: HTMLImageElement | null, centreY: number, scale = 1): number | null {
   let top: number | null = null;
   if (anim) {

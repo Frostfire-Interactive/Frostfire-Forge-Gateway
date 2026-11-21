@@ -1,10 +1,3 @@
-// The game's keyboard shortcuts: which key does what. Every shortcut is an action with a default key (a
-// KeyboardEvent.code, so the key is the same whatever the keyboard layout); a player can move an action to another key
-// from the options menu (keybindsui.ts). The bindings are kept in this browser's localStorage, only the ones that differ
-// from the default, so a player who has changed nothing has nothing saved and gets the keys the game always had.
-//
-// The logic here is pure (no DOM) so it can be tested; the live bindings at the bottom read and write localStorage.
-
 export type ActionGroup = "Windows" | "Spells" | "World" | "Movement" | "Game";
 
 // `admin`: the engine does it only for admins, so the Hotkeys screen shows it only to them.
@@ -62,8 +55,6 @@ export const DEFAULT_BINDINGS: Readonly<Bindings> = Object.freeze(
   Object.fromEntries(ACTIONS.map((a) => [a.id, a.defaultCode])) as Bindings
 );
 
-/** Keys a player may give an action. Leaves out Escape and Enter (fixed), the modifiers, the browser's own (F1, F3-F12:
- *  help, reload, fullscreen, devtools) and the context-menu key. Tab and F2 are here because they are defaults. */
 const BINDABLE =
   /^(Key[A-Z]|Digit[0-9]|Numpad(?:[0-9]|Add|Subtract|Multiply|Divide|Decimal)|Arrow(?:Up|Down|Left|Right)|Space|Tab|F2|Backquote|Minus|Equal|BracketLeft|BracketRight|Backslash|Semicolon|Quote|Comma|Period|Slash|Insert|Delete|Home|End|PageUp|PageDown)$/;
 
@@ -81,8 +72,6 @@ export type RebindResult =
   | { ok: true; bindings: Bindings; swapped: ActionId | null }
   | { ok: false; reason: string };
 
-/** Gives `action` the key `code`. When another action holds that key the two swap (it gets the key `action` had), so
- *  every action always has exactly one key and no key has two actions. Returns new bindings; the input is not changed. */
 export function rebind(bindings: Readonly<Bindings>, action: ActionId, code: string): RebindResult {
   const def = byId.get(action);
   if (!def) return { ok: false, reason: "Unknown action." };
@@ -106,8 +95,6 @@ export function serializeBindings(bindings: Readonly<Bindings>): string {
   return JSON.stringify(out);
 }
 
-/** Reads a save. Anything unreadable, unknown, unbindable or for a fixed action is skipped; a save that ends with one
- *  key on two actions is thrown away whole (it was not made by this screen), giving the defaults. */
 export function parseBindings(raw: string | null | undefined): Bindings {
   const bindings: Bindings = { ...DEFAULT_BINDINGS };
   if (!raw) return bindings;
@@ -174,10 +161,6 @@ function commit(next: Bindings) {
   const saved = serializeBindings(next);
   writeStorage(saved === "{}" ? null : saved);
   for (const fn of listeners) fn();
-}
-
-export function getBindings(): Readonly<Bindings> {
-  return current;
 }
 
 /** The key an action has now. */

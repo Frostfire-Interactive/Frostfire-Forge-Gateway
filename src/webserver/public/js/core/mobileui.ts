@@ -12,10 +12,6 @@ const radialMenu = document.getElementById('radial-menu') as HTMLElement | null;
 const radialOverlay = document.getElementById('radial-menu-overlay') as HTMLElement | null;
 const radialItems = document.querySelectorAll('.radial-item') as NodeListOf<HTMLElement>;
 
-/**
- * Calculate circular positions for radial items
- * The items at even intervals, starting from top (12 o'clock)
- */
 function calculateRadialPositions() {
   // (only the entries that are shown: one that is for admins is not there for anyone else, and leaves no gap)
   const shown = Array.from(radialItems).filter((item) => !item.hidden);
@@ -32,11 +28,6 @@ function calculateRadialPositions() {
   });
 }
 
-/**
- * The entries that are for admins (data-admin, in game.html) are shown to an admin and to nobody else, looked at each
- * time the menu opens: the role can be given or taken while the game is open. What they do is still the server's to
- * allow. USER REQUEST 2026-10-07: "Add a new entry in the action menu for admins only that opens the control panel".
- */
 function showAdminEntries() {
   const self: any = Array.from(Cache.getInstance().players as Iterable<any>).find((player) => player.id === cachedPlayerId);
   const isAdmin = !!self?.isAdmin;
@@ -49,9 +40,6 @@ function showAdminEntries() {
   if (changed) calculateRadialPositions();
 }
 
-/**
- * Open the radial menu
- */
 function openRadialMenu() {
   if (!radialMenu || !radialOverlay || !radialMenuBtn) return;
   showAdminEntries();
@@ -62,9 +50,6 @@ function openRadialMenu() {
   radialMenuBtn.classList.add('active');
 }
 
-/**
- * Close the radial menu
- */
 function closeRadialMenu() {
   if (!isMenuOpen || !radialMenu || !radialOverlay || !radialMenuBtn) return;
 
@@ -82,9 +67,6 @@ function closeRadialMenu() {
   }, 300);
 }
 
-/**
- * Toggle radial menu open/close
- */
 function toggleRadialMenu() {
   if (isMenuOpen) {
     closeRadialMenu();
@@ -93,9 +75,6 @@ function toggleRadialMenu() {
   }
 }
 
-/**
- * Dispatch a hotkey event as if user pressed the key
- */
 function dispatchHotkey(defaultCode: string) {
   // The radial menu names the key an action had by default; the player may have given it another.
   const action = ACTIONS.find((candidate) => candidate.defaultCode === defaultCode);
@@ -135,11 +114,6 @@ radialItems.forEach((item) => {
       }, 50);
     }
 
-    // The control panel has no key. Its window is opened here, in the tap itself: a phone's browser only lets a
-    // window open while a tap is being answered. Sent as the /cp command, the window opened when the server's
-    // answer came back, after the tap was over, and the browser refused it (USER REPORT 2026-10-07: "Nothing
-    // opens"). The command only ever checked the role and told this page to open the window; everything the panel
-    // then asks for is checked by the server, request by request, so nothing is opened up by not asking first.
     if (item.getAttribute('data-action') === 'controlpanel') {
       controlPanel.toggle();
     }

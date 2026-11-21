@@ -1,9 +1,3 @@
-// Targeting for server-authoritative creatures.
-// Mouse: left click targets, right click targets and starts auto-attack.
-// Touch: tap targets; tap the current target again to auto-attack; tap a
-// corpse to target it, and to loot it when it has loot (touch has no right click).
-// Corpses can be targeted with either click; a left click (or E beside it,
-// events.ts) also loots one.
 import { sendRequest, getIsLoaded } from "./socket.js";
 import { isSelfActionLocked } from "./death.js";
 import Cache from "./cache.js";
@@ -29,11 +23,6 @@ const TAP_MAX_MOVE_PX = 12;
 const CLICK_AFTER_TAP_MS = 700;
 let lastTouchTapAt = 0;
 
-/**
- * Screen point -> world point. Uses the shared projection so touch devices get
- * the 0.85 render zoom right; the plain formula below it ignores the zoom and
- * put every tap off target, further off the further it was from the centre.
- */
 function worldFromClient(clientX: number, clientY: number): { x: number; y: number } {
   const rect = canvas.getBoundingClientRect();
   return screenToWorld(clientX - rect.left, clientY - rect.top);
@@ -61,12 +50,6 @@ export function stopCreatureAutoAttack(): void {
 /** A target further than this (world px) from the local player is dropped. */
 const MAX_TARGET_DISTANCE = 600;
 
-/**
- * Drop the current target once it is too far from the local player: a targeted
- * creature (stopping auto-attack on it) or a targeted player. Uses server
- * positions, not render positions. Called every frame; cheap when nothing is
- * targeted.
- */
 export function dropDistantTarget(self: any): void {
   const sx = self?.position?.x;
   const sy = self?.position?.y;
@@ -102,8 +85,6 @@ document.addEventListener(
   "click",
   (event) => {
     if (shouldIgnore(event)) return;
-    // The tap handler below already dealt with this touch; its synthetic click
-    // would re-test without touch slop and could clear the target it just set.
     if (Date.now() - lastTouchTapAt < CLICK_AFTER_TAP_MS) {
       event.stopPropagation();
       return;

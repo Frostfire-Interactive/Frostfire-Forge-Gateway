@@ -1,23 +1,6 @@
 import query, { GuardError, transaction, type TransactionStatement } from "../controllers/sqldatabase";
 import log from "../modules/logger";
 
-/**
- * USER REQUEST 2026-10-14 ("a character selection screen after realm selection if a character has not been created."):
- * the character page (/character) and its API.
- *
- * A character's class is `characters.class_id` (the engine's systems/classes.ts makes the classes table, and the class
- * editor fills it). While it is NULL and there is a class to choose, the character is not made: realm selection sends
- * the player here before the game, and the game server refuses the login (CHARACTER_REQUIRED) until the class is
- * chosen. With no class defined, every account plays as before. The page works on one character of the account at
- * a time, by its id, and only on a character of the account that asks (the account's id comes from its session).
- *
- * Choosing the class starts the character over (USER DECISION 2026-10-14, for the accounts made before characters
- * existed): level 1 with the class's base stats and starter items (USER REQUEST 2026-10-21), no other items, and no
- * equipment, bags, spells, quests, gold or home, at the world's starting point. What is not the character stays: the account, its friends, ignores, permissions, mounts
- * and sound settings. The game server reads the rows again at the next login and teaches the class's level 1 spells
- * then. Nothing is written while the account is in the game: the server holds its own copy of a player in play.
- */
-
 /** A class as the character page shows it. */
 export interface CharacterClassView {
   id: number;
@@ -130,10 +113,6 @@ export interface CharacterSummary { id: number; name: string; classId: number | 
 /** A name a player picks: 3 to 15 letters, numbers or underscores. */
 const NAME = /^[A-Za-z0-9_]{3,15}$/;
 
-/**
- * Whether `name` can be taken by a new character of the account, for the check while the name is typed: null when it
- * can, else why not. A deleted character's name stays taken until it is gone for good, as at add.
- */
 async function nameProblem(accountId: number, name: unknown): Promise<string | null> {
   const picked = String(name ?? "").trim();
   if (!NAME.test(picked)) return "Names are 3 to 15 letters, numbers or underscores.";

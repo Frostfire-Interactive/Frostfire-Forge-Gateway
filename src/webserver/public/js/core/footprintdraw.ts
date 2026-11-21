@@ -1,27 +1,8 @@
-// How a footprint is drawn, apart from where it is laid: the game (footprints.ts) and the map editor's preview of the
-// Footprints tab (tileeditorbridge.ts) draw the very same prints. No imports: the editor window loads it on its own.
-//
-// Pixel art, as the rest of the game is (USER FEEDBACK 2026-10-20: "This is a pixel art game, why are you making the
-// footprints resemble real life"): each style is a few pixels drawn by hand, laid on whole world pixels, never turned
-// by a fraction or smoothed. A print faces the nearest of the eight ways: the four straight ones turn one mask by quarter
-// turns, the four diagonals another, drawn for walking down and right (USER FEEDBACK 2026-10-20: "Diagonal footprints
-// just show up as cardinal directions"). A left foot is the right one mirrored across the line walked.
-
 export type PrintStyle = "boot" | "bare" | "hole";
 
-/**
- * A print to draw: where (world px), walked which way (radians: 0 walks toward +x), its style and its colour, and which
- * foot made it (`side`: 1 the right, -1 the left).
- */
 export interface PrintShape { x: number; y: number; angle: number; style: PrintStyle; color: string; side?: number }
 
-/**
- * The prints of a right foot walking right (+x): heel at the left, toes at the right, the foot's inner side on the top
- * row. "#" is a pixel pressed deep (the full darkness), "+" one pressed lighter, "." none.
- */
 const MASKS: Record<PrintStyle, string[]> = {
-  // (USER FEEDBACK 2026-10-20: "too small", twice: now two thirds of a tile long and five pixels wide)
-  // a heel, a gap, and the sole with its tread
   boot: [
     ".##...#####.",
     "###..#+#+#+#",
@@ -29,8 +10,6 @@ const MASKS: Record<PrintStyle, string[]> = {
     "###..#+#+#+#",
     ".##...#####.",
   ],
-  // the heel and the ball of the foot, joined along the outer side; no toes (USER FEEDBACK 2026-10-20: "bare feet don't
-  // need toes")
   bare: [
     "......#####.",
     ".###..######",
@@ -49,10 +28,6 @@ const MASKS: Record<PrintStyle, string[]> = {
   ],
 };
 
-/**
- * The prints of a right foot walking down and right (+x, +y), heel at the top left, toes at the bottom right, the
- * foot's inner side toward the top right. A hole has none: it is not turned.
- */
 const DIAGONAL_MASKS: Record<"boot" | "bare", string[]> = {
   // as long and as wide across the line walked as the straight prints are
   boot: [

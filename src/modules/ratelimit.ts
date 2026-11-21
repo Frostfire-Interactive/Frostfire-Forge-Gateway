@@ -1,7 +1,3 @@
-// Request limits for the website's sign-in routes (webserver/server.ts). Each limit counts the requests
-// of one key (a client address, or an address and a username) in a moving window. The counts live in
-// this process only: a restart of the Gateway starts them again from nothing.
-
 const SWEEP_MS = 60_000;
 const limits = new Set<RateLimit>();
 

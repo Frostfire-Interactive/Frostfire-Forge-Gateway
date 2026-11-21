@@ -1,7 +1,3 @@
-// Mobile map renderer, used only when renderpath.ts selects it (iOS/Android,
-// or ?renderer=mobile). Desktop uses ../glmap/. Each map pass renders into its
-// own WebGL canvas placed in the page (#map-below / #map-above / #minimap-map)
-// at a whole-number scale, so there are no canvas->canvas copies.
 import { getGL, getSurfaceCanvas, beginCanvasPass } from "./context.js";
 import { getMapResources, getChunkTexture, chunkNeedsUpload, sweepChunks, updateAnimations } from "./resources.js";
 import { MAX_SLICES_PER_DRAW, MAX_BLUR_TAPS, MAX_OCCLUDERS } from "./shaders.js";
@@ -68,11 +64,6 @@ function useTileProgram(s: any, res: any, t: any, clip: any) {
   gl.activeTexture(gl.TEXTURE0);
   gl.bindVertexArray(s.quad);
 }
-// Puts one chunk on the GPU, and no more: of those given that are not there yet (or have changed), the one nearest
-// the middle of the view. The others wait for the passes after it, one each, and are not drawn until their turn
-// (one that has changed is drawn as it was). See getChunkTexture (resources.ts) for why: a row of new chunks
-// prepared in one frame was a stutter on a phone. Chunks are asked for a whole chunk beyond the screen's edge, so
-// walking finds them ready before they come into sight.
 function uploadOneChunk(s: any, chunks: any, centreX: any, centreY: any, chunkPixelSize: any) {
   let next = null;
   let nearest = Infinity;
@@ -219,8 +210,6 @@ function renderShadowCut(s: any, res: any, opts: any, canvasT: any, shadowZ: any
     drawChunkSlices(s, c.data, c.x * chunkPixelSize, c.y * chunkPixelSize, res, slices, 1, true);
   }
   if (!any) {
-    // Nothing to shadow: leave the offscreen framebuffer and restore the canvas
-    // pass state, or every later draw in this pass would land offscreen.
     beginCanvasRegion(s, canvasT.width, canvasT.height);
     useTileProgram(s, res, canvasT, opts.clip);
     return;
@@ -384,9 +373,6 @@ export function renderMapPass(opts: any) {
     perChunkSegments.push(bySegment);
     perChunkYSort.push(ySorted);
   }
-  // Only chunks this pass draws something of are put on its GPU: a map with nothing over the players keeps none on
-  // the surface over them. (A shadow is drawn from layers of its own, not counted above: with one in this pass,
-  // every chunk is taken.)
   let shadowInPass = false;
   for (let segment = startSegment;segment <= endSegment && segment < cuts.length; segment++) {
     if (cuts[segment].shadowZ !== null && opts.shadow)

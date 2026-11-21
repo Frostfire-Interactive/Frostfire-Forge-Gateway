@@ -1,19 +1,3 @@
-// Fields only the particle editor has: a slider with its exact number beside
-// it, a colour field and a time-of-day field. They are made of the kit's
-// classes, in the markup of a toolfields.ts field, and styled in
-// css/particleeditor.css (pe-*). Nothing here knows about particles; they stay
-// here, out of the shared system, until a second tool needs one.
-//
-// ------------------------------ how to use ------------------------------
-//
-//   sliderField({ key, label, min, max, step, unit?, hint? }, target, touch)
-//        edits target[key], a number kept within min..max on the steps of the slider, by dragging or by typing
-//   colourField({ key, label, hint? }, target, touch)      edits target[key], "#rrggbb"
-//   timeField({ key, label, hint? }, target, touch)        edits target[key], "HH:MM" or ""
-//        each returns the field's element, which carries data-field="<key>", and calls touch() after every change
-//   rangeValue(value, min, max, step)  colourValue(value)  timeValue(value)
-//        what those controls make of a stored value: the number a slider would hold, the colour and the time the
-//        browser's own fields would
 import { setFieldError } from "./toolfields.js";
 import { el } from "./toolkit.js";
 
@@ -21,10 +5,6 @@ let ids = 0;
 
 // ------------------------------------------------------------------ values
 
-/**
- * What a slider makes of a value: kept within its ends and on its steps, the
- * way the browser does it for a range input (which is what does it here).
- */
 export function rangeValue(value: unknown, min: number, max: number, step: number): number {
   const input = document.createElement("input");
   input.type = "range";
@@ -35,11 +15,6 @@ export function rangeValue(value: unknown, min: number, max: number, step: numbe
   return Number(input.value);
 }
 
-/**
- * A stored colour as the colour field holds it, "#rrggbb" in lower case. The
- * short form "#abc" is read as "#aabbcc"; what the browser's colour field
- * cannot read at all comes out black, as it always has.
- */
 export function colourValue(value: unknown): string {
   const text = String(value ?? "").trim();
   const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(text);
@@ -88,10 +63,6 @@ export interface SliderOptions {
   hint?: string;
 }
 
-/**
- * A slider on one line: its label, the track, and the exact number, which can
- * be typed. Whatever is typed is kept to what the slider itself can hold.
- */
 export function sliderField(opts: SliderOptions, target: any, touch: () => void): HTMLElement {
   const { wrap, id } = fieldShell(opts.key, opts.label, "tl-field-wide pe-slider");
   const range = el("input", "pe-range");

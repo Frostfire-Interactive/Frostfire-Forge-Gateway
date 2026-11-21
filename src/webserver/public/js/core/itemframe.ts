@@ -1,7 +1,3 @@
-// Quality frame around an item icon: the coloured border (rainbow for
-// legendary) the loot table editor introduced, used wherever the game or an
-// editor shows an item icon. Styles: .item-frame in game.css.
-
 export const ITEM_QUALITIES = ["common", "uncommon", "rare", "epic", "legendary"];
 
 /** A known quality name, lowercased; anything else is common. */

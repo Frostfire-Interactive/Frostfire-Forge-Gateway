@@ -1,10 +1,3 @@
-// Documentation site content (served at /docs, data at /api/docs).
-// Markdown under src/webserver/documentation is rendered to HTML here and kept
-// in memory as ready-to-send bodies: a manifest (navigation and outlines), a
-// search index, and one HTML fragment per page. The manifest and search index
-// exist twice: for signed-in accounts, and for everyone else, where non-public
-// sections keep their titles but lose their content.
-// See src/webserver/documentation/README.md for the page format.
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
@@ -69,9 +62,6 @@ function parseFrontmatter(source: string): { meta: Record<string, string>; body:
   return { meta, body: source.slice(match[0].length) };
 }
 
-// Rewrites the site's own syntax into something the Markdown renderer keeps:
-// fence titles ride along inside the language name, and ":::" blocks become
-// raw HTML wrappers around ordinary Markdown.
 function preprocess(body: string): string {
   const out: string[] = [];
   let fence: { char: string; length: number } | null = null;
@@ -149,8 +139,6 @@ function plainText(html: string): string {
     .trim();
 }
 
-// Splits a rendered page at its h2/h3 headings so search can link to the part
-// of the page that matched.
 function searchParts(html: string, intro: string): [string, string, string][] {
   const parts: [string, string, string][] = [];
   let headingId = "";
@@ -318,8 +306,6 @@ function refresh() {
   }
 }
 
-// Navigation and page outlines. `authenticated` decides whether non-public
-// sections are readable or listed as locked.
 export function getDocsManifest(authenticated: boolean): DocsResponse {
   refresh();
   return (authenticated ? content.member : content.anonymous).manifest;

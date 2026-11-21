@@ -1,10 +1,6 @@
 import { expect, test } from "bun:test";
 import { advanceSelf, applyEase, EASE_TIME_CONSTANT_MS, HANDOFF_SNAP_PX, heldDirection, startEase } from "../webserver/public/js/core/handoffwalk";
 
-// The client half of the cluster handoff: the walk drawn while the gap lasts, the ease of the difference to the new
-// node's position, the next node's session opened ahead of the SWITCH, and the cluster overlay's pause. The engine's
-// half is its own src/tests/cluster-handofffix2.test.ts; each repo tests itself.
-
 const text = async (name: string) => (await Bun.file(new URL(`../webserver/public/js/core/${name}`, import.meta.url)).text()).split(String.fromCharCode(13)).join("");
 
 /** A map of 32 px tiles in 32-tile chunks whose collision layer is set where `wall` says (global tile coordinates). */
@@ -104,11 +100,7 @@ test("socket.ts: the client opens the next node's session on HANDOFF_PREPARE and
   expect(renderer).toContain("const direction = gapDirection(pressedKeys, getStickDirection());");
   expect(renderer).toContain("advanceSelf(currentPlayer, direction, walkMs, window.mapData);");
   expect(client).toContain("else startHandoffGap(data?.resume === true, data?.report === true, data?.gapUpdates === true);");
-  // A stick still held after HANDOFF_DONE sends its direction and never a stop; a repeat prepare does not extend the timer.
-  // (HANDOFF_DONE, or HANDOFF_GAP_DONE after it, settles the gap in settleHandoff.)
   const done = client.slice(client.indexOf("function settleHandoff("), client.indexOf("async function switchNode("));
-  // (What is sent is decided by doneSend in resumesend.ts, which has its own tests; here the stick is handed to it,
-  // what it names is sent as a MOVEXY, and HANDOFF_DONE sends no ABORT of its own.)
   expect(done).toContain("stick: getStickDirection(),");
   expect(done).toContain('if (send.send !== null) sendRequest({ type: "MOVEXY", data: send.send });');
   expect(done).not.toContain('data: "ABORT"');

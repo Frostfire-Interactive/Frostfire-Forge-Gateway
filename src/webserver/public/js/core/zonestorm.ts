@@ -1,23 +1,3 @@
-/**
- * A storm of one kind of zone of a world (window.mapData.deserts, window.mapData.snowfields: outlines in tiles, sent
- * with a world): drawn on the weather canvas when its weather is wanted and the player stands in one of those zones;
- * outside them, or on a map with none, the sky is clear. The sandstorm (sandstorm.ts) and the blizzard (blizzard.ts)
- * are each one of these, with their own colours and their own way of blowing (ZoneStormLook).
- *
- * From back to front:
- * - the light itself changes: a full-screen tint under the weather canvas, blended over the scene (`tint`);
- * - the air is thick with what blows: an even haze, denser away from the player, so only what is near is seen clearly;
- * - it rolls past in billows: two layers of soft cloud, heaped from round puffs, carried along the wind (and down as
- *   it falls) at different paces;
- * - it blows by in round motes, soft at the edge, in three tones, the nearest the largest and quickest.
- *
- * How harsh it is comes from the wind speed (HARSH_FROM to HARSH_FULL mph, never less than LEAST). Gusts thicken it.
- * It rises and falls over FADE_SECONDS when the player walks in or out of a zone, and when the weather changes.
- *
- * (The history of each choice, the user's words with it, is kept at its place in sandstorm.ts, where it was first
- * made: the motes round and soft, their turbulence, their count and strength with the harshness, the wind left or
- * right only, the clouds within one repeat, the gusts eased.)
- */
 const isMobileDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 
 // (from still air up: a breeze of a few mph is a faint drift, 15 a light storm, 35 a heavy one)
@@ -108,16 +88,6 @@ export function inZone(zones: Zone[] | null | undefined, x: number, y: number): 
   return false;
 }
 
-/**
- * A soft, tileable cloud: round puffs of every size heaped on one another, each also drawn across the edges it
- * crosses, so the picture repeats without a seam; how thick the heap is becomes how thick the cloud is, coloured by
- * `colour`. Made once per layer; drawn scaled up.
- *
- * USER REPORT 2026-11-13 ("blocks of images moving up and down and it's very noticeable. I'm referring to the fog"):
- * the clouds were value noise on a coarse grid, cut sharp, so each billow kept the grid's square edges, and one small
- * picture repeated in rows across the screen. Puffs have no grid; each layer has its own picture, a repeat wider than
- * most screens.
- */
 export function makeCloudTexture(size: number, colour: (t: number) => [number, number, number]): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
@@ -146,8 +116,6 @@ export function makeCloudTexture(size: number, colour: (t: number) => [number, n
 
   const image = ctx.getImageData(0, 0, size, size);
   const data = image.data;
-  // Thin spots let the scene through, the thick ones are billows: measured on this picture, so every picture is as
-  // cloudy as another (the thinnest fifth clear, only the very thickest full), and eased in from clear.
   const heap: number[] = [];
   for (let i = 3; i < data.length; i += 4 * 7) heap.push(data[i]);
   heap.sort((a, b) => a - b);
@@ -160,8 +128,6 @@ export function makeCloudTexture(size: number, colour: (t: number) => [number, n
     data[i + 2] = b;
     data[i + 3] = t * t * 255;
   }
-  // Onto a canvas of its own: the one it was made on is kept in memory to be read (willReadFrequently), and drawn
-  // from there it went to the graphics card again every frame (USER REPORT 2026-11-13: "The game drops to 5fps").
   const cloud = document.createElement("canvas");
   cloud.width = cloud.height = size;
   cloud.getContext("2d")!.putImageData(image, 0, 0);
@@ -190,9 +156,6 @@ export function makeZoneStorm(look: ZoneStormLook): (ctx: CanvasRenderingContext
   let tint: HTMLDivElement | null = null;
   let presence = 0, harshness = 0, inside = false, lookedAt = 0, lastDraw = 0;
   let gust = 0;
-  // The billows: layers of cloud blown along the wind, the far one larger and slower. Each its own picture (`size`
-  // px, made when first drawn), drawn `scale` times as large and stretched along the wind; `speed` its share of the
-  // wind's pace and of the fall; `x`, `y` how far it has blown, kept within one repeat.
   const billows = (isMobileDevice
     ? [{ size: 160, scale: 4, parallax: 0.9, alpha: 0.45, speed: 0.6 }]
     : [
@@ -331,11 +294,6 @@ export function makeZoneStorm(look: ZoneStormLook): (ctx: CanvasRenderingContext
     ctx.fillStyle = edge;
     ctx.fillRect(0, 0, width, height);
 
-    // The billows: each layer blown along the wind at its share of the pace, and down at its share of the fall, so the
-    // two pass one another and change shape as they go. Where a layer is moves on by its speed each frame: a gust
-    // hurries it and a lull slows it, never sends it back (USER REPORT 2026-11-13: it was placed by how far it had
-    // blown over the pace now, so each gust slid it back up a little, and it jumped when that distance wrapped).
-    // Each place is taken within one repeat of its picture (the same picture there), so the numbers stay small.
     const wrap = (v: number, period: number) => ((v % period) + period) % period;
     for (const layer of billows) {
       if (!layer.cloud) layer.cloud = makeCloudTexture(layer.size, look.billow);
@@ -359,8 +317,6 @@ export function makeZoneStorm(look: ZoneStormLook): (ctx: CanvasRenderingContext
       reset(m, width, height, true, cos, falling > 0);
       motes.push(m);
     }
-    // how many, and how solid, both follow the harshness, and the number the faster of the two: a breeze carries a few
-    // faint ones, a gale the lot
     const dense = Math.min(1, harshness * 1.2);
     const shown = Math.round(count * p * Math.pow(dense, 1.5));
     const solid = 0.3 + 0.7 * dense;

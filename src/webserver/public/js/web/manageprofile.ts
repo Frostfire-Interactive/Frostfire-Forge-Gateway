@@ -43,10 +43,6 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
-// ========== Confirming a change ==========
-// The server confirms each account change with the strongest second factor the
-// account has set up. When it asks for one, use the security key or ask for the
-// code, then send the request again with the answer.
 type Confirmed = { ok: boolean; body: any; cancelled?: boolean };
 
 function askForCode(title: string, desc: string): Promise<string | null> {
@@ -657,8 +653,6 @@ document.getElementById('totp-remove-submit')?.addEventListener('click', async (
   updateSecurityBanner();
 });
 
-// ========== WebAuthn ==========
-// The registration options the server gives once the change is confirmed.
 let pendingRegistrationOptions: any = null;
 
 document.getElementById('webauthn-add-btn')?.addEventListener('click', () => {

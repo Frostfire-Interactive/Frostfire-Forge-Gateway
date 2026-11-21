@@ -1,12 +1,3 @@
-// Plays a scene in the game window, the same way for a player and for the editor's preview. A frame of it is worked out
-// from the time alone (cutscenedoc.ts), and applied to the game: the camera (renderer.ts asks cutsceneCamera), the zoom
-// (worldzoom.ts), actors, which are local NPC objects with ids of their own and so are drawn, animated and depth-sorted
-// like any other (npc.ts), and the weather, the hour and the sound.
-//
-// "live" is a scene the server sent: it holds the player (the server does too, this only stops the client trying) and
-// tells the server when it has begun and ended. "preview" is the editor's: it talks to nobody, and no other player sees
-// anything of it. There is one scene at a time.
-
 import Cache from "./cache.js";
 import { cachedPlayerId, getIsLoaded, sendRequest } from "./socket.js";
 import { createNPC, deleteNPC } from "./npc.js";
@@ -242,10 +233,6 @@ function applyWorld(r: Run): void {
   setScriptedHour(hourAt(r.plan, r.t));
 }
 
-/**
- * Every sound of the scene is asked each frame whether it should be sounding now, and started, faded or stopped to
- * match. So a scene entered at any time, a jump, and a sound the browser would not let start until now all come out right.
- */
 function applySound(r: Run): void {
   if (Math.abs(r.t - r.soundT) > SOUND_DRIFT) stopSounds(r);
   r.soundT = r.t;
@@ -302,10 +289,6 @@ function finishLive(r: Run, skipped: boolean): void {
   emit("ended");
 }
 
-/**
- * HANDOFF_DONE: nothing sent while the client changed server node arrived, so where its scene stands is said again.
- * The new node ignores what it has already heard.
- */
 export function repeatCutsceneState(): void {
   if (run?.mode === "live" && run.ready) sendRequest({ type: "CUTSCENE_STARTED", data: { token: run.token } });
   else if (lastEnd) sendRequest({ type: "CUTSCENE_END", data: lastEnd });
@@ -364,11 +347,6 @@ export function drawCutsceneLayer(): void {
   layerUsed = !!run || !!guides;
 }
 
-/**
- * The overlay of the scene that is up, on the game or in the recorder's frame. Free view is for placing things, so the
- * scene does not cover the world there: a fade at the playhead would leave it black. So is a preview stopped at its
- * very start: that shows the first shot, not the black it will fade in from.
- */
 export function drawOverlayInto(ctx: CanvasRenderingContext2D, w: number, h: number): void {
   if (!run?.ready || freeCamera) return;
   drawOverlay(ctx, run.doc, run.plan, run.t, w, h, run.mode === "preview" && !run.playing && run.t === 0);
@@ -426,10 +404,6 @@ export function cutsceneHidesPlayer(self: boolean): boolean {
 export const cutsceneHidesCreatures = () => !!run?.ready && run.doc.settings.hideCreatures;
 export const cutsceneHidesHud = () => !!run?.ready && run.doc.settings.hideHud;
 
-/**
- * The server's weather while a scene sets its own: kept for after the scene instead of being applied. True when it is
- * kept. A scene that sets no weather leaves the world's alone.
- */
 export function holdWeather(data: any): boolean {
   if (!run?.plan.world.weather.length) return false;
   run.heldWeather = data;

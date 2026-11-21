@@ -1,9 +1,6 @@
 import { expect, test } from "bun:test";
 import { badgeBox, badgeLabel, pillPerimeter } from "../webserver/public/js/core/keybadge";
 
-// The key badges over NPCs, loot, corpses, mailboxes, gathering nodes and chests: they show the key the action is bound
-// to (Hotkeys), and grow with the world zoom.
-
 test("a badge shows the key its action is bound to", () => {
   expect(badgeLabel("interact")).toBe("E");
   expect(badgeLabel("openChest")).toBe("F");

@@ -1,7 +1,3 @@
-// The control panel's charts, drawn as inline SVG: a line over time with axes
-// and a readout under the pointer, the small trend line of a headline figure,
-// and the bars of a breakdown. Marks carry the data colour; every word and
-// number is written in the text colours.
 import { clock, el, num, svg } from "./toolkit.js";
 
 /** One reading: when, in seconds since the epoch, and the figure (null where it was not known). */
@@ -41,10 +37,6 @@ function timeStep(span: number, most: number): number {
   return steps.find((step) => span / step <= most) ?? 86400;
 }
 
-/**
- * A single line over time. It redraws to the width it is given, and shows the
- * reading nearest the pointer (or, with the arrow keys, the one focused).
- */
 export class LineChart {
   readonly element: HTMLElement;
   private plot = svg("svg", { class: "cp-plot-svg", role: "img", tabindex: 0 });
@@ -88,11 +80,6 @@ export class LineChart {
     }).observe(this.element);
   }
 
-  /**
-   * Draws the readings that fall in the window `from`..`to` (seconds). Two
-   * readings further apart than `gap` are not joined: the server was not
-   * taking readings in between.
-   */
   update(points: Point[], from: number, to: number, gap: number): void {
     this.points = points;
     this.from = from;
@@ -172,9 +159,6 @@ export class LineChart {
       this.plot.appendChild(mark);
     }
 
-    // The line, broken where the readings stop. Where the scale starts at zero, a wash
-    // of its colour fills down to the axis; on a scale that does not, that would
-    // show an amount that is not there.
     const runs: Point[][] = [];
     for (const [i, p] of this.drawn.entries()) {
       if (i === 0 || p.t - this.drawn[i - 1].t > this.gap) runs.push([]);
@@ -256,10 +240,6 @@ export class LineChart {
   }
 }
 
-/**
- * The small trend line of a headline figure: no axes, no readout, the last
- * reading marked. It stretches to the width it is given.
- */
 export function sparkline(readings: Array<number | null>): HTMLElement {
   const wrap = el("div", "cp-spark");
   // A trend, not every reading: at most 40 points, each the average of its stretch.

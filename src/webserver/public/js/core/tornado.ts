@@ -1,30 +1,3 @@
-/**
- * USER REQUEST 2026-10-17 ("a tornado system ... that spawn 1 or 2 on the map at most during a thunderstorm with a rare
- * chance or '/weather tornado' is set. Tornadoes when close to players should pull them in and do 5% damage every
- * second"): the tornadoes the server says are on this map (the TORNADOES packet: where each is, in world px, ten times a
- * second), drawn in the world's own place (renderer.ts), so they follow the camera and the zoom like everything
- * else on the ground. The server moves them, pulls and hurts; this only shows them.
- *
- * USER REPORT 2026-10-17 ("They are on top of every layer which looks super weird"): they were drawn after the map's
- * upper layers. Then, sorted among the characters, a tree's canopy cut its funnel in two ("looks way more broken"), and
- * then ("can we have it ignore trees?"): it is drawn twice. Once among the characters (standingTornadoes), sorted with
- * the NPCs, players and creatures by where its foot is, so whoever stands in front of it is drawn in front; and once
- * more over the map's upper layers, only on their pixels (drawTornadoesOverCovers: "source-atop"), so no tree or roof
- * hides it and the ground around is left as it was. (Where the upper layers are a canvas of their own, the phone
- * renderer, it is drawn over them whole.)
- *
- * What one looks like, seen from above and in front like the rest of the game, back to front:
- * - a ring of dust kicked up and spun round its foot (no shadow: USER REQUEST 2026-10-17);
- * - the funnel (USER REQUEST 2026-10-17, "make the funnel of the tornado look more realistic, the bottom debris is
- *   perfect"): a cone of condensed cloud round an axis that leans the way it goes and sways (a rope, not a post),
- *   narrow at the ground, widening up into the wall cloud. Shaded as the round thing it is: lit down one side, in
- *   shadow down the other, its edges thin and soft; browned by dust low down. STRANDS of cloud twist round the front of
- *   it as it turns (its spin is seen), and FUNNEL_PUFFS soft wisps ride its edges, so its outline is ragged, not drawn;
- * - the wall cloud it hangs from: a wide, dark, slowly turning lowering of the storm cloud;
- * - debris (dark specks) whirled round its lower part, the odd one flung out.
- * A tornado eases toward each place the server gives (it moves smoothly between packets), grows in when it forms and
- * shrinks away when it is gone. It roars: "regular wind" slowed down, on the Weather track, louder the nearer it is.
- */
 import { setWeatherSound } from "./audio.js";
 
 const isMobileDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
@@ -36,10 +9,6 @@ const STRANDS = isMobileDevice ? 6 : 11, WALL = isMobileDevice ? 10 : 18;
 const FUNNEL_PUFFS = isMobileDevice ? 70 : 160, DEBRIS = isMobileDevice ? 16 : 40, DUST = isMobileDevice ? 30 : 70;
 /** Seconds to grow in, and to shrink away. */
 const FORM = 2.5, FADE = 2;
-/**
- * How quickly it closes on where the server last put it (ten times a second): a time constant, seconds. Short, so it is
- * drawn where it pulls from, not trailing behind (the server moves it on every movement tick).
- */
 const EASE = 0.1;
 /** The roar: heard from ROAR_FAR px away, full at its foot; "regular wind" played this much slower (deeper). */
 const ROAR = "regular wind", ROAR_KEY = "tornado roar", ROAR_FAR = 700, ROAR_RATE = 0.7;
@@ -120,11 +89,6 @@ export function setTornadoes(data: { map?: string; tornadoes?: Array<{ id: strin
   for (const [id, t] of twisters) if (!seen.has(id)) t.gone = true;
 }
 
-/**
- * Where each tornado on this map is, in world px, as the server last put it: for the world map (USER REQUEST
- * 2026-10-17: "I should also be able to track the tornado on the world map"). The server tells every player of a map
- * of all its tornadoes, near or far, so every one is here.
- */
 export function tornadoSpots(): Array<{ id: string; x: number; y: number }> {
   const spots: Array<{ id: string; x: number; y: number }> = [];
   for (const t of twisters.values()) if (!t.gone) spots.push({ id: t.id, x: t.toX, y: t.toY });
@@ -138,10 +102,6 @@ function nearest(x: number, y: number): number {
   return best;
 }
 
-/**
- * Moves the tornadoes on by `seconds` (since the last frame) and sets their roar for a listener at (`listenX`,
- * `listenY`). Called once a frame, before they are drawn (standingTornadoes).
- */
 export function stepTornadoes(seconds: number, listenX: number, listenY: number): void {
   const here = String((window as any).mapData?.name ?? "").replace(".json", "");
   if (shownMap && here && shownMap !== here) { twisters.clear(); shownMap = here; }
@@ -168,10 +128,6 @@ export function stepTornadoes(seconds: number, listenX: number, listenY: number)
   }
 }
 
-/**
- * The tornadoes as the renderer's standing things: `feet` the y of its foot, in world px, and `draw` drawing it on a
- * context set to the world's place (its transform has the camera and the zoom; world px are drawn as they are).
- */
 export function standingTornadoes(): Array<{ feet: number; draw: (ctx: CanvasRenderingContext2D) => void }> {
   const list: Array<{ feet: number; draw: (ctx: CanvasRenderingContext2D) => void }> = [];
   for (const t of twisters.values()) {
@@ -187,10 +143,6 @@ export function standingTornadoes(): Array<{ feet: number; draw: (ctx: CanvasRen
   return list;
 }
 
-/**
- * The tornadoes again over the map's upper layers (trees, roofs), `ctx` being their canvas set to the world's place:
- * only on the pixels those layers drew (`onCovers`), or whole where they are not on it.
- */
 export function drawTornadoesOverCovers(ctx: CanvasRenderingContext2D, onCovers: boolean): void {
   if (!twisters.size) return;
   ctx.save();
@@ -243,8 +195,6 @@ function drawOne(ctx: CanvasRenderingContext2D, t: Twister, art: HTMLCanvasEleme
     for (let i = right.length - 1; i >= 0; i--) ctx.lineTo(right[i][0], right[i][1]);
     ctx.closePath();
   };
-  // the body: condensed cloud, darker up into the storm, browned by dust low down; it thins out at the top into the
-  // wall cloud and at the very foot into the debris
   const body = ctx.createLinearGradient(0, t.y - height, 0, t.y);
   body.addColorStop(0, "rgba(58, 58, 64, 0)");
   body.addColorStop(0.12, "rgba(66, 66, 72, 0.95)");

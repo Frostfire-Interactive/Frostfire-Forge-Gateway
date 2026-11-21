@@ -1,6 +1,3 @@
-// Game-window half of the weather editor: owns the popup window and relays its
-// messages to the server. Mirrors spelleditor.ts; the weather editor has no
-// in-world tools, and nothing it is sent holds an asset path.
 import { sendRequest } from "./socket.js";
 
 // The spell editor's size: narrower than 1240 and the summary beside the form drops under it.
@@ -18,8 +15,6 @@ class WeatherEditor {
 
   constructor() {
     window.addEventListener("message", (e) => this.onBridgeMessage(e));
-    // The game page is going away (refresh, close, navigation): take the
-    // popup with it, since the reloaded page has no link back to it.
     window.addEventListener("pagehide", () => {
       try {
         if (this.editorWindow && !this.editorWindow.closed) this.editorWindow.close();
@@ -37,8 +32,6 @@ class WeatherEditor {
   private open(): void {
     this.isActive = true;
     const url = window.location.origin + "/weather-editor";
-    // The size the editor's workbench is laid out for, where the screen allows, in the middle of the screen
-    // and two steps down and right of the item editor, so one does not open exactly over another.
     const area = window.screen as Screen & { availLeft?: number; availTop?: number };
     const width = Math.min(EDITOR_WIDTH, area.availWidth - 40);
     const height = Math.min(EDITOR_HEIGHT, area.availHeight - 80);
@@ -102,9 +95,6 @@ class WeatherEditor {
   private onBridgeMessage(event: MessageEvent): void {
     const msg = event.data;
     if (!msg?.type) return;
-    // Every editor's popup posts to this same window. Only this editor's own
-    // popup is listened to, or each request of another editor would be sent
-    // to the server a second time from here.
     if (!this.editorWindow || event.source !== this.editorWindow) return;
     switch (msg.type) {
       case "bridgeReady":
@@ -116,8 +106,6 @@ class WeatherEditor {
         }
         break;
       case "request":
-        // Only weather editor packets leave from here; the server re-checks
-        // permission on every one of them.
         if (typeof msg.packet === "string" && msg.packet.startsWith("WEATHER_EDITOR_")) {
           sendRequest({ type: msg.packet, data: msg.data });
         }

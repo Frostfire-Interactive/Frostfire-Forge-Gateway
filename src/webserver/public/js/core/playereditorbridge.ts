@@ -1,11 +1,3 @@
-// Player editor popup. Talks to the game window over postMessage; the game
-// window forwards everything to the server, which checks permission, validates
-// and applies each change, then answers with the player as they now stand.
-// List changes (items, equipment, friends...) are sent as they are made; the
-// forms (stats, currency, location, permissions) are sent by their own Apply.
-// The window itself is the shared workbench (tooleditor.ts); this file holds
-// what is the player editor's own: the accounts in the side pane, the cards of
-// each tab, the item picker and its conversation with the server.
 import { qualityOf } from "./itemframe.js";
 import { EditorShell, type ListRow, type RecordState } from "./tooleditor.js";
 import { coinWords, COPPER_PER_GOLD, COPPER_PER_SILVER, FieldRenderer, setFieldError, type AssetOption, type Field } from "./toolfields.js";
@@ -39,10 +31,6 @@ const FORM_OF: Record<string, Form> = {
   "permissions.set": "permissions",
 };
 
-/**
- * Where each kind of change is made: the tab, and the card on it. What the
- * server refuses is said in that card, under the controls that asked.
- */
 const PLACES: Array<[action: string, tab: string, card: string]> = [
   ["stats.", "stats", "stats"],
   ["currency.", "overview", "currency"],
@@ -60,12 +48,6 @@ const PLACES: Array<[action: string, tab: string, card: string]> = [
   ["admin.", "access", "role"],
 ];
 
-/**
- * The server answers a refused form in sentences, not by field, and starts
- * each with the field's own label ("Max health must be..."). This says which
- * field of which form a sentence is about, so the field can be marked. A
- * sentence that matches nothing is still shown in the form's card.
- */
 const PROBLEM_FIELDS: Array<[RegExp, string]> = [
   [/^Level /, "stats.level"],
   [/^XP /, "stats.xp"],
@@ -154,8 +136,6 @@ class PlayerEditorBridge {
     tool: "Player Editor", noun: "player", icon: "user", tabs: TABS,
     // The search asks the server: the client never holds every account.
     onSearch: () => this.searchPlayers(),
-    // Players are not made, copied or deleted here, and nothing waits for one Save, so the editor
-    // has none of those buttons. Ctrl+S applies the form the keyboard is in.
     onSave: () => this.applyFocused(),
     saveButton: false,
     onTab: (id) => this.switchTab(id),
@@ -375,11 +355,6 @@ class PlayerEditorBridge {
     }
   }
 
-  /**
-   * Once the page is drawn with a refusal: if the place it is said in cannot
-   * be seen (another tab is in view, or it is further down a long list), it
-   * is said in the corner too.
-   */
   private pointOut(action: string): void {
     const card = this.placeOf(action)?.card;
     const lines = card ? this.refusals.get(card) : undefined;
@@ -1175,10 +1150,6 @@ class PlayerEditorBridge {
 
   // ------------------------------------------------------------------ pickers
 
-  /**
-   * Item browser searched on the server, which holds the item table. With a
-   * `slot` it lists what fits that slot; without one, nothing until a name is typed.
-   */
   private openItemPicker(title: string, slot: string | null, onPick: (item: any) => void): void {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const dialog = openDialog(title, {

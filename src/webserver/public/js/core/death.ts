@@ -9,15 +9,9 @@ function isTouchViewport(): boolean {
   return window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 }
 
-// Self death state. The authoritative copy lives on the game server
-// (accounts.is_dead); these flags only drive local UI locks and popups.
 let selfDead = false;
 let selfGhost = false;
 
-// Revive-offer tracking: the server sends the corpse position with the offer
-// so the popup can hide itself once the ghost leaves the zone. The hide band
-// is wider than the server's 100px offer radius (hysteresis) so small
-// client/server position desync at the boundary can't flap the popup.
 const REVIVE_OFFER_HIDE_RADIUS = 120;
 let reviveOfferPos: { map: string; x: number; y: number } | null = null;
 
@@ -29,11 +23,6 @@ export function isSelfDead(): boolean {
 // Ghost: movement only.
 export function isSelfGhost(): boolean {
   return selfGhost;
-}
-
-export function isSelfMovementLocked(): boolean {
-  // Ghosts walk, except during the release cinematic's fade.
-  return selfDead || cinematic !== null;
 }
 
 export function isSelfActionLocked(): boolean {
@@ -49,9 +38,6 @@ function syncSelfPlayerFlags(): void {
   }
 }
 
-// The world turns grey while dead or haunting as a ghost (blur is
-// desktop-only: fullscreen CSS blur tanks mobile GPUs). Applies to the main
-// canvas and the above-player layer; the ghost layer stays unfiltered.
 function syncGreyscale(): void {
   const filter = !(selfDead || selfGhost)
     ? ""
@@ -106,9 +92,6 @@ export function clearSelfDeath(): void {
   syncGreyscale();
 }
 
-// Corpse marker: guides the ghost back to the body. Fed by the server
-// (PLAYER_DIED / spawn snapshot) and outlives the 15-minute skeleton, which
-// shares its coordinates. Only shown while a ghost on the same map.
 let corpseMarker: { map: string; x: number; y: number } | null = null;
 
 export function setCorpseMarker(map: string, x: number, y: number): void {
@@ -124,8 +107,6 @@ function activeDeathTarget(): { map: string; x: number; y: number } | null {  if
   const cache = Cache.getInstance();
   const map = (window as any).mapData?.name || "";
   if (!map) return null;
-  // Current corpse (DB-backed, survives skeleton expiry) wins: stale
-  // skeletons from older deaths may still be on the ground.
   if (corpseMarker && corpseMarker.map === map) return corpseMarker;
   // Fallback: the live skeleton for your own death, if any.
   const self = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
@@ -142,24 +123,16 @@ function activeDeathTarget(): { map: string; x: number; y: number } | null {  if
   return null;
 }
 
-// Own corpse position for the minimap (null unless a ghost with a known
-// corpse/skeleton on the current map).
 export function getCorpseMarkerTarget(): { map: string; x: number; y: number } | null {
   return activeDeathTarget();
 }
 
-// Corpse marker lives in unfiltered DOM layers (above the greyscaled world
-// canvas) so its red stays red. One per-frame tick shows either the in-world
-// marker or the screen-edge indicator, never both.
 const MARKER_EDGE_MARGIN = 44;
 
 function hideCorpseMarkerDom(): void {
   document.getElementById("corpse-edge")?.remove();
 }
 
-// Client-only corpse skeleton: if no live server skeleton sits at the death
-// spot (expired, or the server restarted and lost them), leave a local one so
-// the ground marker, hover, and tap all keep working. Never sent anywhere.
 const CORPSE_SKELETON_ID = "corpse-skeleton";
 const CORPSE_SKELETON_MATCH_PX = 12;
 
@@ -230,9 +203,6 @@ export function tickCorpseMarker(): void {
   if (offscreen) {
     updateCorpseEdge(m, pos);
   } else {
-    // On screen the ground skeleton itself (server or local backfill) marks
-    // the spot: no separate DOM marker, so there is ever only one skeleton
-    // and nothing paints above the UI layer.
     document.getElementById("corpse-edge")?.remove();
   }
 }
@@ -264,8 +234,6 @@ function updateCorpseEdge(m: { x: number; y: number }, pos: { x: number; y: numb
     el.innerHTML = `<div class="corpse-edge-arrow"></div><div class="corpse-edge-dist"></div>`;
     document.body.appendChild(el);
   }
-  // Skip DOM writes when nothing visible changed (per-frame style writes
-  // force layout work, which matters on mobile GPUs).
   const rx = Math.round(ax);
   const ry = Math.round(ay);
   const ra = Math.round(angleDeg);
@@ -320,8 +288,6 @@ export function hideReleasePopup(): void {
 }
 
 export function showReviveOfferPopup(data?: any): void {
-  // Server verdict on a confirm: revoked hides a stale popup. The popup only
-  // ever hides on this verdict, on REVIVE, or on leaving the zone below.
   if (data && (data as any).revoked) {
     reviveOfferPos = null;
     hideReviveOfferPopup();
@@ -357,15 +323,8 @@ export function hideReviveOfferPopup(): void {
   document.getElementById("revive-popup")?.remove();
 }
 
-// Graveyard resurrection offer: 5s after the release cinematic ends, a ghost
-// near a graveyard may resurrect on the spot at the price of 15-min
-// Resurrection Sickness (-20% health, -10% all other stats) instead of
-// walking back to the corpse. Gated on real proximity (with hysteresis, like
-// the corpse offer) so it never pops up mid corpse-run.
 let graveyardOfferAt = 0;
 let graveyardOfferArmed = false;
-// Cancel only snoozes the offer: leaving the graveyard area re-arms it, so
-// walking back in shows it again (mirrors the corpse offer's re-arm).
 let graveyardOfferSuppressed = false;
 let graveyardAnchor: { map: string; x: number; y: number } | null = null;
 const GRAVEYARD_OFFER_DELAY_MS = 5000;
@@ -378,9 +337,6 @@ export function scheduleGraveyardOffer(delayMs: number = GRAVEYARD_OFFER_DELAY_M
   graveyardOfferAt = performance.now() + delayMs;
 }
 
-// Distance to the nearest graveyard on the current map, or null when it
-// can't be determined. Candidates are the map's graveyard metadata plus the
-// recorded teleport landing spot (covers maps without metadata).
 function distToGraveyard(): number | null {
   const cache = Cache.getInstance();
   const self = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
@@ -417,8 +373,6 @@ export function tickGraveyardOffer(): void {
   const dist = distToGraveyard();
   const far = dist === null || dist > GRAVEYARD_OFFER_HIDE_RADIUS;
   if (far) {
-    // Outside the area: hide an open popup and lift any Cancel snooze, so
-    // re-entering the graveyard shows the offer again.
     graveyardOfferSuppressed = false;
     if (popup) hideGraveyardOfferPopup();
     return;
@@ -449,8 +403,6 @@ export function showGraveyardOfferPopup(): void {
     // Stays up until the server confirms with REVIVE.
   });
   document.getElementById("decline-graveyard-revive")?.addEventListener("click", () => {
-    // Snooze until the ghost leaves the graveyard area; coming back
-    // re-shows the offer.
     graveyardOfferSuppressed = true;
     hideGraveyardOfferPopup();
   });
@@ -460,9 +412,6 @@ export function hideGraveyardOfferPopup(): void {
   document.getElementById("graveyard-resurrect-popup")?.remove();
 }
 
-// Release cinematic: hide popup and corpse, a clean blue orb rises from the
-// body, fade to black, server teleport lands mid-black (+3s), fade back out
-// at the graveyard. Total 5s; movement stays locked throughout.
 interface ReleaseCinematic {
   start: number;
   fromX: number;
@@ -541,12 +490,6 @@ function preloadGraveyardChunks(cine: ReleaseCinematic): void {
   }
 }
 
-export function isReleaseCinematic(): boolean {
-  return cinematic !== null;
-}
-
-// Death ambience: blue dust motes and slow wisps drifting across the whole
-// screen while dead or ghost. Own canvas layer (unfiltered) above the world.
 interface WispParticle {
   x: number;
   y: number;
@@ -600,8 +543,6 @@ export function tickDeathWisps(): void {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, w, h);
 
-  // World-anchored bounds (viewport + margin), like the weather layer: motes
-  // keep world positions so they slide past correctly as the camera moves.
   const vw = window.innerWidth;
   const vh = window.visualViewport?.height || window.innerHeight;
   const margin = 120;
@@ -653,8 +594,6 @@ export function tickDeathWisps(): void {
   }
 }
 
-// The releaser's body stays hidden until just after the server teleport
-// lands (+3s), so it reappears at the graveyard before the fade lifts.
 const TELEPORT_VISIBLE_AT = 3200;
 export function isReleaseHidden(): boolean {
   if (!cinematic) return false;
@@ -681,8 +620,6 @@ export function tickReleaseCinematic(): void {
     cinematic = null;
     document.getElementById("release-fade")?.remove();
     removeReleaseFx();
-    // Record the teleport landing spot as a graveyard anchor (movement is
-    // still locked, so this is exactly the graveyard), then arm the offer.
     const cache = Cache.getInstance();
     const self = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
     const map = (window as any).mapData?.name || "";
@@ -695,8 +632,6 @@ export function tickReleaseCinematic(): void {
   }
 }
 
-// The orb lives in a DOM layer above the (greyscaled) world canvas so it
-// keeps its blue color. Positioned from the renderer's camera each tick.
 function removeReleaseFx(): void {
   document.getElementById("release-orb")?.remove();
 }
@@ -744,9 +679,6 @@ function updateReleaseOrb(): void {
   orb.style.transform = `translate(${Math.round(screenX)}px, ${Math.round(screenY)}px) translate(-50%, -50%)`;
 }
 
-// Per-frame hook (throttled): hide the revive offer once the ghost leaves
-// the revival zone. Re-entering re-offers from the server (it re-arms past
-// the radius).
 let lastOfferTick = 0;
 const OFFER_TICK_MS = 100;
 export function tickDeathOffer(): void {

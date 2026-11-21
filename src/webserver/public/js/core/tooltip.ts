@@ -2,9 +2,6 @@ import Cache from "./cache.js";
 import { coinHtml, sellPriceOf } from "./coins.js";
 import { useText } from "./consumables.js";
 
-// Buff/debuff durations: plain seconds under a minute, whole minutes above
-// (e.g. 45, 1m, 15m). Shared by the buff bar, the in-world icons, and
-// tooltips.
 export function formatDuration(totalSeconds: number): string {
   const sec = Math.max(0, Math.floor(totalSeconds));
   if (sec < 60) return `${sec}`;
@@ -26,8 +23,6 @@ let currentMouseY: number = 0;
 let currentTooltipKind: "item" | "spell" | null = null;
 
 function showItemTooltip(element: HTMLElement, itemData: any, mouseX: number, mouseY: number, compareMode: boolean = false, force: boolean = false) {
-  // Tooltips are hover-driven and touch devices have no hover: only explicit
-  // gestures (e.g. press-and-hold) may force one open.
   if (!force && window.matchMedia('(hover: none) and (pointer: coarse)').matches) return;
   if (!tooltip || !itemData) return;
 
@@ -229,14 +224,8 @@ function updateTooltipPosition(mouseX: number, mouseY: number) {
   }
 }
 
-// Press-and-hold to inspect on touch (no hover there): hold still past
-// HOLD_MS to open, release keeps it open, next tap dismisses. HOLD_MS sits
-// above inventory/equipment long-press-drag (500ms) so inspecting never
-// starts a drag.
 const HOLD_MS = 600;
 const HOLD_MOVE_PX = 12;
-// A still tap this quick only ever dismisses; anything longer or moved is a
-// deliberate gesture the slot's own handlers own.
 const HOLD_TAP_MS = 300;
 
 interface HoldState {
@@ -263,10 +252,6 @@ function installHoldGuards(): void {
     holdOpenEl = null;
     hideItemTooltip();
   }, { passive: true, capture: true });
-  // A finger lifted ends its hold, whoever else has the touch. The slot's own handler (below) ends it too, but a
-  // handler heard before it can keep the touch from reaching the slot: the second tap that offers an item in a trade
-  // or sells it to a vendor does (events.ts). The hold then ran on with no finger down, and opened the tooltip over
-  // the trade. USER REPORT 2026-10-07: "double tapping to add an item to trade is also opening the tooltip".
   const endHold = (e: TouchEvent) => {
     const slot = (e.target as HTMLElement | null)?.closest?.("[data-hold-tip]") as HTMLElement | null;
     const st = (slot as any)?._holdTip as HoldState | undefined;
@@ -274,9 +259,6 @@ function installHoldGuards(): void {
   };
   document.addEventListener("touchend", endHold, { capture: true });
   document.addEventListener("touchcancel", endHold, { capture: true });
-  // A quick, still tap on the slot with an open hold-tooltip only dismisses:
-  // stop it here (capture runs before the slot's own bubble handlers) so it
-  // cannot complete a double-tap equip/unequip/select.
   document.addEventListener("touchend", (e: TouchEvent) => {
     const touches = (e as any).changedTouches;
     const touch = touches?.[0];
@@ -320,8 +302,6 @@ function clearHoldTooltip(element: HTMLElement): void {
 function setupHoldTooltip(element: HTMLElement, getItemData: () => any): void {
   if (!isTouchDevice()) return;
   installHoldGuards();
-  // Recycled slots re-run setup: drop previous listeners first so stale
-  // closures can never fire alongside fresh ones.
   clearHoldTooltip(element);
   element.setAttribute("data-hold-tip", "1");
   const init: HoldState = { timer: null, touch: null, consumeClick: false };
@@ -373,8 +353,6 @@ function setupHoldTooltip(element: HTMLElement, getItemData: () => any): void {
 
   const onTouchEnd = () => {
     clearTimer();
-    // Release keeps a shown tooltip open for reading; a follow-up tap on the
-    // slot dismisses it via the document guard above.
   };
 
   const onTouchCancel = () => {
@@ -388,9 +366,6 @@ function setupHoldTooltip(element: HTMLElement, getItemData: () => any): void {
   };
 
   const onClick = (e: Event) => {
-    // A tap consumed by the document guard must not also activate the slot
-    // (choice select etc.). Attached once here, before any site-specific
-    // click handlers added later by slot builders.
     const st = stateOf();
     if (st?.consumeClick) {
       st.consumeClick = false;
@@ -526,9 +501,6 @@ function showSpellTooltip(element: HTMLElement, spellData: any, mouseX: number, 
     }
   }
 
-  // Live info for an effect currently applied to the player (buff/debuff bar).
-  // Each line explains what the effect is actually doing, keyed off the
-  // server-sent kind so a slow never reads as damage, etc.
   if (spellData.activeEffect) {
     const active = spellData.activeEffect;
     const stacks = Number(active.stacks) || 1;

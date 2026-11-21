@@ -1,9 +1,3 @@
-// Which sheet each layer of a player's layered animation draws, by the name the server gives it. A worn item's or a
-// mount's sheet comes with a template it shares with the base sheets ("fishing rod" with "player_body_base", "bronze
-// helmet" with "player_head_base", "mount_unicorn" with "player_mount_base"), so the template's own name does not say
-// which sheet a layer draws. A look compared by it differed for every worn item and mount, and each SPRITE_SHEET_ANIMATION
-// rebuilt the player from the first frame: the walk restarted at every border crossing, where the new node sends two.
-
 /** The packet field that names each layer's sheet. */
 export const LAYER_SPRITE_KEYS = {
   mount: "mountSprite",

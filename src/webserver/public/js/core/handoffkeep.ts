@@ -1,11 +1,6 @@
-// What a node taking the player over (a resumed handoff) sends again that the client already shows. The world's clock
-// and weather are one world: a packet from the new node that says the same, or says less, must not move the sky.
-
 /** The shift from UTC, in ms, the day/night clock uses: the one held, unless the packet brings a (new) one. */
 export function nextPlaceOffset(held: number | null, utcOffset: unknown, keepHeld: boolean): number | null {
   if (typeof utcOffset === "number" && Number.isFinite(utcOffset)) return utcOffset * 1000;
-  // A node that has not read its weather yet sends no offset; the client would fall back to the browser's own clock
-  // and light the map for another hour of the day until the next reading.
   return keepHeld ? held : null;
 }
 

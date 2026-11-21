@@ -269,10 +269,6 @@ export function renderLoot(
 
 let lootImageCache: Map<string, HTMLImageElement> | null = null;
 
-export function setLootImageCache(cache: Map<string, HTMLImageElement>): void {
-  lootImageCache = cache;
-}
-
 export function preloadLootIcon(url: string): void {
   if (!url) return;
   if (!lootImageCache) lootImageCache = new Map();
@@ -321,8 +317,6 @@ export function renderLootInteractionHint(
   ctx.globalAlpha = 1;
   ctx.lineWidth = 2;
 
-  // where the world zoom puts the loot on the screen (worldzoom.ts), in the canvas's own pixels, as large as the zoom
-  // makes the loot; the Interact key as bound (keybadge.ts)
   const dpr = canvasDpr();
   const at = worldToScreen(nearestLoot.x, nearestLoot.y - 70);
   drawKeyBadge(ctx, at.x * dpr, at.y * dpr, "interact", dpr * worldZoom(), LOOT_BADGE, progress);
@@ -378,8 +372,6 @@ export function renderChestInteractionHint(
   }
   if (!nc) return;
   ctx.shadowBlur = 0; ctx.shadowColor = "transparent"; ctx.globalAlpha = 1; ctx.lineWidth = 2;
-  // where the world zoom puts the chest on the screen (worldzoom.ts), in the canvas's own pixels, as large as the zoom
-  // makes the chest; the Open Chest key as bound (keybadge.ts)
   const dpr = canvasDpr();
   const at = worldToScreen(nc.x, nc.y - 72);
   drawKeyBadge(ctx, at.x * dpr, at.y * dpr, "openChest", dpr * worldZoom(), CHEST_BADGE, progress);

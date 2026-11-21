@@ -1,7 +1,3 @@
-// Pull-to-refresh for App view (mobile WebViews without browser chrome and
-// therefore without native pull-to-refresh). Drives the #ptr-indicator
-// element: the rotate icon follows the finger, releasing past the threshold
-// reloads the page. Touch devices only; inert everywhere else.
 (() => {
   const indicator = document.getElementById('ptr-indicator') as HTMLElement;
   const icon = document.getElementById('ptr-icon') as HTMLElement;
@@ -29,10 +25,6 @@
     return (el ? el.scrollTop : window.scrollY) <= 0;
   }
 
-  // True when an inner scroll container above the document (e.g. the realm
-  // list, a replay overlay) can still scroll up: the gesture belongs to it.
-  // Without this, pages whose document never scrolls would hand EVERY
-  // downward drag to pull-to-refresh, flashing the indicator constantly.
   function innerScrollerNeedsGesture(t: EventTarget | null): boolean {
     const el = t as HTMLElement | null;
     if (!el || typeof el.closest !== 'function') return false;
@@ -76,8 +68,6 @@
     pulling = true;
     startY = e.touches[0].clientY;
     startX = e.touches[0].clientX;
-    // Note: the indicator stays hidden until a real downward drag is
-    // detected in touchmove (a tap must never flash it).
   }, { passive: true });
 
   document.addEventListener('touchmove', (e: TouchEvent) => {
@@ -109,8 +99,6 @@
       refreshing = true;
       indicator.classList.remove('ptr-pulling', 'ptr-ready');
       indicator.classList.add('ptr-refreshing');
-      // Settle the pill at the top while the icon spins (CSS animation
-      // overrides the inline rotate below).
       indicator.style.transform = 'translate(-50%, 0)';
       if (label) label.textContent = 'Refreshing…';
       window.setTimeout(() => window.location.reload(), 350);

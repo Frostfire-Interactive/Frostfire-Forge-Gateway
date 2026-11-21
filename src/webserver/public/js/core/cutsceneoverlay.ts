@@ -1,7 +1,3 @@
-// What a scene draws over the world at a moment of it: screen effects, letterbox bars, text and its own fades. Drawn
-// into whatever it is given, at that size: the #cutscene-layer canvas for the screen, and the recorder's frame for a
-// video (cutscenecapture.ts), so a recording's bars and text are sharp and sit at its own edges at any shape of frame.
-
 import { barsAt, blackAt, envelope, typedText, type CutsceneDoc, type Plan, type TextClip } from "./cutscenedoc.js";
 import { NUMBER_FONT, TEXT_FONT } from "./fonts.js";
 
@@ -114,10 +110,6 @@ function drawDialogue(ctx: CanvasRenderingContext2D, clip: TextClip, w: number, 
   }
 }
 
-/**
- * Draws the scene's overlay at time t into `ctx`, which is `w` by `h` with no transform. `noFades` leaves out the black
- * of the scene's own fades.
- */
 export function drawOverlay(ctx: CanvasRenderingContext2D, doc: CutsceneDoc, plan: Plan, t: number, w: number, h: number, noFades = false): void {
   const s = scaleFor(w, h);
   ctx.save();

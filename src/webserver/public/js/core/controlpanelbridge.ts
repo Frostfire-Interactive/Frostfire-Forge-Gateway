@@ -1,10 +1,3 @@
-// Control panel popup: the dashboard of the server's admins. It talks to the
-// game window over postMessage; the game window forwards everything to the
-// server. Every control here stands for one of the admin commands: the server
-// checks who is asking and that command's own permission, runs it, and answers
-// with what the command said and how things now stand. The panel asks again
-// every few seconds to stay current, and is sent the readings its charts are
-// drawn from as the server takes them.
 import { LineChart, barList, columns, meter, shares, sparkline, type Bar, type Point } from "./controlpanelcharts.js";
 import {
   ago, arrowKeys, avatar, brandName, clock, confirmDialog, count, dayAndTime, duration, el, empty, forbid, icon, listed, memory, num, screen, segments, short, shown, subcard,
@@ -13,10 +6,6 @@ import {
 
 type Page = "dashboard" | "players" | "reports" | "communication" | "server" | "world" | "items";
 
-/**
- * What a weather reads, each as a name and a value: degrees Fahrenheit and miles an hour, as the weather table
- * keeps them, and where the wind blows to on the screen. Nothing for a clear sky, which reads nothing.
- */
 function weatherReadings(conditions: WeatherConditions | null | undefined): Array<[string, string]> {
   if (!conditions) return [];
   const blowing = conditions.wind_direction && conditions.wind_direction !== "none" ? `, blowing ${conditions.wind_direction}` : "";
@@ -120,11 +109,6 @@ const ACTION_LABELS: Record<string, string> = {
   "loot.create": "New loot table", "loot.delete": "Delete loot table", "loot.additem": "Add loot row", "loot.removeitem": "Remove loot row", "loot.updateitem": "Change loot row",
 };
 
-/**
- * The commands that act on one player: what each is called, what it does in a
- * sentence, whether the player has to be online, and what is asked before one
- * that cannot be taken back.
- */
 const PLAYER_ACTIONS: Record<string, { label: string; note: string; online?: boolean; confirm?: (name: string) => [string, string] }> = {
   "player.summon": { label: "Summon", note: "Bring them to where you are.", online: true },
   "player.goto": { label: "Go to", note: "Take yourself to where they are.", online: true },
@@ -238,8 +222,6 @@ class ControlPanel {
     this.buildShell();
     window.addEventListener("message", (e) => this.onMessage(e));
     window.addEventListener("beforeunload", () => this.send({ type: "panelClosed" }));
-    // Backup for the game page closing us on unload: if the game tab is gone,
-    // this panel has nothing to talk to, so close.
     if (window.opener) {
       setInterval(() => {
         if (!window.opener || window.opener.closed) window.close();
@@ -262,11 +244,6 @@ class ControlPanel {
     if (!this.denied) this.send({ type: "request", packet, data });
   }
 
-  /**
-   * `full` asks for everything: what this admin may do, what the map and
-   * weather fields pick from, the whole history. A refresh says which readings
-   * and actions it already holds and is sent the newer ones.
-   */
   private load(full: boolean): void {
     const newest = (rows: ControlPanelReading[]) => (rows.length ? Number(rows[rows.length - 1][0]) : 0);
     const since = { recent: newest(this.history.recent), day: newest(this.history.day), activity: this.activity.length ? this.activity[this.activity.length - 1].seq : 0 };
@@ -445,11 +422,6 @@ class ControlPanel {
     this.pending = null;
   }
 
-  /**
-   * Ask the server to run the command behind a control. The button that asked
-   * waits for the answer; `origin.done` runs once the server has run it, to
-   * empty the field that was sent (a refusal leaves it as typed).
-   */
   private act(action: string, data: Record<string, unknown>, origin: Origin): void {
     if (this.denied) return;
     if (this.lost) return this.fail(origin.key, [NOT_ANSWERING]);
@@ -533,11 +505,6 @@ class ControlPanel {
     return { root, tools, body };
   }
 
-  /**
-   * A button. With an `action` it is one of the admin commands: greyed out,
-   * with the reason, when this admin may not use it or the server is not
-   * answering, and shown waiting while its answer is on the way.
-   */
   private button(label: string, onClick: (fk: string) => void, opts: { action?: string; icon?: IconName; kind?: "primary" | "danger" | "quiet" | "quiet-danger"; fk?: string } = {}): HTMLButtonElement {
     const fk = opts.fk ?? `${opts.action ?? "ui"}:${label}`;
     const btn = el("button", "tl-btn" + (opts.kind ? ` tl-btn-${opts.kind}` : ""));
@@ -605,11 +572,6 @@ class ControlPanel {
     return select;
   }
 
-  /**
-   * The buttons under a form, the one that sends it first. If that one is
-   * greyed out, the reason is written beside the buttons and the fields of
-   * `form` are greyed out with it: there is nothing to fill them in for.
-   */
   private actions(parent: HTMLElement, form: HTMLElement | null, ...buttons: HTMLButtonElement[]): HTMLElement {
     const row = el("div", "tl-actions");
     for (const button of buttons) row.appendChild(button);
@@ -674,11 +636,6 @@ class ControlPanel {
     return tags;
   }
 
-  /**
-   * A text field for an item, searched on the server as it is typed in, with
-   * the matches listed under it. Typing stands as the value; picking a match
-   * replaces it.
-   */
   private itemField(value: string, placeholder: string, onValue: (value: string) => void, fk = ""): HTMLElement {
     const wrap = el("div", "tl-suggest-wrap");
     const list = el("div", "tl-suggest");
@@ -950,11 +907,6 @@ class ControlPanel {
     this.pageEl.appendChild(inner);
   }
 
-  /**
-   * A part of the page that is redrawn from each answer of the server. With a
-   * `key`, only when what it shows has changed: its buttons are not swapped
-   * for new ones under the mouse every few seconds.
-   */
   private follow(update: () => void, key?: () => string): void {
     this.live.push({ update, key });
   }
@@ -2163,8 +2115,6 @@ class ControlPanel {
         const weather = el("td");
         weather.appendChild(el("span", "", w.showing));
         if (w.weather !== w.showing) weather.appendChild(el("span", "tl-muted", ` · set to ${w.weather}`));
-        // What that weather reads now, on a line of its own under its name. It wraps where the table is narrow (a
-        // phone): a table's cells do not, by themselves, and the line pushed the players' column off the screen.
         const line = weatherLine(w.conditions);
         if (line) weather.appendChild(el("div", "tl-row-note cp-weather-line", line));
         row.appendChild(weather);
@@ -2186,11 +2136,6 @@ class ControlPanel {
 
     const weatherKey = "world.weather";
     const weather = this.card(side, "Weather", `The weather over the map you are on, ${viewer.map}, and a control to change it.`, weatherKey);
-    // What is over the map now, and what it reads (USER REQUEST 2026-10-07: "Show the current weather in the control
-    // panel"). What a world is set to is not always what it has: "random" is whichever weather the server settled
-    // on, and "weather_api" is the last reading of the real place the world follows.
-    // Its name first, on a line of its own, then its readings side by side: four across where there is room, two
-    // by two on a phone (USER FEEDBACK 2026-10-07: "weather isn't designed correctly for mobile").
     const current = el("div", "cp-weather-now");
     const name = el("div", "cp-weather-name");
     const readings = el("dl", "tl-facts cp-weather-readings");

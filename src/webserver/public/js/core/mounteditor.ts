@@ -1,17 +1,9 @@
-// Game-window half of the mount editor (/mounteditor): owns the popup window and relays its messages to the
-// server, as achievementeditor.ts does. The popup is mounteditorbridge.ts.
 import { sendRequest } from "./socket.js";
 import { config } from "../web/global.js";
 
 const EDITOR_WIDTH = 1040;
 const EDITOR_HEIGHT = 720;
 
-/**
- * The game server sends the icon list's pictures as asset paths ("/icon?name=..."), not URLs: it reaches the asset
- * server on an internal address the browser cannot resolve. Prefix them with the asset server this client was
- * configured with, as the item editor does (itemeditor.ts). Only the icon list's `image` fields are touched, never
- * what an admin typed. The popup is told the asset server too, to draw a mount whose icon is not in the list.
- */
 function withIconUrls(data: any): any {
   if (!data || typeof data !== "object") return data;
   const icons = Array.isArray(data.icons)

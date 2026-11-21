@@ -1,8 +1,3 @@
-// The trade window: what this player offers on one side, what the other
-// player offers on the other, and who has accepted. The server holds the trade
-// and sends it whole after every change (TRADE_STATE); this window shows what
-// it was sent, and sends back this player's side whenever they change it.
-// Nothing moves until both have accepted, and the server makes the swap.
 import { config } from "../web/global.js";
 import { sendRequest } from "./socket.js";
 import Cache from "./cache.js";
@@ -79,10 +74,6 @@ function sendTypedCoins() {
   sendOffer(state.mine.items, typedCoins());
 }
 
-/**
- * How many of an item in the bags can be traded: what is held less what is in use (one worn, or
- * one for each bag slot it is in), which is also what the bags show of it.
- */
 export function spareOf(name: string): number {
   const held = (cache.inventory || []).find((item: any) => String(item.name).toLowerCase() === name.toLowerCase());
   if (!held) return 0;

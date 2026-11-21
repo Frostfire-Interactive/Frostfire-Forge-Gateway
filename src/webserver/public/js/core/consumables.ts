@@ -1,13 +1,3 @@
-// Using items: a consumable in the bags (a double-click) or on the hotbar (its
-// key, or a click). The server makes every use (USE_ITEM) and answers with the
-// player's bags and stats; this file sends the request, draws consumables on
-// the hotbar with how many are left, and draws the cooldown clock over them.
-//
-// A hotbar slot holds a consumable the way it holds a spell, under the name
-// "item:<item name>", so the saved hotbar needs nothing new.
-//
-// There are two cooldowns (ITEM_COOLDOWN): the one every consumable shares,
-// and the home item's own.
 import { config } from "../web/global.js";
 import Cache from "./cache.js";
 
@@ -35,8 +25,6 @@ export function heldItem(name: string | null | undefined): any | null {
   return (cache.inventory || []).find((item: any) => lower(item.name) === lower(name)) ?? null;
 }
 
-/** Whether an item is the home item: the one that takes its player home, and is never used up. */
-/** Whether an item is soulbound: it cannot be traded or mailed. */
 export function isSoulbound(item: any): boolean {
   return !!item && (item.soulbound === true || Number(item.soulbound) === 1);
 }
@@ -64,8 +52,6 @@ export function useText(item: any): string | null {
 
 // ------------------------------------------------- items no longer in the bags
 
-// A consumable stays on the hotbar when the last one is used: what it looked like is kept here, and
-// across visits, so its slot can still be drawn.
 const REMEMBERED_KEY = "hotbar-items";
 let remembered: Record<string, Remembered> = {};
 try {
@@ -120,11 +106,6 @@ function slotsOf(kind: Kind): HTMLDivElement[] {
   return [...bags, ...bar];
 }
 
-/**
- * How long is left of a cooldown, as it is written over the clock: hours rounded up while more
- * than an hour is left ("2h" for 1 hour 15 minutes, "1h" for the hour exactly), then the minutes
- * left ("59m"), and seconds only in the last minute ("42s").
- */
 export function cooldownLabel(remainingMs: number): string {
   const left = Math.max(0, Number(remainingMs) || 0);
   if (left >= 3_600_000) return `${Math.ceil(left / 3_600_000)}h`;

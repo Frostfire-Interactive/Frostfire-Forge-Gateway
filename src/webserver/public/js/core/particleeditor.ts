@@ -81,10 +81,6 @@ class ParticleEditor {
     void this.loadSprites();
   }
 
-  /**
-   * The sprites a particle can emit in place of its round dot: the asset server's list (names only), for the editor's
-   * Image field. The editor fetches each image itself from /sprite?name=.
-   */
   private sprites: string[] = [];
   private async loadSprites() {
     try {

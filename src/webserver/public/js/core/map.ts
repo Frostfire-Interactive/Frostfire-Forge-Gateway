@@ -16,10 +16,6 @@ declare global {
   }
 }
 
-// A "cut" is a point in the zIndex order where baked tile rendering must pause so
-// something dynamic can be drawn between tile layers: either a shadow layer's
-// silhouette (drawn at the shadow layer's own zIndex) or the player/NPC/entity
-// pass (at PLAYER_Z_INDEX). Tile layers with zIndex <= key render below the cut.
 export interface LayerCut {
   key: number;
   shadowZ: number | null;
@@ -33,11 +29,6 @@ export function computeLayerCuts(layers: Array<{ name: string; zIndex: number }>
   for (const l of layers) {
     if (l.name && shadowNameSet.has(l.name.toLowerCase())) shadowZs.add(Number(l.zIndex));
   }
-  // Shadow cuts sit just below the nearest rendered tile layer beneath the
-  // shadow's own zIndex, so the silhouette draws under the object it is attached
-  // to even when the object's base spans the layer directly below (e.g. tall
-  // grass split across two layers). Falls back to just below the shadow's own
-  // zIndex when no rendered layer exists beneath it.
   const renderedZs: number[] = [];
   for (const l of layers) {
     const name = l.name ? l.name.toLowerCase() : '';
@@ -86,14 +77,9 @@ interface ChunkData {
   }>;
 }
 
-// Decoded tileset images persist across map changes so warping back to a
-// recently visited map skips the fetch + pako inflate + image decode entirely.
 const tilesetImageCache = new Map<string, Promise<HTMLImageElement>>();
 const TILESET_IMAGE_CACHE_MAX = 8;
 
-// Tileset <img> elements can have their decoded pixels discarded by the browser
-// and re-decoded synchronously on drawImage; an ImageBitmap stays decoded, so
-// the tile atlas is packed from it when available.
 const tilesetBitmaps = new WeakMap<HTMLImageElement, ImageBitmap>();
 
 export default async function loadMap(metadata: any): Promise<boolean> {
@@ -122,8 +108,6 @@ export default async function loadMap(metadata: any): Promise<boolean> {
     let tilesets: any[] = [];
 
     if (metadata && typeof metadata === 'object' && 'name' in metadata && !Array.isArray(metadata)) {
-      // New format: metadata object from server
-      // { name, assetServerUrl, width, height, tilewidth, tileheight, spawnX, spawnY, direction, chunks }
       mapName = metadata.name;
       spawnX = metadata.spawnX || 0;
       spawnY = metadata.spawnY || 0;
@@ -224,8 +208,6 @@ export default async function loadMap(metadata: any): Promise<boolean> {
       warps: metadata?.warps || null,
       graveyards: metadata?.graveyards || null,
       shadowLayerNames: metadata?.shadowLayerNames || null,
-      // the map's sections, when it has them (rectangles in tiles: the cave systems of a world's underworld); the
-      // world map shows only the one the player is in (worldmap.ts)
       sections: Array.isArray(metadata?.sections) ? metadata.sections : null,
       // the map's desert zones, when it has them (outlines in tiles): a sandstorm is only drawn inside them (sandstorm.ts)
       deserts: Array.isArray(metadata?.deserts) ? metadata.deserts : null,
@@ -241,8 +223,6 @@ export default async function loadMap(metadata: any): Promise<boolean> {
       },
     };
 
-    // Seed the layer cuts from preloaded chunks' layer structure; otherwise
-    // they're computed when the first chunk loads.
     for (const preloadedChunk of preloadedChunks.values()) {
       const layers = (preloadedChunk as any)?.layers;
       if (Array.isArray(layers)) {
@@ -571,8 +551,6 @@ async function saveChunkToCache(mapName: string, chunkX: number, chunkY: number,
   try {
     const db = await getCacheDB();
     const cacheKey = getCacheKey(mapName, chunkX, chunkY);
-    // Store only the serializable tile data: the live chunk object gains
-    // canvases while it bakes, which IndexedDB can't structured-clone.
     const data = {
       chunkX: chunkData.chunkX,
       chunkY: chunkData.chunkY,
@@ -715,9 +693,6 @@ async function isChunkCached(mapName: string, chunkX: number, chunkY: number): P
   }
 }
 
-// Grow the map bounds if a loaded chunk contains tiles beyond the current width or
-// height, so persisted out-of-border content renders on reload even when the
-// LOAD_MAP dimensions are stale (otherwise renderMap would clip it away).
 function growBoundsForChunk(chunkData: any): void {
   if (!window.mapData || !chunkData || !Array.isArray(chunkData.layers)) return;
   const cs = window.mapData.chunkSize;
@@ -754,14 +729,10 @@ function growBoundsForChunk(chunkData: any): void {
 
 async function requestChunk(chunkX: number, chunkY: number): Promise<ChunkData | null> {
   if (!window.mapData) return null;
-  // A LOAD_MAP while this request is in flight replaces window.mapData; the
-  // result then belongs to a map that's gone and must not be installed.
   const mapData = window.mapData;
 
   const chunkKey = `${chunkX}-${chunkY}`;
 
-  // Chunks placed in loadedChunks directly (warp preloading, editor-created
-  // chunks) are drawable as-is; they only need installing once.
   const existingChunk = mapData.loadedChunks.get(chunkKey);
   if (existingChunk) {
     if (!installedChunks.has(existingChunk)) installChunk(mapData, chunkKey, existingChunk);
@@ -790,16 +761,12 @@ async function requestChunk(chunkX: number, chunkY: number): Promise<ChunkData |
           return null;
         }
 
-        // Cache write is fire-and-forget: blocking the bake on an IndexedDB
-        // transaction adds avoidable latency to every chunk load.
         void saveChunkToCache(mapData.name, chunkX, chunkY, chunkData);
       } catch (error) {
         return null;
       }
     }
 
-    // Nothing to bake: the WebGL map renderer draws straight from the chunk's
-    // tile data, uploading it the first time the chunk is on screen.
     mapData.loadedChunks.set(chunkKey, chunkData);
     installChunk(mapData, chunkKey, chunkData);
 
@@ -820,8 +787,6 @@ const installedChunks = new WeakSet<object>();
 function installChunk(mapData: any, chunkKey: string, chunkData: ChunkData): void {
   installedChunks.add(chunkData);
   if (Array.isArray(chunkData.layers)) mapData.layerCuts = computeLayerCuts(chunkData.layers);
-  // Keep persisted out-of-border content visible on reload even if the LOAD_MAP
-  // dimensions are stale: grow the bounds to include this chunk's content.
   growBoundsForChunk(chunkData);
   // Record chunk load time for fade-in effect
   recordChunkLoadTime(chunkKey);
@@ -863,9 +828,6 @@ async function requestChunkViaAssetServer(mapName: string, chunkX: number, chunk
   }
 }
 
-// Create an empty in-memory chunk, used by the editor when painting into the
-// infinite zone beyond the currently-loaded chunks. Its layer structure is
-// cloned from an existing loaded chunk so it matches the rest of the map.
 function createEmptyChunk(chunkX: number, chunkY: number): any | null {
   if (!window.mapData) return null;
   const chunkSize = window.mapData.chunkSize;
@@ -901,22 +863,12 @@ function createEmptyChunk(chunkX: number, chunkY: number): any | null {
   return chunk;
 }
 
-// Ensure a tile at the given world-tile coords can be painted: grow the map's
-// logical bounds (infinite maps only) and create the target chunk if missing.
-// Returns the chunk + local coords, or null if not paintable (e.g. negative
-// coords, which require origin re-basing and are not supported yet).
-// Parse a "chunkX-chunkY" key, correctly handling negative indices.
 export function parseChunkKey(key: string): [number, number] {
   const m = key.match(/^(-?\d+)-(-?\d+)$/);
   if (!m) return [0, 0];
   return [Number(m[1]), Number(m[2])];
 }
 
-// Ensure a tile at the given world-tile coords can be painted: grow the map's
-// logical bounds in any direction (infinite maps only) and create the target
-// chunk if missing. Existing content is never shifted while editing (no desync
-// with server-authoritative positions); the origin is re-based to (0,0) only at
-// save time. Returns the chunk + local coords, or null if not paintable.
 export function ensureChunkForTile(worldTileX: number, worldTileY: number): { chunk: any; chunkX: number; chunkY: number; localX: number; localY: number } | null {
   if (!window.mapData) return null;
 

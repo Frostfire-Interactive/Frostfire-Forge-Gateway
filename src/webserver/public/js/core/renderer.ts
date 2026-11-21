@@ -92,24 +92,13 @@ function updateRemotePlayerInterpolation(player: any, deltaSeconds: number) {
   }
 }
 
-/**
- * Where to draw each player this frame. Positions are the server's; the
- * renderer draws them a little in the past, interpolated between timed server
- * steps (see movementsmoothing.ts), so uneven packet arrival never shows as
- * uneven speed. The camera follows the local player's render position.
- */
 function smoothPlayerRenderPositions(players: any[], now: number) {
   const at = renderTime(now);
   for (const player of players) {
     if (!player?.position) continue;
     const samples: MoveSample[] = player.moveSamples ??= [];
     const last = samples[samples.length - 1];
-    // Position set outside a move packet (spawn, snapshot, warp): take it as
-    // the next step. It lands right after the newest one so later packets are
-    // still accepted, and a large jump snaps.
     if (needsPositionSample(last, player.position, now)) {
-      // In the handoff gap the local player's predicted step is dated like an echo (now), not right after the newest
-      // one: the draw stays its usual delay behind instead of running ahead and jumping (handoffwalk.ts gapSampleTime).
       if (last && player.id === cachedPlayerId && getHandoffGap()) {
         pushPredicted(samples, player.position.x, player.position.y, gapSampleTime(now, last.t, getLateness(), stepWalkMs(last, player.position.x, player.position.y, atMountSpeed(player))));
       } else if (last?.held && player.id === cachedPlayerId) {
@@ -155,9 +144,6 @@ function deleteChunkTracking(chunkKey: string) {
   chunkLoadTimes.delete(chunkKey);
 }
 
-// How much of the bottom of the screen the hotbar covers on a touch screen (px), and nothing with a mouse, where the
-// screen is tall and the hotbar a small part of it. Measured from where the hotbar is drawn, which differs with the
-// size of the phone; measured again when the screen or its layout changes, and once a second, not every frame.
 let bottomCover = 0, bottomCoverOf = "", bottomCoverAt = 0;
 function coveredBottom(): number {
   const of = `${window.innerWidth}x${window.innerHeight}|${document.body.className}`;
@@ -179,13 +165,7 @@ function updateCamera(currentPlayer: any, deltaTime: number) {
 
   const tileEditor = (window as any).tileEditor;
   if (tileEditor?.isActive && window.mapData) {
-    // Free-pan editor camera: decoupled from player-follow and unclamped so the
-    // user can pan anywhere, including into the infinite paint zone.
     if ((window as any).__resetEditorCamera) {
-      // The editor has opened again after a warp (socket.ts, LOAD_MAP): it looks at where the player arrives. Not
-      // at the camera, as below: the player's place on the new map comes in a later packet, so until then the
-      // camera is still where they stood on the map they left. USER REPORT 2026-10-06: "warping while tile editor is
-      // open, keeps the camera location of the previous location".
       const arriveX = Number(window.mapData.spawnX), arriveY = Number(window.mapData.spawnY);
       editorCameraX = Number.isFinite(arriveX) && arriveX !== 0 ? arriveX : cameraX;
       editorCameraY = Number.isFinite(arriveY) && arriveY !== 0 ? arriveY : cameraY;
@@ -210,8 +190,6 @@ function updateCamera(currentPlayer: any, deltaTime: number) {
   }
   editorCameraInitialized = false;
 
-  // A cutscene's camera (cutscene.ts), kept inside the map as the player's is, and at the same zoom's view of it. What
-  // is heard is heard from it, as the scene is seen from it.
   const shot = cutsceneCamera();
   if (shot && window.mapData) {
     const mapWidth = window.mapData.width * window.mapData.tilewidth;
@@ -245,16 +223,6 @@ function updateCamera(currentPlayer: any, deltaTime: number) {
     const halfViewportHeight = viewHeight() / 2;
 
     cameraX = Math.max(halfViewportWidth, Math.min(mapWidth - halfViewportWidth, cameraX));
-    // A map narrower than the screen is centred sideways by every draw and every click (mapCenterOffsetX), with the
-    // camera left where the line above puts it. None of them centres a map shorter than the screen, which stood at
-    // the top: the camera does that here, on the map's middle, and they all follow it (they add no offset of their
-    // own on this axis).
-    //
-    // On a touch screen the hotbar lies over the bottom of the screen, which is a sixth of a phone's height: the
-    // bottom of a map, where the way out of a room is, was under it. The map's bottom edge stops at the top of the
-    // hotbar there instead of at the bottom of the screen, and a map shorter than what is left is centred in what is
-    // left. USER REPORT 2026-10-07: "on mobile when entering a small level, I can't see the bottom of the level due
-    // to the hotbar being in the way".
     const cover = coveredBottom() / userZoom();
     cameraY = mapHeight < halfViewportHeight * 2 - cover
       ? mapHeight / 2 + cover / 2
@@ -271,11 +239,6 @@ function updateCamera(currentPlayer: any, deltaTime: number) {
   }
 }
 
-/**
- * While the NPC editor is open: where each sound NPC is heard, as a purple circle that fades out toward its edge, as
- * the sound does (npcsounds.ts), with a thin ring at the edge; its middle, where it is heard at full level in both
- * ears, in blue; and the NPC itself as a purple dot with its id (it is not drawn otherwise). Every sound NPC is gone through, not the ones in view: a circle reaches far past its NPC.
- */
 function drawSoundRanges(context: CanvasRenderingContext2D) {
   const viewHalfW = viewWidth() / 2, viewHalfH = viewHeight() / 2;
   for (const npc of cache.npcs as any[]) {
@@ -345,20 +308,6 @@ export function panEditorCamera(dx: number, dy: number) {
   editorCameraInitialized = true;
 }
 
-// Recenter the editor camera on the local player (or the map center as a fallback).
-export function resetEditorCamera() {
-  const playersArray = Array.from(cache.players instanceof Map ? cache.players.values() : cache.players);
-  const currentPlayer = playersArray.find((p: any) => p.id === cachedPlayerId);
-  if (currentPlayer) {
-    editorCameraX = currentPlayer.renderPosition?.x ?? currentPlayer.position.x;
-    editorCameraY = currentPlayer.renderPosition?.y ?? currentPlayer.position.y;
-  } else if (window.mapData) {
-    editorCameraX = (window.mapData.width * window.mapData.tilewidth) / 2;
-    editorCameraY = (window.mapData.height * window.mapData.tileheight) / 2;
-  }
-  editorCameraInitialized = true;
-}
-
 function getVisibleChunks(): Array<{x: number, y: number}> {
   if (!window.mapData) return [];
 
@@ -413,8 +362,6 @@ async function loadVisibleChunks() {
 
   const chunksToUnload: string[] = [];
 
-  // Don't unload chunks while the editor is active: freshly painted / expansion
-  // chunks aren't on the server yet, so unloading would discard unsaved edits.
   const editorActiveForUnload = (window as any).tileEditor?.isActive;
   if (!editorActiveForUnload) for (const chunkKey of loadedChunksSet) {
     if (!visibleKeys.has(chunkKey)) {
@@ -757,9 +704,6 @@ function recordChunkLoadTime(chunkKey: string) {
   }
 }
 
-// Draws the Tiled-style "infinite paint zone" outside the current map bounds while
-// the tile editor is active on an infinite map: the area beyond the map shows a
-// faint white grid over the black background, indicating it can be painted into.
 function renderInfiniteZone() {
   if (!ctx || !window.mapData) return;
 
@@ -781,12 +725,8 @@ function renderInfiniteZone() {
 
   ctx.save();
 
-  // Clip to the viewport EXCLUDING the current map rect (even-odd), so the grid
-  // only appears in the out-of-bounds zone.
   ctx.beginPath();
   ctx.rect(0, 0, vw, vh);
-  // Exclude the full map extent (including any negative/expanded area) so the grid
-  // never draws over painted content. Left/up expansion is disabled, so clamp to 0.
   const izMinTileX = Math.max(0, window.mapData.minTileX ?? 0);
   const izMinTileY = Math.max(0, window.mapData.minTileY ?? 0);
   ctx.rect(offsetX + izMinTileX * tw, offsetY + izMinTileY * th, mapWidth - izMinTileX * tw, mapHeight - izMinTileY * th);
@@ -825,12 +765,6 @@ if (MOBILE_RENDERER) {
   setShadowMaxOffset(SHADOW_MAX_OFFSET);
 }
 
-// A character sprite drawn centred on (cx, cy), for y-sorting: its world-space
-// box (the union of its visible animation frames, else its static image, else
-// a default 64px frame) and its feet line. Sprite frames have empty space below
-// the feet, so the feet sit FEET_FRACTION of the frame height below the anchor
-// (+16 on a 64px frame) - the same rule the ground shadows use - rather than at
-// the box's bottom edge.
 function spriteOccluder(anim: any, staticImage: HTMLImageElement | null | undefined, cx: number, cy: number,
   scale: number): [number, number, number, number, number] {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -856,10 +790,6 @@ function spriteOccluder(anim: any, staticImage: HTMLImageElement | null | undefi
   return [minX, minY, maxX, maxY, cy + frameHeight * FEET_FRACTION];
 }
 
-// Boxes of the characters near the camera (players, NPCs, creatures), nearest
-// first, for y-sorting the PLAYER_Z_INDEX layer against them. Characters that
-// end up not drawn (stealth, hidden) are harmless: lifting a tile over an empty
-// spot doesn't change the picture.
 function collectOccluders(): Array<[number, number, number, number, number]> {
   const margin = 256;
   const halfW = window.innerWidth / 2 + margin;
@@ -901,10 +831,6 @@ function collectOccluders(): Array<[number, number, number, number, number]> {
   return found.map((f) => f.box);
 }
 
-// Renders the map's tile layers in zIndex order on the GPU (glmap), with each
-// shadow layer's silhouette at its own zIndex. The 'below' phase draws every
-// layer up to the player cut (zIndex < PLAYER_Z_INDEX); the 'above' phase draws
-// the rest.
 function renderMap(phase: 'below' | 'above' = 'below', targetCtx: CanvasRenderingContext2D | null = ctx) {
   if (!targetCtx || !window.mapData) return;
 
@@ -917,8 +843,6 @@ function renderMap(phase: 'below' | 'above' = 'below', targetCtx: CanvasRenderin
   const tileEditor = (window as any).tileEditor;
   const isEditorActive = !!tileEditor?.isActive;
 
-  // Clip to the map bounds, extended to include any negative/expanded area
-  // while editing an infinite map.
   const clipMinX = (window.mapData.minTileX ?? 0) * window.mapData.tilewidth;
   const clipMinY = (window.mapData.minTileY ?? 0) * window.mapData.tileheight;
 
@@ -1133,8 +1057,6 @@ function renderGroundAoeZones(ctx: CanvasRenderingContext2D, deltaTime: number) 
   }
 }
 
-// One frame is on its way at a time: a recording also draws frames of its own where the browser has stopped giving
-// any (cutscenecapture.ts), and this one waits there, and a second would have the game drawn twice over from then on.
 let frameAsked = false;
 let animationFrameAt = 0;
 /** This long with no animation frame, and the browser has stopped giving them. */
@@ -1161,15 +1083,11 @@ function animationLoop() {
   globalFrameId++;
 
   const fpsTarget = parseFloat(fpsSlider.value);
-  // Treat the slider maximum as "uncapped": render every animation frame with no
-  // frame-rate gate (the browser/display still bounds the actual rate).
   const uncapped = fpsTarget >= 240;
   const frameDuration = 1000 / fpsTarget;
   const now = performance.now();
   let deltaTime = (now - lastFrameTime) / 1000;
 
-  // Clamp deltaTime to prevent huge jumps when tab is hidden/visible
-  // Use a larger cap on mobile to allow particles to catch up after iOS RAF throttling
   const maxDeltaTime = (frameDuration * 30) / 1000;
   if (deltaTime > maxDeltaTime) {
     deltaTime = maxDeltaTime;
@@ -1181,10 +1099,6 @@ function animationLoop() {
   if (rafDelta > 2 && rafDelta < 100) rafInterval += (rafDelta - rafInterval) * 0.05;
 
   if (!uncapped) {
-    // Render every Nth display refresh, never on a timer. A cap that does not
-    // divide the refresh rate (the default 50 on a 60Hz phone) otherwise drops
-    // frames at irregular points: an uneven hitch several times a second on
-    // anything moving. 50 on 60Hz renders at 60; on 144Hz, every 3rd refresh (48).
     const stride = Math.max(1, Math.round(frameDuration / rafInterval));
     if (++rafsSinceRender < stride) {
       askFrame();
@@ -1250,8 +1164,6 @@ function animationLoop() {
     cameraInitialized = true;
   }
 
-  // A node handoff is switching connections: no position arrives for a moment, so the local player is walked on along the
-  // held keys or the stick (handoffwalk.ts). The move is only drawn: nothing here is sent, and the new node's position replaces it.
   if (currentPlayer && getHandoffGap() && !isSelfDead() && document.activeElement !== chatInput && document.activeElement !== friendsListSearch) {
     const walked = currentPlayer.moveSamples;
     const newest = walked?.[walked.length - 1];
@@ -1287,8 +1199,6 @@ function animationLoop() {
   (window as any).cameraX = cameraX;
   (window as any).cameraY = cameraY;
 
-  // While moves are blocked (a node handoff or switch in progress) nothing is sent, so forget the last sent
-  // direction: a key still held then sends its MOVEXY again the moment movement is allowed (as the gamepad does).
   if (!getMovementAllowed()) lastDirection = "";
 
   if (getMovementAllowed() && getIsMoving() && getIsKeyPressed() && !isSelfDead()) {
@@ -1327,15 +1237,11 @@ function animationLoop() {
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  // Mobile: the map is drawn by #map-below underneath this canvas, so it must
-  // stay transparent (no black fill).
   if (!MOBILE_RENDERER) {
     ctx.fillStyle = "#000000";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
   ctx.restore();
-  // the canvas's base transform for this frame: device pixels and the world zoom (worldzoom.ts). Everything drawn of
-  // the world below reads it, the WebGL map included.
   applyWorldTransform(ctx, now);
   ctx.imageSmoothingEnabled = false;
 
@@ -1357,8 +1263,6 @@ function animationLoop() {
     if (cutsceneHidesPlayer(p.id === cachedPlayerId)) return false;
     // Own corpse stays visible; everyone else's despawns (no admin bypass).
     if (p.id === cachedPlayerId) {
-      // Hidden through the release cinematic until just after the teleport
-      // lands, so you reappear at the graveyard before the fade lifts.
       if (isReleaseHidden()) return false;
       return true;
     }
@@ -1378,8 +1282,6 @@ function animationLoop() {
     updateAbsorptionBar(absorbtion || 0, total_max_health);
     // A target that has wandered (or been left) too far away is dropped.
     dropDistantTarget(currentPlayer);
-    // Unit frames: the target, plus your own frame on touch devices. Each only
-    // touches the DOM when something visible changes.
     updateUnitFrames(currentPlayer);
   }
 
@@ -1412,8 +1314,6 @@ function animationLoop() {
     }
   }
 
-  // Collect player effect particles into the same layer system that
-  // NPC particles use. zIndex defaults to 3 (upper layer, above sprites).
   for (const p of visiblePlayers) {
     const effects = p.activeEffects?.filter((e: any) => e.endTime > Date.now()) || [];
     const allParticles: any[] = [];
@@ -1486,13 +1386,9 @@ function animationLoop() {
 
   renderGroundAoeZones(ctx, deltaTime);
 
-  // Death skeletons lie on the ground: above the first (ground) z-index
-  // layers and ground effects, below characters and loot.
   renderSkeletons(ctx);
   // Footprints lie on the ground, under every character and under the water's waves (footprints.ts)
   renderFootprints(ctx, playersArray);
-  // Fishing lines and their bobbers lie on the water, under every character (USER REQUEST 2026-10-20: "Fishing line
-  // should always be rendered under the player"): the line runs out from the staff's tip, behind whoever holds it
   renderFishing(ctx, deltaTime, playersArray);
     tickDeathOffer();
     tickReleaseCinematic();
@@ -1544,8 +1440,6 @@ function animationLoop() {
     }
   } else {
 
-    // Ghosts render on an unfiltered overlay layer so the death greyscale
-    // never touches them (sprite, glow, or nameplate).
     if (ghostCanvas && ghostCtx) {
       if (ghostCanvas.width !== canvas.width || ghostCanvas.height !== canvas.height) {
         ghostCanvas.width = canvas.width;
@@ -1559,8 +1453,6 @@ function animationLoop() {
       ghostCtx.imageSmoothingEnabled = false;
     }
 
-    // NPCs, players and creatures go on back to front, so whoever stands
-    // further south covers those behind. Corpses lie on the ground, under all.
     const targetedCreature = parseCreatureTarget(cache.targetId);
     const standing: Standing[] = [];
     const scene = ctx;
@@ -1589,9 +1481,6 @@ function animationLoop() {
     }
     // Gathering nodes stand among them too, with the gathering editor's preview spots.
     for (const node of standingGatherNodes()) standing.push({ feet: node.feet, draw: () => node.draw(scene) });
-    // So do tornadoes (tornado.ts): whoever stands in front of one is drawn in front of it (heard from the camera, on the
-    // player). Trees and roofs do not hide them: they are painted over those, after the map's upper layers.
-    // (on phones, and without the canvas above, they are drawn once only, over the upper layers: twice would be darker)
     stepTornadoes(deltaTime, smoothMapX, smoothMapY);
     if (!MOBILE_RENDERER && aboveCtx) {
       for (const twister of standingTornadoes()) standing.push({ feet: twister.feet, draw: () => twister.draw(scene) });
@@ -1668,9 +1557,6 @@ function animationLoop() {
         if (!projectile.particleArrays) projectile.particleArrays = {};
         const dtSec = Math.min(deltaTime, 0.1);
 
-        // Track the last position where particles were emitted so new particles
-        // are distributed along the travel arc, producing a trail instead of a
-        // single stacking cluster.
         if (!(projectile as any)._lastSpawnX) {
           (projectile as any)._lastSpawnX = projectile.startX;
           (projectile as any)._lastSpawnY = projectile.startY;
@@ -1684,15 +1570,10 @@ function animationLoop() {
 
         for (const particleDef of particles) {
           const name = particleDef.name || '';
-          // Spawn a batch of particles every frame, distributed along the arc
-          // since the last frame. The trail forms naturally because each particle
-          // persists for its lifetime and the arc segments overlap.
           const amount = Math.max(Number(particleDef.amount) || 1, 1);
           const staggerTime = Math.max(Number(particleDef.staggertime) || 0, 0);
 
           for (let a = 0; a < amount; a++) {
-            // Distribute each particle along the arc segment travelled since the
-            // last frame so they form a continuous trail.
             const t = amount > 1 ? a / (amount - 1) : 0.5;
             const spawnWX = lastSpawnX + dsx * t;
             const spawnWY = lastSpawnY + dsy * t;
@@ -1709,8 +1590,6 @@ function animationLoop() {
             // Spread applies around the spawn point
             const spreadX = (Math.random() - 0.5) * (Number(particleDef.spread?.x) || 0);
             const spreadY = (Math.random() - 0.5) * (Number(particleDef.spread?.y) || 0);
-            // Store absolute world position so the particle stays where it was spawned
-            // instead of following the projectile.
             p.worldX = spawnWX + spreadX;
             p.worldY = spawnWY + spreadY;
             p.glow_intensity = Number(particleDef.glow_intensity) || 0;
@@ -1835,8 +1714,6 @@ function animationLoop() {
 
   ctx.restore();
 
-  // Above-player layers live on their own canvas above the ghost layer, so
-  // roofs/canopies cover ghosts exactly like living players.
   if (aboveCanvas && aboveCtx) {
     if (aboveCanvas.width !== canvas.width || aboveCanvas.height !== canvas.height) {
       aboveCanvas.width = canvas.width;
@@ -1872,8 +1749,6 @@ function animationLoop() {
     } else {
       renderMap('above');
     }
-    // Tornadoes ignore trees and roofs (tornado.ts): painted again over what those layers drew, only on their pixels.
-    // On phones those layers are a canvas of their own, under this one: there they are drawn over it whole.
     {
       const coverCtx = aboveCtx || ctx;
       const at = worldOffset(smoothMapX, smoothMapY);
@@ -2382,11 +2257,6 @@ function animationLoop() {
     ctx.translate(offsetX, offsetY);
     ctx.imageSmoothingEnabled = false;
 
-    // Chat bubbles stand over everything on the map: the top tile layers (trees, roofs) are on their own canvas over
-    // this one (aboveCanvas), already drawn this frame, so the bubbles go there, after them. USER REQUEST 2026-10-17:
-    // "ensure player chat text bubbles are always on the top most tile layer + 1". Without that canvas (phones) the
-    // top layers were drawn on this one earlier in the frame, so drawing here is already over them. What NPCs say goes
-    // the same way: a line of a cutscene is read through a roof as a player's is.
     const bubbleCtx = aboveCtx ?? ctx;
     if (bubbleCtx !== ctx) {
       bubbleCtx.save();
@@ -2424,9 +2294,6 @@ function animationLoop() {
         typingShown.add(p._typingEl);
       }
     }
-    // Remove bubbles not drawn this frame: the player stopped typing, left view,
-    // or was dropped from the cache (summon, map change, despawn) with the
-    // bubble still attached to document.body.
     for (const [el, owner] of typingBubbles) {
       if (typingShown.has(el)) continue;
       el.remove();
@@ -2444,9 +2311,6 @@ function animationLoop() {
       bubbleCtx.translate(offsetX, offsetY);
       bubbleCtx.imageSmoothingEnabled = false;
     }
-    // The arrow over the target (targetmarker.ts), over the top tile layers with the icons: a player's just over the
-    // top of its sprite (yourself too, when you target yourself), and above the cast bar (y - 38 to y - 28) while it
-    // casts; a creature's or a corpse's where creature.ts puts it.
     for (const p of visiblePlayers) {
       if (!p.targeted || !p.renderPosition) continue;
       const artTop = spriteArtTop(p.layeredAnimation ?? null, null, p.renderPosition.y) ?? p.renderPosition.y - 28;
@@ -2596,10 +2460,6 @@ function getWeatherData() {
   return currentWeatherData;
 }
 
-// USER REPORT 2026-10-16 ("Weather effects like wind and sounds stay around even when the weather has changed"): the
-// rain and wind loops follow the weather on a timer of their own, not the frames. No frame is drawn in a hidden tab
-// or while a map loads (no player of our own yet), and a loop asked for nothing kept playing at its last level then.
-// A background tab still runs this, about once a second.
 setInterval(() => updateWeatherSound(weatherType, currentWeatherData), WEATHER_SOUND_EVERY);
 
 function resetCameraInitialized() {

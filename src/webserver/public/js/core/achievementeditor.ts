@@ -1,16 +1,8 @@
-// Game-window half of the achievement editor (/achievements): owns the popup window and relays its messages to the
-// server, as gatheringeditor.ts does. The popup is achievementeditorbridge.ts.
 import { sendRequest } from "./socket.js";
 import { config } from "../web/global.js";
 
 const EDITOR_WIDTH = 1040;
 
-/**
- * The game server sends the icon list's pictures as asset paths ("/icon?name=..."), not URLs: it reaches the asset
- * server on an internal address the browser cannot resolve. Prefix them with the asset server this client was
- * configured with, as the item editor does (itemeditor.ts). Only the pick lists' `image` fields are touched, never
- * what an admin typed.
- */
 function withIconUrls(data: any): any {
   const options = data?.options;
   if (!options || typeof options !== "object") return data;

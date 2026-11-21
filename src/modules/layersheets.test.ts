@@ -1,9 +1,6 @@
 import { expect, test } from "bun:test";
 import { layerSheetsChanged, nameLayerSheets } from "../webserver/public/js/core/layersheets";
 
-// Which sheets a player's layers draw (layersheets.ts): a worn item's or a mount's template carries a base sheet's name,
-// so a look is compared by the sheet names the server sends, and the same look does not rebuild the player.
-
 const entry = (name: string) => ({ name, templateUrl: `t?name=${name}`, imageUrl: `i?name=${name}` });
 const template = (name: string) => ({ name, imageSource: "img", animations: {} });
 

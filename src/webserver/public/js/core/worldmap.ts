@@ -7,12 +7,6 @@ import { drawMapPicture } from "./mappin.js";
 import { tornadoSpots } from "./tornado.js";
 import { zoneAt, zoneLabelPoint, type ClientZone } from "./zonelogic.js";
 
-/**
- * Full world map (M): the whole map at once from its baked image (bakedmap.ts: the asset server bakes one pixel per tile
- * at startup), since the live tile render only has the chunks this client has loaded.
- * Always fills the screen (opens centred on the player; zooming out stops where the map still fills it, panning stops
- * at its edges; USER REQUEST 2026-10-03, opaque); mouse wheel zooms round the cursor, drag pans. The player and the map's warps are marked.
- */
 const cache = Cache.getInstance();
 
 let root: HTMLDivElement | null = null;
@@ -26,19 +20,10 @@ let raf: number | null = null;
 // the baked image (bakedmap.ts, shared with the minimap) and the one the view was last fitted to
 let image: HTMLImageElement | null = null;
 let fitted: HTMLImageElement | null = null;
-// Tiles to an image pixel (bakedmap.ts): 1, or more for a world baked smaller. The view below is in tiles, so the
-// map's size is the image's times this, and the zoom limits (meant per image pixel) are divided by it.
 let mapScale = 1;
 const mapW = () => (image ? image.width * mapScale : 0);
 const mapH = () => (image ? image.height * mapScale : 0);
 
-/**
- * USER REQUEST 2026-10-05 ("For the underworld map, only show the current cave system, not every one near by"): a map
- * may come in sections (window.mapData.sections, rectangles in tiles: the cave systems of a world's underworld). The
- * view then shows the section the player is in and nothing of the others: that section fills the screen, the view
- * pans and zooms inside it, and it is fitted again when the player comes into another one. A map without sections, or
- * a player outside every one, shows the whole map as before.
- */
 type Rect = { x: number; y: number; w: number; h: number };
 let section: Rect | null = null;
 function currentSection(): Rect | null {
@@ -52,31 +37,16 @@ function currentSection(): Rect | null {
 /** What the view may show, in tiles: the player's section, else the whole map. */
 const bounds = (): Rect => section ?? { x: 0, y: 0, w: mapW(), h: mapH() };
 
-// view: image pixel (tile) at the canvas centre, and screen px per image px
-// coverZoom: the least zoom that still fills the screen (USER REQUEST 2026-10-03: "the fullscreen map should always fill
-// the screen and should catch on edges as not to show behind the map"); zoom never goes below it and the view never
-// pans past the map's edges (keepInside, every frame, so a window resize holds too)
 let viewX = 0, viewY = 0, zoom = 1, coverZoom = 1;
 let dragging = false, dragX = 0, dragY = 0;
 /** the distance between two fingers at their last move, while they pinch (0: no pinch) */
 let pinch = 0;
 
-/**
- * Centre on player (USER REQUEST 2026-10-04: "Add a center on player toggle that zooms in and moves the map centering
- * on the player"). On: the view eases to the player at FOLLOW_ZOOM screen px per tile (or the zoom it already has, if
- * that is closer in) and stays on him as he moves; the wheel and a pinch then only change the zoom. Dragging the map
- * lets go of him. Off (the button again): the view eases back to where it was when it was turned on. The choice lasts
- * while the page does: a map closed with it on opens on the player again.
- */
 type View = { x: number; y: number; zoom: number };
 const FOLLOW_ZOOM = 4, MAX_ZOOM = 16;
 // the same limits for a world baked smaller: zoomed in, its full-detail pieces are drawn over the image (below)
 const followZoomFor = () => FOLLOW_ZOOM, maxZoom = () => MAX_ZOOM;
 
-/**
- * A world's image is several tiles to a pixel (mapScale > 1), too coarse to zoom into. From DETAIL_FROM screen px per
- * tile on, the regions in view are drawn over it from its full-detail pieces (bakedmap.ts mapDetailPiece).
- */
 const DETAIL_FROM = 1;
 const detailPiece = mapDetailPiece;
 let follow = false, followZoom = FOLLOW_ZOOM;
@@ -114,8 +84,6 @@ function paintFollow() {
   followBtn.style.color = follow ? "#2a1c00" : "#fff3c4";
   followBtn.setAttribute("aria-pressed", String(follow));
 }
-/** Behind the map while its image loads (the map itself is opaque and always fills the screen). USER REQUEST
- * 2026-10-03: the earlier slight transparency removed. */
 const BACKDROP = "#06080e";
 
 function build() {
@@ -123,10 +91,6 @@ function build() {
   root = document.createElement("div");
   root.id = "world-map";
   Object.assign(root.style, {
-    // over the whole HUD, the mobile action menu and its button (z 8998-9000) and the mobile panels (9500) included
-    // (USER FEEDBACK 2026-10-04: "Action menu z-index needs to be below the map itself so make the map higher
-    // z-index"); under the options and pause menus, the loading screen and the rotate prompt (10000 and up). The
-    // menu's World Map entry opens it; the close button, M or Esc close it.
     position: "fixed", inset: "0", zIndex: "9600", display: "none", background: BACKDROP,
     userSelect: "none", cursor: "grab", touchAction: "none",
   } as CSSStyleDeclaration);
@@ -139,15 +103,10 @@ function build() {
   } as CSSStyleDeclaration);
   statusEl = document.createElement("div");
   Object.assign(statusEl.style, {
-    // USER REQUEST 2026-10-03: the controls hint more noticeable (the text itself, no background): larger, bold, bright,
-    // with a dark outline so it reads on any part of the map
     position: "absolute", bottom: "22px", left: "50%", transform: "translateX(-50%)", color: "#fff3c4",
     font: "700 18px sans-serif", letterSpacing: "0.3px", pointerEvents: "none", whiteSpace: "nowrap",
     textShadow: "-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 6px rgba(0,0,0,0.9)",
   } as CSSStyleDeclaration);
-  // a close button: a touch screen has no M or Esc. Top right, the same distance from the top as from the right
-  // (USER FEEDBACK 2026-10-04, "map close button needs to be top right even padding": it followed the phone's safe
-  // areas, which on a phone held sideways put it some 50 px in from the right and 10 px down)
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
   closeBtn.textContent = "✕";
@@ -193,8 +152,6 @@ function build() {
     keepInside();
   }, { passive: false });
   root.addEventListener("mousedown", (e) => { if (e.button !== 0) return; dragging = true; dragX = e.clientX; dragY = e.clientY; root!.style.cursor = "grabbing"; });
-  // USER REQUEST 2026-10-03: right-click on the map warps there (the same TELEPORTXY as a right-click on the ground in
-  // game; the server only takes it from admins). Kept from the document's handler, which reads the game camera.
   root.addEventListener("contextmenu", (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -207,10 +164,6 @@ function build() {
     sendRequest({ type: "TELEPORTXY", data: { x: Math.floor(ix * tw), y: Math.floor(iy * th) } });
   });
   window.addEventListener("mouseup", () => { dragging = false; if (root) root.style.cursor = "grab"; });
-  /**
-   * A drag by (dx, dy) screen px: the map moves with it, and lets go of the player. While it holds the player the
-   * first 8 px of a drag do nothing, so a finger that shifts as it taps does not let go of him.
-   */
   let slack = 0;
   const pan = (dx: number, dy: number) => {
     if (dx === 0 && dy === 0) return;
@@ -264,8 +217,6 @@ function mapName(): string {
   return String(window.mapData?.name ?? "").replace(".json", "");
 }
 
-/** A map name as shown (title, warp labels): "underworld-dev" -> "Underworld Dev". In code, not CSS: the warp labels
- * are canvas text, which CSS text-transform never reaches (USER FEEDBACK 2026-10-03: the names were not capitalised). */
 function displayName(name: string): string {
   return name.replace(/\.json$/i, "").replace(/[-_]+/g, " ").trim().replace(/(^|\s)(\S)/g, (_m, sp: string, c: string) => sp + c.toUpperCase());
 }
@@ -282,9 +233,6 @@ interface MapPlace {
   leadsTo: string;
 }
 
-// The map's warps, each worked out once: which are houses and caves (mapmarkers.ts: the server says), and what is
-// written by them. Kept until the map's warps or its markers change. The world has hundreds of them, and the map is
-// drawn every frame: looking each one up again every frame was part of what made the map crawl.
 let places: MapPlace[] = [];
 let placesOf: { warps: unknown; markers: number; map: string; tw: number; th: number } | null = null;
 
@@ -309,10 +257,6 @@ function mapPlaces(tw: number, th: number): MapPlace[] {
   return places;
 }
 
-/**
- * The map's zones as the world map draws them: each one's outline (a path in tiles) and where its name goes. Worked
- * out again only for a zone the map editor replaced (an edit makes a new zone object with a new outline).
- */
 interface MapZone { name: string; zone: ClientZone; outline: unknown; path: Path2D; label: { x: number; y: number } }
 const mapZoneCache = new Map<string, MapZone>();
 
@@ -345,10 +289,6 @@ let pointer: { x: number; y: number } | null = null;
 /** The zones drawn this frame and the one under the mouse, for their names (drawZoneNames). */
 interface ZoneFrame { zones: MapZone[]; hovered: ClientZone | null }
 
-/**
- * The zones on the map: every border, and the zone under the mouse lit with a brighter tint (the smallest one there,
- * as in game). Their names are written later, over the icons (drawZoneNames).
- */
 function drawZones(ctx: CanvasRenderingContext2D, w: number, h: number, dpr: number): ZoneFrame | null {
   const zones = mapZones();
   if (!zones.length) return null;
@@ -378,10 +318,6 @@ function drawZones(ctx: CanvasRenderingContext2D, w: number, h: number, dpr: num
   return { zones, hovered };
 }
 
-/**
- * Each zone's name, written deep inside its zone, over the houses, caves, warps and tornadoes (USER REPORT 2026-11-18:
- * "zone text is behind map icons"). A zone too small on screen to read is left unnamed.
- */
 function drawZoneNames(ctx: CanvasRenderingContext2D, w: number, h: number, frame: ZoneFrame | null) {
   if (!frame) return;
   const { zones, hovered } = frame;
@@ -450,10 +386,6 @@ function fitView() {
   if (follow) { before = { x: viewX, y: viewY, zoom }; followZoom = Math.min(maxZoom(), Math.max(followZoom, coverZoom)); }
 }
 
-/**
- * Moves the view a step toward where it is headed: the player while centre-on-player is on, else the view being gone
- * back to after it was turned off (dropped once reached). `dt`: seconds since the last frame.
- */
 function ease(dt: number) {
   const at = follow ? playerTile() : null, to: View | null = follow ? (at ? { ...at, zoom: followZoom } : null) : back;
   if (!to) return;
@@ -500,9 +432,6 @@ function draw() {
         if (piece) ctx.drawImage(piece, toX(rx * DETAIL_TILES), toY(ry * DETAIL_TILES), piece.width * zoom, piece.height * zoom);
       }
     }
-    // (no outline round the image: USER REQUEST 2026-10-03 "Remove the borders in the map image")
-    // zones' borders and tint under the warps, their names over them (USER REQUEST 2026-11-18: names, borders and a
-    // brighter tint on the one hovered)
     const zoneFrame = drawZones(ctx, w, h, dpr);
 
     const tw = window.mapData?.tilewidth || 16, th = window.mapData?.tileheight || 16;
@@ -516,11 +445,6 @@ function draw() {
       if (place.px < b.x || place.py < b.y || place.px >= b.x + b.w || place.py >= b.y + b.h) continue;
       const sx = toX(place.px), sy = toY(place.py);
       if (sx < -40 || sy < -40 || sx > w + 40 || sy > h + 40) continue;
-      // A door into a house is drawn as a house, standing on the door. USER REQUEST 2026-10-06: "use house.png for
-      // houses on the main map (not minimap)".
-      // A house or a cave whose picture is still on its way is left off until it has come: it is not a plain warp,
-      // and is not drawn as one meanwhile (USER REPORT 2026-10-07: "blue diamonds show before the icons load"). One
-      // whose picture could not be fetched at all is still marked, as a plain warp.
       if ((place.kind === "house" && !housePicture.complete) || (place.kind === "cave" && !cavePicture.complete)) continue;
       if (place.kind === "house" && houseReady) {
         const top = drawMapPicture(ctx, housePicture, sx, toY(place.top), zoom);
@@ -531,8 +455,6 @@ function draw() {
         }
         continue;
       }
-      // A cave (a way into another world) is drawn as a cave mouth, over the way in itself. Every one of them leads
-      // to the same place, so none is labelled. USER FEEDBACK 2026-10-06: "cave icons are not on the world map".
       if (place.kind === "cave" && caveReady) {
         drawMapPicture(ctx, cavePicture, sx, sy, zoom, true);
         continue;
@@ -571,11 +493,6 @@ function draw() {
   raf = requestAnimationFrame(draw);
 }
 
-/**
- * A tornado on the world map (USER REQUEST 2026-10-17: "I should also be able to track the tornado on the world map"):
- * the funnel sign, a stack of narrowing bands that sways, standing on where it is, in a red ring that pulses as a
- * warning; named when the map is zoomed in.
- */
 function drawTornadoMark(ctx: CanvasRenderingContext2D, x: number, y: number, labelled: boolean) {
   const now = performance.now() / 1000, pulse = (now * 0.8) % 1;
   ctx.strokeStyle = `rgba(255, 70, 50, ${(0.85 * (1 - pulse)).toFixed(3)})`;
@@ -605,8 +522,6 @@ export function isWorldMapOpen(): boolean {
 }
 
 export function openWorldMap() {
-  // USER REQUEST 2026-10-06 ("disable the world map for interiors"): the inside of a building is one room, and the
-  // minimap shows all of it. Its map says so (the Tiled map property "interior", sent with the map's metadata).
   if (window.mapData?.interior) return;
   build();
   if (!root) return;

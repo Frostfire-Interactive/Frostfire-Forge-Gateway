@@ -1,11 +1,3 @@
-// Footprints (engine src/systems/footprints.ts). USER REQUEST 2026-10-20: "a section in the editor to be able to add
-// footsteps on certain tiles": visible footprints, with their colour and darkness, how long they stay, and their style.
-//
-// The map editor's Footprints tab gives tiles of a tileset prints: a style (boot prints, bare feet, holes in deep
-// snow), a colour, a darkness and a fade time. The server sends every player the whole list (TILE_FOOTPRINTS) at login
-// and after every save. Each player walking across such a tile leaves a print on each step, left foot and right foot
-// in turn, turned the way they walk; it stays as it was for most of its time, then fades away. A ghost leaves none, nor
-// does a rider (the mount's feet are not a person's). The prints are drawn on the ground, under the characters.
 import { cachedPlayerId } from "./socket.js";
 import { ownStep, tilesetKey } from "./tilesounds.js";
 import { Stepper } from "./steps.js";
@@ -16,11 +8,6 @@ export interface Footprint { style: PrintStyle; color: string; opacity: number; 
 /** tileset key -> tile id (as text) -> its prints */
 export type TileFootprintList = Record<string, Record<string, Footprint>>;
 
-/**
- * A print is laid on each step, as the footstep sounds are played (steps.ts: USER FEEDBACK 2026-10-20, "footprints are
- * being applied too often ... it should be synced with the sound"): the player this client controls on the very steps
- * their sound is heard (tilesounds.ts), everyone else by the same rule. px: each foot's distance from the line walked.
- */
 const FOOT_APART = 4;
 /** The player's feet below their position (tilesounds.ts FEET_Y), where the prints are laid. */
 const FEET_Y = 16;
@@ -141,10 +128,6 @@ function walk(players: any[], now: number): void {
   for (const id of walkers.keys()) if (!seen.has(id)) walkers.delete(id);
 }
 
-/**
- * Lay new prints and draw them all, in world space (renderer.ts, on the ground under the characters). `players`: the
- * players on the map, with their position and their smoothed renderPosition.
- */
 export function renderFootprints(ctx: CanvasRenderingContext2D, players: any[]): void {
   const now = performance.now() / 1000;
   walk(players, now);

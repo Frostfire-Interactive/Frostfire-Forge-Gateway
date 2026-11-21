@@ -1,7 +1,3 @@
-// Small syntax highlighter for the documentation site (src/services/docs.ts).
-// Runs once per code block at startup and emits <span class="tk-*"> markup, so
-// the browser ships no highlighting library.
-
 type Classifier = (match: string, code: string, end: number) => string | null;
 type Rule = [RegExp, string | null | Classifier];
 

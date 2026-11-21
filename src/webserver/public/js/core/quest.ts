@@ -1,13 +1,9 @@
-// Quest state cache, packet handlers and objective tracker HUD.
-// The quest frame (questframe.js) and quest log (questlog.js) render from
-// this module's state; the server remains authoritative for everything.
 import { sendRequest, cachedPlayerId, itemsByName } from "./socket.js";
 import Cache from "./cache.js";
 import { config } from "../web/global.js";
 import { getCachedImage } from "./images.js";
 import { setupItemTooltip } from "./tooltip.js";
 import { applyItemFrame } from "./itemframe.js";
-import { levelColor } from "./creature.js";
 
 export interface QuestObjectiveDef {
   id: number;
@@ -88,12 +84,6 @@ export function selfLevel(): number {
   return Number.isFinite(level) && level > 0 ? level : 1;
 }
 
-/**
- * Fill `${player...}` placeholders in NPC text from the current player:
- * `${player.name}` is the username, `${player.level}` the level, and any
- * other dotted path (e.g. `${player.stats.health}`, `${player.guild}`)
- * resolves against the player object. Unknown paths stay as written.
- */
 export function formatNpcText(text: unknown): string {
   const raw = String(text ?? "");
   if (!raw.includes("${")) return raw;
@@ -129,10 +119,6 @@ export function getEntry(questId: number): QuestEntry | undefined {
 
 export function getActiveQuests(): QuestEntry[] {
   return state.active;
-}
-
-export function getCompletedQuests(): number[] {
-  return state.completed;
 }
 
 export function cacheQuestDef(quest: QuestDef): void {
@@ -179,10 +165,6 @@ function ensureTrackedDefaults(): void {
   }
 }
 
-export function questLevelColor(quest: QuestDef): string {
-  return levelColor(quest.quest_level || quest.required_level || 1, selfLevel());
-}
-
 export function objectiveLabel(objective: QuestObjectiveDef): string {
   if (objective.description) return objective.description;
   if (objective.type === "kill") return `Slay ${objective.target}`;
@@ -214,8 +196,6 @@ export function iconUrlForItem(itemName: string): string {
   return `${config.ASSET_SERVER_URL}/icon?name=${encodeURIComponent(itemName)}`;
 }
 
-// Full item details for the tooltip: stats, quality, type, description.
-// Falls back to a bare name so the tooltip still opens for unknown items.
 export function rewardItemDetails(itemName: string, quantity: number): any {
   const details = findItemDetails(itemName);
   if (details) return { ...details, quantity };
@@ -237,8 +217,6 @@ export function makeRewardSlot(itemName: string, quantity: number, opts?: { choi
     qty.textContent = String(quantity);
     slot.appendChild(qty);
   }
-  // Hover on desktop, press-and-hold inspect on touch (shared helper also
-  // suppresses the follow-up tap so a hold never selects a choice reward).
   setupItemTooltip(slot, () => rewardItemDetails(itemName, quantity));
   if (opts?.onClick) {
     slot.addEventListener("click", (e) => {
@@ -247,18 +225,6 @@ export function makeRewardSlot(itemName: string, quantity: number, opts?: { choi
     });
   }
   return slot;
-}
-
-export function formatCopper(copper: number): string {
-  const total = Math.max(0, Math.floor(Number(copper) || 0));
-  const gold = Math.floor(total / 10000);
-  const silver = Math.floor((total % 10000) / 100);
-  const rest = total % 100;
-  const parts: string[] = [];
-  if (gold) parts.push(`${gold}g`);
-  if (silver) parts.push(`${silver}s`);
-  if (rest || parts.length === 0) parts.push(`${rest}c`);
-  return parts.join(" ");
 }
 
 // ------------------------------------------------------------ tracker HUD
@@ -332,11 +298,6 @@ export function updateNpcInteraction(playerX: number, playerY: number, playerMap
   state.nearestNpcId = Number.isFinite(nearestId as number) ? nearestId : null;
 }
 
-/**
- * Quest relevance for an NPC: a marker (offer / progress / turn-in), or an
- * incomplete talk objective pointing at it. Anything else has no quest
- * business, so interacting must do nothing at all.
- */
 export function hasQuestBusiness(npcId: number): boolean {
   if (state.markers.get(Number(npcId))) return true;
   const target = String(npcId);
@@ -384,8 +345,6 @@ export function canInteractWith(npcId: number): boolean {
 export function tryInteractNpc(): boolean {
   if (state.nearestNpcId === null || state.nearestNpcId === undefined) return false;
   if (!canInteractWith(state.nearestNpcId)) return false;
-  // Talking jumps the gossip chain for an immediate visible response; the
-  // per-frame tick keeps it rotating afterwards.
   import("./npc.js").then((m) => {
     try {
       m.advanceNpcGossip(state.nearestNpcId as number);
@@ -402,11 +361,6 @@ const isTouchDevice = () =>
   typeof window !== "undefined" &&
   window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 
-/**
- * Touch-only tap-to-talk (the E badge is desktop-only). Hit-tests an NPC at
- * world coords and talks when it has quest business and is in range.
- * Returns true when it interacted.
- */
 export function tryTapInteractNpcAt(worldX: number, worldY: number): boolean {
   if (!isTouchDevice()) return false;
   const cache = Cache.getInstance();

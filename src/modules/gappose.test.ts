@@ -1,10 +1,6 @@
 import { expect, test } from "bun:test";
 import { gapPose, keepGapPose } from "../webserver/public/js/core/gappose";
 
-// The local player's pose in a handoff gap (gappose.ts): the client walks the player and poses them as the new node will
-// once it walks the gap report (walk in the direction held, else stand facing the last walk), so a turn or a key let go
-// in the gap shows at once, not when the new node's pose comes.
-
 test("a key held on through the gap keeps the walk", () => {
   expect(gapPose("walk_right", "right")).toBeNull();
 });

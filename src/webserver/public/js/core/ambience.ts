@@ -9,8 +9,6 @@ let stormActive: boolean = false;
 // "darkness" weather: a near-black scene with no shadows (shadows.ts) and no sun; lights and glowing particles carry it
 let darknessActive: boolean = false;
 function isDarkness(): boolean { return darknessActive; }
-// The weather row's `ambience` (0..1) is the overlay's opacity in "darkness" and "thunderstorm" weather; the default
-// when the row has none
 const DARKNESS_DEFAULT = 0.86;
 const STORM_DEFAULT = 0.65;
 let darknessOpacity: number = DARKNESS_DEFAULT;
@@ -20,13 +18,9 @@ function weatherOpacity(strength: unknown, fallback: number): number {
   return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : fallback;
 }
 
-// 0 = full daylight, 1 = full night. Drives the additive light map so glowing
-// particles actually emit light once the ambience overlay darkens the scene.
 let nightFactor: number = 0;
 function getNightFactor(): number { return nightFactor; }
 
-// What the ambience overlay (a multiply layer) leaves of the scene, per channel (0..1): 1 - opacity + opacity * colour.
-// The light map divides by it to light a darkened tile back up to its own colour.
 let ambientLevel: [number, number, number] = [1, 1, 1];
 function getAmbientLevel(): [number, number, number] { return ambientLevel; }
 function setAmbientLevel(colors: string[], opacity: number) {
@@ -51,8 +45,6 @@ timeOverrideCheckbox.addEventListener("change", () => {
   updateAmbience();
 });
 
-// The hour a cutscene holds the world at (cutscene.ts), null when it holds none: over the slider and the server's clock,
-// and on a map with no day and night too.
 let scriptedHour: number | null = null;
 function setScriptedHour(hour: number | null) {
   if (hour === scriptedHour) return;
@@ -71,9 +63,6 @@ function getEffectiveTime(): { hours: number; minutes: number } {
     const m = Math.floor((overrideHour - h) * 60 + 0.5);
     return { hours: h, minutes: m };
   }
-  // A map with no entry in the server's worlds table (the inside of a house) is sent no weather, so `hasWeather`
-  // stays off: it has no day and night. The darkening is off there (updateAmbience), and whatever else follows the
-  // clock (sun shadows, particles that come on at night) sees a standing midday.
   if (!hasWeather) return { hours: 12, minutes: 0 };
   return getServerTime();
 }
@@ -92,10 +81,6 @@ function getServerTime(): { hours: number; minutes: number } {
   return { hours, minutes };
 }
 
-// The game's time of day is the time at the place the server reads its real
-// weather from, when it has one: `placeOffsetMs` is that place's shift from
-// UTC, sent with SERVER_TIME. Without it the time is read on this browser's
-// own clock, as it always was.
 let placeOffsetMs: number | null = null;
 
 function clockOf(date: Date): { hours: number; minutes: number; seconds: number } {
@@ -104,17 +89,9 @@ function clockOf(date: Date): { hours: number; minutes: number; seconds: number 
   return { hours: there.getUTCHours(), minutes: there.getUTCMinutes(), seconds: there.getUTCSeconds() };
 }
 
-// Server time is anchored when the server tells us (on connect) and then
-// advanced locally, instead of being re-pushed every second.
-// `serverEpochAtAnchor` is the server clock at that moment and
-// `localEpochAtAnchor` is ours; the offset between them stays fixed, so the
-// current server time is simply "anchor + elapsed since anchor".
 let serverEpochAtAnchor: number | null = null;
 let localEpochAtAnchor: number | null = null;
 
-// Anchor (or re-anchor) the clock from a server timestamp. Safe to call again
-// at any time to re-sync. `utcOffset` is the shift from UTC, in seconds, of
-// the place whose time of day the game keeps; none means this browser's own.
 function updateTime(time: string, utcOffset?: unknown, keepOffset: boolean = false) {
   if (!time) return;
 
@@ -153,8 +130,6 @@ function renderTime(date: Date) {
   }
 }
 
-// Local tick. Drift is bounded by the browser clock's own rate error (seconds
-// per day), far below the per-minute resolution the ambience system reacts to.
 setInterval(() => {
   const date = currentServerDate();
   if (!date) return;
@@ -180,11 +155,6 @@ function lerpColor(color1: string, color2: string, t: number) {
   return `rgb(${r},${g},${bl})`;
 }
 
-// Time-of-day keyframes. Each phase defines:
-//  top/bottom  -> vertical sky gradient colors (multiplied over the scene)
-//  opacity     -> strength of the darkening multiply layer
-//  warm        -> additive dawn/dusk glow color (screen blend)
-//  warmOpacity -> strength of the warm glow layer
 const phases = [
   { hour: 0,  top: "#2a1a5e", bottom: "#2a1a50", opacity: 0.68, warm: "#000000", warmOpacity: 0 },
   { hour: 4,  top: "#2c2068", bottom: "#2a1e5c", opacity: 0.62, warm: "#000000", warmOpacity: 0 },
@@ -208,8 +178,6 @@ function dayWindow(hour24: number): number {
   return 1;
 }
 
-// The colours the overlays below were last given, for a recording to paint them on a canvas (cutscenecapture.ts): a
-// canvas cannot take a CSS gradient, and how strong each one is can be read from the page, transitions included.
 const paint: {
   fill: string[];
   warm: string;
@@ -320,9 +288,6 @@ function updateAmbience() {
   const warm = lerpColor(phase1.warm, phase2.warm, easedT);
   const warmOpacity = phase1.warmOpacity + (phase2.warmOpacity - phase1.warmOpacity) * easedT;
 
-  // Tie the darkening strength exactly to the shadow fade window: brightest when
-  // shadows are fully present (day), darkest when they are gone (night). dayWindow
-  // here mirrors shadows.ts smoothWindow, so the two transition in lockstep.
   const DAY_OPACITY = 0.05;
   const NIGHT_OPACITY = 0.66;
   const day = dayWindow(hour24);
@@ -335,8 +300,6 @@ function updateAmbience() {
   ambience.style.setProperty("--ambience-warm",`linear-gradient(to bottom, ${warm} 0%, transparent 70%)`);
   ambience.style.setProperty("--ambience-warm-opacity", warmOpacity.toFixed(2));
 
-  // Additive cool moonlight tint at night so the blue actually shows instead of
-  // reading as flat black (the multiply base layer can only darken).
   const coolOpacity = nightFactor * 0.15;
   ambienceCool.style.background = "radial-gradient(ellipse 120% 100% at 50% 40%, #2a2ab0 0%, #3a2088 100%)";
   ambienceCool.style.opacity = coolOpacity.toFixed(2);

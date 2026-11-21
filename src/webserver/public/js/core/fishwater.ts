@@ -1,37 +1,10 @@
-// The water round fishing lines, simulated (USER REQUEST 2026-10-20: "Make the water ripples super realistic", then
-// "Even more realistic"). Rings drawn by hand only look like waves; here the surface is a height field that obeys the
-// wave equation, so what a real pond does happens by itself: a splash sends out a train of crests that spread and
-// slow and fade, waves from two places cross and interfere, a moving bobber leaves a wake, and the shore throws waves
-// back where they meet it.
-//
-// A field is a grid of GRID x GRID cells, CELL px wide and CELL * SQUASH px tall (the water is seen at a slant: a ring
-// on it is wider than it is tall). Each cell holds the water's height there. Cells that are not water (the shore, an
-// island) are walls: their height stays 0, which reflects the waves. Which cells are water is asked pixel by pixel
-// (fishing.ts isWaterPixel), so the waves run up to the rocks a shore tile draws, not to the tile's edge. Near the
-// field's edge the waves are damped away, and drawn fading out, so the field's own border is never seen. A field is made where the water is first touched and
-// covers a stretch of water round it; a touch outside every field makes another one. A field with nothing moving on it
-// for a while is let go.
-//
-// It is drawn from the slope of the surface, lit from the upper left: a slope facing the light is lit (the sky caught on
-// it), one facing away a little darker than the water. Softly (USER FEEDBACK 2026-10-20: at full strength it looked "way
-// too 3D", but flat crest lines alone lost the realism): about half the contrast, and the dark side fainter than the
-// lit one. Flat water, still or not, draws nothing: the tiles show through.
-
 /** Cells across a field, their width (px), and how much flatter than wide the water is seen. */
 const GRID = 240, CELL = 1.5, SQUASH = 0.6;
 /** Steps of the simulation each second: with one cell a step, waves travel CELL * SIM_HZ px/s. */
 const SIM_HZ = 40;
 /** How much of its height a wave keeps each step, and the least kept at the field's edge (over EDGE cells). */
 const DAMP = 0.978, EDGE_DAMP = 0.86, EDGE = 14;
-/**
- * How many cells in from the field's edge the waves are drawn fading in (USER REPORT 2026-10-20: a ring that reached
- * the edge of the field was cut off): a field's edge is never seen.
- */
 const FADE = 36;
-/**
- * The light: from the upper left. How strongly a slope shows, the most a lit cell may show (0 to 255), and for a shaded
- * cell, how much weaker than a lit one it is and the most it may show.
- */
 const LIGHT_X = -0.55, LIGHT_Y = -0.83, GAIN = 15, LIT_MAX = 95, SHADE = 0.45, SHADE_MAX = 40;
 /** A field with less movement than this for QUIET_S is let go (when nothing keeps it). */
 const QUIET = 0.5, QUIET_S = 2;
@@ -167,10 +140,6 @@ class WaterField {
 
 const fields: WaterField[] = [];
 
-/**
- * Something touches the water at a world point (px): pushes it down by `amount` (a falling bobber: 20; a drop: 2)
- * over a patch `radius` cells wide. Makes a field there when no field covers it. `isWater` says which points are water.
- */
 export function pokeWater(x: number, y: number, amount: number, radius: number, isWater: (x: number, y: number) => boolean): void {
   let field = fields.find((f) => f.holds(x, y));
   if (!field) {
@@ -182,10 +151,6 @@ export function pokeWater(x: number, y: number, amount: number, radius: number, 
   field.poke(x, y, amount, radius);
 }
 
-/**
- * Run every field on by `dt` s and draw it. `busy` says whether a world point still has a line on it: a field with one
- * is kept however calm it is, any other is let go once it has been calm for QUIET_S.
- */
 export function stepAndDrawWater(ctx: CanvasRenderingContext2D, dt: number, busy: (field: { holds(x: number, y: number): boolean }) => boolean): void {
   for (let n = fields.length - 1; n >= 0; n--) {
     const field = fields[n]!;

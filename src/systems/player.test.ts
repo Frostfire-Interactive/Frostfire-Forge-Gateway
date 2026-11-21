@@ -1,5 +1,3 @@
-// Guests (systems/player.ts) against a real SQLite database in memory with foreign keys on, through the same
-// transaction code the database worker runs: a new guest has one active character, and the purge deletes by account.
 import { afterAll, beforeEach, expect, mock, test } from "bun:test";
 import { SQL } from "bun";
 import { GuardError, runTransaction } from "../controllers/sqltransaction";

@@ -2,8 +2,6 @@ import { expect, test } from "bun:test";
 import path from "path";
 import fs from "fs";
 
-// The login page script, run against a stub page (no DOM): `/?guest=1` signs in as a guest on load and takes the
-// parameter out of the address; without it nothing is sent until "Continue as guest" is clicked.
 const source = new Bun.Transpiler({ loader: "ts" }).transformSync(
   fs.readFileSync(path.join(import.meta.dir, "..", "webserver", "public", "js", "web", "login.ts"), "utf-8"),
 );

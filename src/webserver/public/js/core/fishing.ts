@@ -1,19 +1,3 @@
-// Fishing (engine src/systems/fishing). USER REQUEST 2026-10-20: "Click on water tile to cast to location (use bobber
-// (white circle for now as a placeholder)) and black string similar to how it looks in Terraria with actual physics.
-// Bobber should go down when fish has taken the bait. Reel system with no skill effort required. Fish should randomly
-// pull back but not out of water tiles. When close enough to the player fish should be yanked up and added to
-// inventory as an item".
-//
-// The server says which tiles are fishable (FISHING_TILES: tileset key -> tile ids, set in the map editor's Fishing
-// tab). A click on one asks to cast there (FISH_CAST); the server checks, and tells everyone on the map (FISHING):
-// "cast" (the bobber flies out and floats at x, y), "bite" (it goes under), "catch" (the fish is yanked out) and "end"
-// (the line is taken in: a step, damage, another map). While a fish is on, holding the mouse button (or a finger)
-// down reels it in; the fish pulls the other way now and then, but never off the water. Once the bobber reaches the
-// shore near the player, the client says so (FISH_LAND) and the server puts the fish in the bags.
-//
-// The line is a rope of points moved by Verlet integration: gravity pulls it down the screen (the sag of a line seen
-// from the side, as Terraria draws it), its two ends are pinned to the rod tip and the bobber, and its length gives
-// it slack while the bobber floats and none while it is reeled.
 import { sendRequest, cachedPlayerId } from "./socket.js";
 import { tilesetKey } from "./tilesounds.js";
 import { config } from "../web/global.js";
@@ -43,14 +27,7 @@ const TIP_UP = 20, TIP_OUT = 11, YANK_S = 0.55;
 const REEL_EMPTY_SPEED = 120, RETRIEVE_S = 0.35;
 /** s: how long a cast waits for the staff to be in hand before the bobber leaves anyway. */
 const POSE_WAIT_S = 0.8;
-/**
- * The water (fishwater.ts simulates its waves): how hard a touch of size 1 pushes it down, how flat it is seen (as
- * fishwater.ts SQUASH: a drop's throw is flattened by it), the most drops of splashes in the air at once, the gravity on
- * a drop (px/s²), and how far the bobber goes between two pushes of its wake (px).
- */
 const POKE = 9, WATER_TILT = 0.6, DROPS_KEPT = 60, DROP_GRAVITY = 260, WAKE_STEP = 2;
-/** A player wading through the water: how far they go between two pushes of their wake (px), how hard each is (as a
- * ripple's size: 1 is a bobber settling), and how long standing in it goes between two rings round their legs (s). */
 const WADE_STEP = 4, WADE_SIZE = 0.8, WADE_IDLE_S = 1.3;
 /** The player's feet below their position (tilesounds.ts FEET_Y): where the fish is reeled to. */
 const FEET_Y = 16;
@@ -145,10 +122,6 @@ function fishableGids(): Set<number> {
   return gids;
 }
 
-/**
- * Whether a world point (px) is on a fishable tile: one of the tiles drawn there (every layer but collision and
- * no-pvp) is, as the server reads it. A tile of a chunk not loaded is not.
- */
 export function isFishableAt(x: number, y: number): boolean {
   const gids = fishableGids();
   const map = window.mapData;
@@ -167,13 +140,6 @@ export function isFishableAt(x: number, y: number): boolean {
   return false;
 }
 
-/**
- * The shore, to the pixel, for the waves (fishwater.ts). A shore tile is drawn half rock and half water (USER REPORT
- * 2026-10-20: "The water edges contain ground tile", and the waves stopped short of the rocks, at the tile's edge), so
- * whole tiles cannot say where the water ends. A point is water when the topmost pixel drawn there (every layer but
- * collision and no-pvp; a see-through pixel shows the layer under it) is of a fishable tile, or is the colour of one: the
- * water a shore tile shows between its rocks is drawn in the same colours as the water tiles.
- */
 export function isWaterPixel(x: number, y: number): boolean {
   const gids = fishableGids();
   const map = window.mapData;
@@ -306,15 +272,7 @@ function ownLineOut(): boolean {
   return !!cachedPlayerId && lines.has(String(cachedPlayerId));
 }
 
-/**
- * A click or a tap on the world (events.ts): taken here when it is the reel, or a cast at a fishable tile (the server
- * says when it is too far, or the player cannot fish now). Returns whether it was taken. While the line is out a press
- * only turns the reel: to cast somewhere else, the line is reeled in first (USER REQUEST 2026-10-20: "you should be
- * able to reel the line in even if a fish isn't on it ... more realistic than left click and it disappears").
- */
 export function fishingClick(worldX: number, worldY: number): boolean {
-  // (USER REPORT 2026-10-20: "after a full reel, letting go of the left mouse button, it auto casts again") the click
-  // that ends a press is the reel's even when the line came in while the button was held: it never casts
   if (ownLineOut() || pressReeled) {
     pressReeled = false;
     return true;
@@ -345,10 +303,6 @@ function newRope(at: Point): RopePoint[] {
   return Array.from({ length: SEGMENTS + 1 }, () => ({ x: at.x, y: at.y, ox: at.x, oy: at.y }));
 }
 
-/**
- * The water is touched at the bobber (or at `at`): `size` 1 is the bobber settling, more is a splash, less a drop or a
- * stir. The wave simulation (fishwater.ts) does the rest.
- */
 function ripple(line: { bob: Point }, size = 1, opts: { at?: Point } = {}): void {
   const at = opts.at ?? line.bob;
   pokeWater(at.x, at.y, size * POKE, 0.7 + size * 0.9, isWaterPixel);
@@ -459,12 +413,6 @@ export function clearFishing(): void {
 
 const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
 
-/**
- * Where the staff's tip is in each frame of the cast poses, px in the 64 x 64 frame, by pose and facing (the diagonals
- * use down and up): measured from the asset server's armor/weapon/wooden staff.png, at the very end of its forked
- * head (USER REPORT 2026-10-20: left and right, the line left "before" the tip, from the inner fork). Facing up the staff
- * is behind the body, so the line leaves above the right shoulder, where the staff stands in the walk.
- */
 const STAFF_TIPS: Record<string, Array<[number, number]>> = {
   cast_idle_down: [[24, 38]],
   cast_idle_up: [[42, 15]],
@@ -476,10 +424,6 @@ const STAFF_TIPS: Record<string, Array<[number, number]>> = {
   cast_walk_right: [[41, 17], [48, 19], [41, 17]],
 };
 
-/**
- * The tip of the staff in the frame of a player drawn now, placed as player.ts draws the frame; null while they are
- * not in a cast pose with its frames loaded (the pose comes in its own packet, and its sprite sheets load after it).
- */
 function staffTip(p: any): Point | null {
   const at = p.renderPosition ?? p.position;
   const anim = p.layeredAnimation;
@@ -496,12 +440,6 @@ function staffTip(p: any): Point | null {
   };
 }
 
-/**
- * The rod tip of a player: the tip of the staff in the frame drawn now, placed as player.ts draws the frame. Once the
- * pose is gone (the line taken in, the fish caught: the server puts the staff away) the tip stays where it last was
- * from the player, never on their head. A line that never had a cast frame falls back to above the player, a little
- * toward where it goes.
- */
 function rodTip(p: any, toward: Point, line: Line): Point {
   const at = p.renderPosition ?? p.position;
   const tip = staffTip(p);
@@ -514,10 +452,6 @@ function rodTip(p: any, toward: Point, line: Line): Point {
   return { x: at.x + (dx / d) * TIP_OUT, y: at.y - TIP_UP + (dy / d) * (TIP_OUT * 0.5) };
 }
 
-/**
- * Move the bobber by (dx, dy), on water only and no further from the feet than the line reaches: straight if it can,
- * else along one axis. Returns whether it moved.
- */
 function slide(line: Line, dx: number, dy: number, feet: Point): boolean {
   const { x, y } = line.bob;
   for (const [nx, ny] of [[x + dx, y + dy], [x + dx, y], [x, y + dy]] as const) {
@@ -584,10 +518,6 @@ function stepFish(line: Line, p: any, dt: number, own: boolean): void {
   }
 }
 
-/**
- * A line with no fish on it, while this client reels: the bobber is drawn across the water toward the feet, and once
- * it reaches them or the shore, the line comes out of the water (FISH_CANCEL tells the server, and so everyone else).
- */
 function stepEmptyReel(line: Line, p: any, dt: number): void {
   const feet = { x: p.position.x, y: p.position.y + FEET_Y };
   const dx = feet.x - line.bob.x, dy = feet.y - line.bob.y, d = Math.hypot(dx, dy) || 1;
@@ -669,13 +599,6 @@ function drawDrops(ctx: CanvasRenderingContext2D, dt: number): void {
 /** Where each player last stirred the water with their feet, and how long they have stood there (null: not in it). */
 const waders = new Map<string, { at: Point; still: number } | null>();
 
-/**
- * Players walking through fishable water stir it as a bobber does (USER REQUEST 2026-10-20: "Walking through fishable
- * water should provide the same ripple effect off of the player"; then "Doesn't seem very noticeable": the pushes were
- * a third of a bobber's): a push at the feet, about as hard as a bobber settling, each WADE_STEP px they go, so a wake
- * of rings trails them; a splash where they step in from the shore; and, standing in it, the water rings round their
- * legs now and then. A ghost is not in the water.
- */
 function wade(players: any[], dt: number): void {
   const seen = new Set<string>();
   for (const p of players) {
@@ -722,11 +645,6 @@ function wake(line: Line): void {
   ripple(line, 0.15);
 }
 
-/**
- * The bobber, drawn pixel by pixel as the tiles are (USER FEEDBACK 2026-10-20: the shaded one "looks too realistic", and
- * the blue tint under the water "doesn't match the tileset"): a red cap with a glint, a white belly, a dark outline and
- * a stem, where the line is tied. Rows from the top: s stem, o outline, h glint, R red, d dark red, W white, g grey.
- */
 const BOBBER_PIXELS = [
   "...s...",
   "...s...",
@@ -751,12 +669,6 @@ function bobberOrigin(x: number, y: number, sink: number, afloat: boolean): Poin
   return { x: left, y: Math.round(y) - FLOAT_ROWS + Math.round(sink * BITE_DEPTH) };
 }
 
-/**
- * The bobber's two pictures, from the asset server's icons (USER REQUEST 2026-10-21: "replace the existing bobber with
- * those two states"): afloat, and pulled under by a fish. Each is ICON px square with the bobber in its middle: its top
- * at ICON_TOP (where the line is tied) and its bottom at ICON_BOTTOM. Until they have loaded, the bobber is drawn by
- * hand (drawBobberPixels).
- */
 const ICON = 32, ICON_TOP = 11, ICON_BOTTOM = 21;
 function bobberIcon(under: boolean): HTMLImageElement | null {
   const base = (window as any).__assetServerUrl || config.ASSET_SERVER_URL;
@@ -791,11 +703,6 @@ function drawBobber(ctx: CanvasRenderingContext2D, x: number, y: number, sink: n
   ctx.restore();
 }
 
-/**
- * The bobber drawn by hand, while its pictures load: on the water only what is above the waterline is drawn, with a
- * light line where it breaks the surface; a bite pulls it down until only the stem and the top of its cap show. In the
- * air (`afloat` false: cast out, or taken in) all of it shows.
- */
 function drawBobberPixels(ctx: CanvasRenderingContext2D, x: number, y: number, sink: number, afloat: boolean): void {
   const o = bobberOrigin(x, y, sink, afloat), waterline = Math.round(y);
   BOBBER_PIXELS.forEach((row, i) => {
@@ -814,10 +721,6 @@ function drawBobberPixels(ctx: CanvasRenderingContext2D, x: number, y: number, s
   ctx.fillRect(Math.round(x) - half, waterline, half * 2 + 1, 1);
 }
 
-/**
- * Steps and draws every line, in world space (renderer.ts, under the characters). `players`: the players on the map,
- * with their position and their smoothed renderPosition.
- */
 export function renderFishing(ctx: CanvasRenderingContext2D, dt: number, players: any[]): void {
   dt = Math.min(Math.max(dt, 0), 1 / 20);
   wade(players, dt);
@@ -837,8 +740,6 @@ export function renderFishing(ctx: CanvasRenderingContext2D, dt: number, players
     if (line.state === "flying" && line.fly) {
       const fly = line.fly;
       if (!fly.from) {
-        // (USER REPORT 2026-10-20, "Fishing line is still misaligned on cast") the cast packet comes before the staff
-        // is in the player's hands: the bobber leaves once it is, from its tip, and nothing is drawn till then
         if (!staffTip(p) && line.age < POSE_WAIT_S) continue;
         const tipNow = rodTip(p, fly.to, line);
         fly.from = tipNow;
@@ -874,8 +775,6 @@ export function renderFishing(ctx: CanvasRenderingContext2D, dt: number, players
       line.rippleIn = hooked ? rand(0.35, 0.6) : rand(1.1, 1.8);
     }
 
-    // Where the end of the line is: the bobber in flight, on the water (bobbing a pixel, jumping while a fish tugs),
-    // the bobber on its way back to the rod, or the fish on its way out of the water.
     const afloat = line.state === "floating" || hooked;
     let end: Point = line.fly ? flightPoint(line.fly) : {
       x: line.bob.x + (hooked ? Math.round(rand(-0.6, 0.6)) : 0),
@@ -896,8 +795,6 @@ export function renderFishing(ctx: CanvasRenderingContext2D, dt: number, players
       const yank = line.yank;
       yank.t += dt;
       const k = Math.min(yank.t / YANK_S, 1);
-      // up out of the water and over to hang from the staff's tip: never into the player (USER REPORT 2026-10-20: "when
-      // finished reeling in, the fishing line goes inside the players head")
       const tipNow = rodTip(p, yank.from, line);
       const hang = { x: tipNow.x, y: tipNow.y + 9 };
       fish = { x: yank.from.x + (hang.x - yank.from.x) * k, y: yank.from.y + (hang.y - yank.from.y) * k - Math.sin(Math.PI * k) * 40 };
