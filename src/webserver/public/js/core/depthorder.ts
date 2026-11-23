@@ -3,15 +3,19 @@ export type Depth = {
   feet: number;
   /** The viewer's own character: on top of anyone standing on the very same line. */
   own?: boolean;
+  /** Something set in the world (a summoning stone): behind anyone standing on the very same line. */
+  prop?: boolean;
 };
 
-export type Standing = Depth & { draw: () => void };
+/** x: the middle of the character, when known. draw paints it on the given context, the scene when none is given. */
+export type Standing = Depth & { x?: number; draw: (into?: CanvasRenderingContext2D) => void };
 
 export const PLAYER_FEET = 16;
 
 const BODY = { halfWidth: 12, up: 18, down: 21 };
 
-const order = (a: Depth, b: Depth) => Math.round(a.feet) - Math.round(b.feet) || Number(!!a.own) - Number(!!b.own);
+const order = (a: Depth, b: Depth) =>
+  Math.round(a.feet) - Math.round(b.feet) || Number(!!b.prop) - Number(!!a.prop) || Number(!!a.own) - Number(!!b.own);
 
 export function backToFront<T extends Depth>(standing: T[]): T[] {
   return standing.sort(order);

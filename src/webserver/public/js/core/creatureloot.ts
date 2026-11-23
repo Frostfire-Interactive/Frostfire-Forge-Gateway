@@ -174,9 +174,9 @@ export function showCreatureLoot(creatureId: number, items: any[], copper: numbe
     const quantity = Number(item.quantity) || 1;
     const row = lootRow(name, () => take([Number(item.index)]));
     const label = document.createElement("span");
-    label.className = "creature-loot-name ui";
+    // The tooltip's name colours (legendary is the rainbow), as item links have them.
+    label.className = `creature-loot-name item-link-${quality} ui`;
     label.textContent = name;
-    label.style.color = QUALITY_COLORS[quality];
     row.append(itemFrame(String(item.iconUrl || "") || null, quality, 32, name), label);
     if (quantity > 1) {
       const count = document.createElement("span");

@@ -76,13 +76,6 @@ export function creaturePositionFor(key: unknown): { x: number; y: number } | nu
   return c ? { x: c.renderX, y: c.renderY } : null;
 }
 
-/** Creature the local player is auto-attacking, if any. */
-let autoAttackingId: number | null = null;
-export const getAutoAttackingId = () => autoAttackingId;
-export function setAutoAttackingId(id: number | null): void {
-  autoAttackingId = id;
-}
-
 /** px: a creature sent again further than this from where it is drawn is put straight there, not slid across. */
 const SNAP_DISTANCE = 48;
 /** ms: a sprite still loading after this long is given up on, and the creature is drawn without it. */
@@ -215,7 +208,6 @@ export function applyCreatureDespawn(data: any): number[] {
   const ids: number[] = Array.isArray(data?.ids) ? data.ids : [];
   for (const id of ids) {
     creatures.delete(id);
-    if (autoAttackingId === id) autoAttackingId = null;
   }
   return ids;
 }
@@ -225,8 +217,6 @@ export function applyCreatureState(data: any): void {
   if (!c) return;
   c.state = data.state;
   c.victimId = data.victimId ?? null;
-  // A corpse stays targeted (its frame says "Dead"); only the attack on it stops.
-  if (c.state === "dead" && autoAttackingId === c.id) autoAttackingId = null;
 }
 
 export function applyCreatureHealth(data: any): void {
@@ -283,14 +273,9 @@ export function applyCreatureAuras(data: any): void {
   c.aurasAt = performance.now();
 }
 
-export function applyCreatureAttackStopped(data: any): void {
-  if (autoAttackingId === data?.id) autoAttackingId = null;
-}
-
 export function clearCreatures(): void {
   creatures.clear();
   floatingTexts.length = 0;
-  autoAttackingId = null;
 }
 
 // ------------------------------------------------------------- combat text

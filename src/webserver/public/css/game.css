@@ -170,6 +170,19 @@ body {
   z-index: 53;
 }
 
+/* Other players' cast bars: above the light layer, so a glow never covers them. */
+#castbar-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  display: block;
+  pointer-events: none;
+  z-index: 52;
+}
 #game-above {
   position: fixed;
   top: 0;
@@ -201,6 +214,29 @@ body {
   padding: 0;
   z-index: 100;
   pointer-events: none;
+}
+
+/*
+ * The UI drawn at one size for the size of the game window (--ui-scale, js/core/uiscale.ts: 1 at 1920 x 1080 and on
+ * a touch screen). Zoomed at its roots: the HUD and the windows inside #overlay, and the menus, popups and tooltip
+ * that stand on their own over the world. A window zoomed again inside (the bags) is zoomed by both.
+ */
+body > #overlay,
+body > #pause-menu-container,
+body > #options-menu-container,
+body > #loading-screen,
+body > #fps-counter,
+body > #item-tooltip,
+body > #game-notifications,
+body > #zone-banner,
+body > #achievement-popup,
+body > #creature-loot-popup,
+body > #vendor-window,
+body > #trade-window,
+body > #mail-window,
+body > .popup,
+body > #cutscene-skip {
+  zoom: var(--ui-scale, 1);
 }
 
 #overlay input,
@@ -3182,7 +3218,8 @@ input[type=range]:disabled {
   background: rgba(255, 255, 255, 0.15);
 }
 
-#invitation-popup {
+#invitation-popup,
+#dungeon-size-popup {
   position: fixed;
   z-index: 1000;
   top: 50%;
@@ -3199,13 +3236,15 @@ input[type=range]:disabled {
   justify-content: flex-start;
 }
 
-#invitation-popup button {
+#invitation-popup button,
+#dungeon-size-popup button {
   border-radius: 5px;
   border: none;
   outline: none;
 }
 
-#invitation-popup h2 {
+#invitation-popup h2,
+#dungeon-size-popup h2 {
   margin: 0;
   margin-bottom: 10px;
   font-family: Comic Relief;
@@ -3216,7 +3255,8 @@ input[type=range]:disabled {
   letter-spacing: 0.5px;
 }
 
-#invitation-popup p {
+#invitation-popup p,
+#dungeon-size-popup p {
   margin: 10px 0;
   font-family: Comic Relief;
   font-size: 0.85em;
@@ -3227,11 +3267,30 @@ input[type=range]:disabled {
   line-height: 1.4;
 }
 
-#invitation-popup .button-container {
+#invitation-popup .button-container,
+#dungeon-size-popup .button-container {
   display: flex;
   flex-direction: row;
   gap: 10px;
   justify-content: center;
+}
+
+#dungeon-size-popup button {
+  min-width: 100px;
+  height: 32px;
+  padding: 0 10px;
+  cursor: pointer;
+  background: #4a7a4a;
+  color: #FFF1DA;
+  font-family: 'Comic Relief';
+  font-weight: 600;
+  font-size: 0.9em;
+  border: 1px solid #3d6b3d;
+}
+
+#dungeon-size-popup button:last-child {
+  background: #7a4a4a;
+  border-color: #6b3d3d;
 }
 
 #accept-invitation {
@@ -3850,6 +3909,12 @@ input[type=range]:disabled {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* A text shadow cannot show under the legendary rainbow (text filled with a clipped gradient): the shadow as a filter. */
+#creature-loot-popup .creature-loot-name.item-link-legendary {
+  text-shadow: none;
+  filter: drop-shadow(1px 1px 1px rgba(0, 0, 0, 0.8));
 }
 
 #creature-loot-popup .creature-loot-count {
@@ -4601,11 +4666,15 @@ input[type=range]:disabled {
   border-radius: 5px;
   justify-content: flex-start;
   align-items: flex-start;
-  width: 100px;
+  /* As wide as the frames: the scroll for a long raid list would clip a narrower box. */
+  width: max-content;
   height: auto;
   bottom: 46%;
   transform: translateY(50%);
   left: 25px;
+  max-height: 90vh;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .party-member {
@@ -4688,6 +4757,15 @@ input[type=range]:disabled {
   transform: scaleX(var(--stamina-scale, 1));
   transform-origin: left;
   will-change: transform;
+}
+
+/* A raid (more than five): the same frames in columns; --raid-rows is set by the client to fit two or three. */
+#party-container.party-raid {
+  display: grid;
+  grid-template-rows: repeat(var(--raid-rows, 10), auto);
+  grid-auto-flow: column;
+  column-gap: 5px;
+  align-content: start;
 }
 
 /* Offline party members: greyscale the bars (toggled via .party-offline). */
@@ -4960,6 +5038,7 @@ body.cutscene-framed #game-above,
 body.cutscene-framed #debug-layer,
 body.cutscene-framed #light-dodge,
 body.cutscene-framed #light-overlay,
+body.cutscene-framed #castbar-layer,
 body.cutscene-framed #cutscene-layer {
   width: 100vw !important;
   height: 100vh !important;
@@ -5147,6 +5226,8 @@ body.mobile-landscape {
     left: 25px;
     transform: scale(0.65);
     transform-origin: bottom left;
+    max-height: 90vh;
+    overflow-y: auto;
   }
 
   .party-member {
@@ -5154,6 +5235,11 @@ body.mobile-landscape {
     height: 40px;
     margin: 3px;
     padding: 3px;
+  }
+
+  #party-container.party-raid {
+    width: auto;
+    height: auto;
   }
 
   .party-member-username {
@@ -5330,6 +5416,7 @@ body.ios-device #vendor-window .vendor-price {
    revived, destroying an item, disbanding a guild), for the same reason. USER REPORT 2026-10-07: "popups like
    'Trade Request' have incorrect text shadow". */
 body.ios-device #invitation-popup h2,
+body.ios-device #dungeon-size-popup h2,
 body.ios-device #report-popup h2,
 body.ios-device #death-popup h2,
 body.ios-device #revive-popup h2,
@@ -5339,6 +5426,7 @@ body.ios-device #guild-confirm-popup h2 {
   text-shadow: 1px 1px 2px rgba(0,0,0,0.4);
 }
 body.ios-device #invitation-popup p,
+body.ios-device #dungeon-size-popup p,
 body.ios-device #death-popup p,
 body.ios-device #revive-popup p,
 body.ios-device #graveyard-resurrect-popup p,
@@ -5406,6 +5494,8 @@ body.small-landscape #castbar-active-clone {
 }
 
 body.small-landscape #party-container {
+  max-height: 90vh;
+  overflow-y: auto;
   bottom: 130px;
   transform: scale(0.6);
 }
@@ -5436,6 +5526,8 @@ body.tiny-landscape #castbar-active-clone {
 }
 
 body.tiny-landscape #party-container {
+  max-height: 90vh;
+  overflow-y: auto;
   bottom: 95px;
   left: 25px;
   transform: scale(0.4);
@@ -7014,7 +7106,8 @@ body.tiny-landscape #stats-container {
     display: flex;
   }
 
-  #invitation-popup {
+  #invitation-popup,
+  #dungeon-size-popup {
     width: 340px;
     max-width: 90vw;
     height: 230px;
@@ -7022,12 +7115,14 @@ body.tiny-landscape #stats-container {
     background-size: 100% 100%;
   }
 
-  #invitation-popup h2 {
+  #invitation-popup h2,
+  #dungeon-size-popup h2 {
     font-size: 1.1em;
     margin-bottom: 6px;
   }
 
-  #invitation-popup p {
+  #invitation-popup p,
+  #dungeon-size-popup p {
     font-size: 0.8em;
     margin: 6px 0;
   }
@@ -7118,6 +7213,9 @@ body.tiny-landscape #stats-container {
     display: flex !important;
     flex-direction: row !important;
     gap: 4px !important;
+    flex-wrap: wrap !important;
+    max-height: 90vh !important;
+    overflow-y: auto !important;
     transform: none !important;
   }
 
@@ -7127,6 +7225,7 @@ body.tiny-landscape #stats-container {
     margin: 0 !important;
     padding: 3px 3px 2px !important;
   }
+
 
   .party-member-username {
     font-size: 0.6em !important;
@@ -7401,26 +7500,6 @@ body.tiny-landscape #stats-container {
     --pz: 0.5;
   }
 }
-
-#loot-chest-popup{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:5000;min-width:340px;max-width:420px;max-height:80vh}
-.loot-chest-bg{background-image:url('../img/ui/ui-book.png');background-size:100% 100%;padding:32px 28px 28px;border-radius:6px;box-shadow:0 4px 24px rgba(0,0,0,0.6)}
-.loot-chest-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
-.loot-chest-header h2{margin:0;font-size:18px;color:#FFD700;font-family:'Comic Relief',sans-serif;text-shadow:1px 1px 2px rgba(0,0,0,0.6)}
-.loot-chest-close{background:none;border:none;color:#ccc;font-size:22px;cursor:pointer;padding:0 4px;line-height:1}
-.loot-chest-close:hover{color:#fff}
-.loot-chest-items-list{display:flex;flex-direction:column;gap:6px;margin-bottom:16px;max-height:50vh;overflow-y:auto}
-.loot-chest-item{display:flex;align-items:center;gap:8px;padding:6px 8px;background:rgba(0,0,0,0.3);border-radius:4px;border:1px solid rgba(255,255,255,0.08)}
-.loot-item-checkbox{width:16px;height:16px;cursor:pointer;accent-color:#FFD700}
-.loot-item-icon{width:32px;height:32px;image-rendering:pixelated;flex-shrink:0}
-.loot-item-name{flex:1;font-size:13px;font-family:'Comic Relief',sans-serif;font-weight:bold}
-.loot-item-quality{font-size:10px;color:#999;text-transform:uppercase;min-width:60px;text-align:right}
-.loot-item-qty{font-size:12px;color:#FFF1DA;font-weight:bold;min-width:30px;text-align:right}
-.loot-chest-footer{display:flex;gap:8px;justify-content:center}
-.loot-btn{padding:8px 18px;border:none;border-radius:4px;cursor:pointer;font-family:'Comic Relief',sans-serif;font-size:13px;font-weight:bold}
-.loot-btn-primary{background:#FFD700;color:#1a1a1a}
-.loot-btn-primary:hover{background:#ffe44d}
-.loot-btn-secondary{background:rgba(255,255,255,0.12);color:#ddd;border:1px solid rgba(255,255,255,0.2)}
-.loot-btn-secondary:hover{background:rgba(255,255,255,0.2)}
 
 /* Quality frame around an item icon, anywhere one is shown (js/core/itemframe.ts).
    Keyed on data-quality so it never mixes with the inventory's .rare/.epic slot rules. */
@@ -8285,6 +8364,115 @@ body.ios-device #mobile-chat-peek .message {
   color: #f5e6c4;
   font-family: 'Comic Relief', sans-serif;
   font-size: 12px;
+}
+/* The staff panel (js/core/stafftoolbar.ts): floating, dragged by the top of its frame, minimized to it. The
+   windows' own frame (ui-book.png in nine slices, as #pause-menu, at the picture's own size so it fits round one
+   column of slots), the hotbar's slots, and the windows' button at the frame's corner. The script sets left and top. */
+#staff-toolbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  max-height: calc(100vh - 16px);
+  padding: 0 14px 10px 18px;
+  background: none;
+  border-image: url("../img/ui/ui-book.png") 24 14 10 18 fill / 24px 14px 10px 18px stretch;
+}
+.staff-toolbar-header {
+  flex: none;
+  height: 24px;
+  cursor: move;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+/* A plain chevron in the middle of the frame's top, in the frame's brown: points up to fold the panel, down to open it. */
+#staff-toolbar > .staff-toolbar-minimize {
+  top: 4px;
+  right: auto;
+  left: calc(50% - 10px);
+  width: 20px;
+  height: 16px;
+  background: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  -webkit-box-shadow: none;
+  font-size: 0;
+  color: #653b1d;
+}
+#staff-toolbar > .staff-toolbar-minimize::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-top: 4px;
+  border-left: 2px solid currentColor;
+  border-top: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+#staff-toolbar.minimized > .staff-toolbar-minimize::before {
+  margin-top: -4px;
+  transform: rotate(225deg);
+}
+#staff-toolbar > .staff-toolbar-minimize:hover,
+#staff-toolbar > .staff-toolbar-minimize:focus-visible,
+#staff-toolbar > .staff-toolbar-minimize:active {
+  background: none;
+  color: #a0643a;
+}
+#staff-toolbar > .staff-toolbar-minimize:active {
+  transform: none;
+}
+.staff-toolbar-tools {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+#staff-toolbar.minimized .staff-toolbar-tools {
+  display: none;
+}
+.staff-toolbar-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  box-sizing: border-box;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: url("../img/ui/ui-slot-light.png");
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  color: #FFF1DA;
+  cursor: pointer;
+  transition: none;
+  animation: none;
+}
+.staff-toolbar-button svg {
+  -webkit-filter: drop-shadow(1px 1px 1px rgba(0, 0, 0, 0.8));
+  filter: drop-shadow(1px 1px 1px rgba(0, 0, 0, 0.8));
+}
+.staff-toolbar-button:hover,
+.staff-toolbar-button:focus-visible {
+  outline: none;
+}
+.staff-toolbar-divider {
+  flex: none;
+  align-self: stretch;
+  height: 1px;
+  margin: 1px 2px;
+  background: rgba(101, 59, 29, 0.45);
 }
 .quest-tracker-title {
   cursor: pointer;

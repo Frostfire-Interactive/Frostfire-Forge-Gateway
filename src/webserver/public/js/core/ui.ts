@@ -6,6 +6,9 @@ import { cast } from "./input.js";
 import { hideItemTooltip, setupItemTooltip, removeItemTooltip, setupSpellTooltip, formatDuration } from "./tooltip.js";
 import { config } from "../web/global.js";
 import { itemForSlot, placeItemOnHotbar, refreshHotbarItems, useItem } from "./consumables.js";
+import { placeHotbar } from "./hotbarplacement.js";
+import { keepPartyTarget, updateFarPartyTargetStats } from "./partytarget.js";
+import { toZoomedPx, zoomOf } from "./uiscale.js";
 const debugContainer = document.getElementById("debug-container") as HTMLDivElement;
 const statUI = document.getElementById("stat-screen") as HTMLDivElement;
 const positionText = document.getElementById("position") as HTMLDivElement;
@@ -73,6 +76,8 @@ const ghostCtx = ghostCanvas ? ghostCanvas.getContext("2d") : null;
 const aboveCanvas = document.getElementById("game-above") as HTMLCanvasElement;
 const aboveCtx = aboveCanvas ? aboveCanvas.getContext("2d") : null;
 /** The world's debug drawing, over every other layer of the world (see #debug-layer). */
+const castbarCanvas = document.getElementById("castbar-layer") as HTMLCanvasElement;
+const castbarCtx = castbarCanvas ? castbarCanvas.getContext("2d") : null;
 const debugLayerCanvas = document.getElementById("debug-layer") as HTMLCanvasElement;
 const debugLayerCtx = debugLayerCanvas ? debugLayerCanvas.getContext("2d") : null;
 const guildContainer = document.getElementById("guild-container") as HTMLDivElement;
@@ -1069,13 +1074,116 @@ document.addEventListener("touchcancel", () => {
   clearTouchDrag();
 });
 
+// A raid's frames hang below the player's frame and never reach the chat box: two columns, three when two would
+// reach it, and scaled down when three still would.
+const RAID_GAP = 8;
+
+function shownRect(id: string): DOMRect | null {
+  const element = document.getElementById(id);
+  if (!element || getComputedStyle(element).display === "none") return null;
+  const rect = element.getBoundingClientRect();
+  return rect.height > 0 ? rect : null;
+}
+
+function fitRaidColumns() {
+  const partyContainer = document.getElementById("party-container");
+  if (!partyContainer) return;
+  for (const property of ["--raid-rows", "top", "bottom", "transform", "transform-origin", "max-height"]) partyContainer.style.removeProperty(property);
+  if (!partyContainer.classList.contains("party-raid")) return;
+
+  const chat = shownRect("chat-container");
+  const floor = (chat ? chat.top : window.innerHeight) - RAID_GAP;
+  // Below your own frame, counting the parts that stick out of it (the level badge).
+  const selfFrame = document.getElementById("self-frame");
+  let ceiling = RAID_GAP;
+  if (shownRect("self-frame") && selfFrame) {
+    for (const part of [selfFrame, ...Array.from(selfFrame.querySelectorAll<HTMLElement>("*"))]) {
+      const rect = part.getBoundingClientRect();
+      if (rect.height > 0) ceiling = Math.max(ceiling, rect.bottom + RAID_GAP);
+    }
+  }
+  const available = Math.max(0, floor - ceiling);
+  // The scale the stylesheet gives the frames on this screen; a raid is never drawn larger than that.
+  const styled = getComputedStyle(partyContainer).transform;
+  const baseScale = styled && styled !== "none" ? new DOMMatrixReadOnly(styled).a : 1;
+
+  // Its height on the screen without that scale, the UI's zoom counted in (uiscale.ts): the rest is measured on the screen too.
+  const unscaledHeight = () => partyContainer.getBoundingClientRect().height / (baseScale || 1);
+  const zoom = zoomOf(partyContainer);
+
+  const count = partyContainer.querySelectorAll(".party-member").length;
+  partyContainer.style.maxHeight = "none";
+  partyContainer.style.setProperty("--raid-rows", String(Math.ceil(count / 2)));
+  if (unscaledHeight() * baseScale > available) partyContainer.style.setProperty("--raid-rows", String(Math.ceil(count / 3)));
+  const scale = Math.min(baseScale, available / Math.max(1, unscaledHeight()));
+
+  partyContainer.style.top = `${toZoomedPx(ceiling, zoom)}px`;
+  partyContainer.style.bottom = "auto";
+  partyContainer.style.transformOrigin = "top left";
+  partyContainer.style.transform = `scale(${scale})`;
+}
+
+window.addEventListener("resize", fitRaidColumns);
+// Your own frame can appear or change size after the raid was laid out.
+const raidSelfFrame = document.getElementById("self-frame");
+if (raidSelfFrame) new ResizeObserver(() => fitRaidColumns()).observe(raidSelfFrame);
+
+// On a narrow screen the hotbar never covers the chat box (hotbarplacement.ts): it slides right of the chat while it
+// still fits, and the chat rises above it when it does not. Moved with `translate`, which adds to each layout's own
+// `transform` (the scaled landscape variants), measured after the resize has set the body's classes.
+let hotbarShift = 0, chatLift = 0, hotbarPlacementQueued = false;
+
+function placeHotbarClearOfChat() {
+  hotbarPlacementQueued = false;
+  const hotbar = document.getElementById("hotbar");
+  const chat = document.getElementById("chat-container");
+  if (!hotbar || !chat) return;
+  // Where the stylesheet puts each one, without the move made here.
+  const chatRect = shownRect("chat-container");
+  const hotbarRect = shownRect("hotbar");
+  const place = placeHotbar(
+    window.innerWidth,
+    chatRect && { left: chatRect.left, right: chatRect.right, top: chatRect.top + chatLift, bottom: chatRect.bottom + chatLift },
+    hotbarRect && { left: hotbarRect.left - hotbarShift, right: hotbarRect.right - hotbarShift, top: hotbarRect.top, bottom: hotbarRect.bottom },
+  );
+  // (measured on the screen, moved in the UI's zoom: uiscale.ts)
+  if (place.shiftX !== hotbarShift) {
+    hotbarShift = place.shiftX;
+    hotbar.style.translate = hotbarShift ? `${toZoomedPx(hotbarShift, zoomOf(hotbar))}px 0` : "";
+  }
+  if (place.liftChat !== chatLift) {
+    chatLift = place.liftChat;
+    chat.style.translate = chatLift ? `0 ${-toZoomedPx(chatLift, zoomOf(chat))}px` : "";
+    // (a raid's frames end above the chat box)
+    fitRaidColumns();
+  }
+}
+
+function queueHotbarPlacement() {
+  if (hotbarPlacementQueued) return;
+  hotbarPlacementQueued = true;
+  requestAnimationFrame(placeHotbarClearOfChat);
+}
+
+window.addEventListener("resize", queueHotbarPlacement);
+// Either one being shown or hidden changes its size.
+for (const id of ["hotbar", "chat-container"]) {
+  const element = document.getElementById(id);
+  if (element) new ResizeObserver(queueHotbarPlacement).observe(element);
+}
+
 function createPartyUI(partyMembers: string[], players?: any[]) {
   const partyContainer = document.getElementById("party-container");
   if (!partyContainer) return;
 
+  // A party of more than five is a raid.
+  partyContainer.classList.toggle("party-raid", partyMembers.length > 5);
+
   if (partyMembers.length === 0) {
     const existingMembers = partyContainer.querySelectorAll(".party-member");
     existingMembers.forEach(member => partyContainer.removeChild(member));
+    fitRaidColumns();
+    keepPartyTarget([]);
     return;
   }
 
@@ -1160,6 +1268,8 @@ function createPartyUI(partyMembers: string[], players?: any[]) {
       }
     }
   }
+  fitRaidColumns();
+  keepPartyTarget(partyMembers);
 }
 
 function createGuildUI(guildMembers: string[], guildNameValue: string | null) {
@@ -1459,6 +1569,7 @@ function updatePartyMemberOnlineStatus(username: string, isOnline: boolean) {
 }
 
 function updatePartyMemberStats(username: string, health: number, maxHealth: number, stamina: number, maxStamina: number) {
+  updateFarPartyTargetStats(username, health, maxHealth, stamina, maxStamina);
   const partyContainer = document.getElementById("party-container");
   if (!partyContainer) return;
 
@@ -2104,7 +2215,7 @@ export {
     staminaBar, xpBar, musicSlider, effectsSlider, ambienceSlider, weatherSlider, mutedCheckbox, autoLootCheckbox, statUI, overlay,
     packetsSentReceived, optionsMenu, friendsList, friendsListSearch, onlinecount, progressBar, progressBarContainer,
     inventoryGrid, chatMessages, loadingScreen, usernameLabel, levelLabel, healthLabel, manaLabel, damageLabel, armorLabel, critChanceLabel, critDamageLabel, avoidanceLabel,
-    serverTime, ambience, ambienceCool, sunFlare, weatherCanvas, weatherCtx, lightCanvas, lightCtx, lightDodgeCanvas, lightDodgeCtx, ghostCanvas, ghostCtx, aboveCanvas, aboveCtx, debugLayerCanvas, debugLayerCtx, guildContainer, guildName, guildRank, guildMembersList,
+    serverTime, ambience, ambienceCool, sunFlare, weatherCanvas, weatherCtx, lightCanvas, lightCtx, lightDodgeCanvas, lightDodgeCtx, ghostCanvas, ghostCtx, aboveCanvas, aboveCtx, castbarCanvas, castbarCtx, debugLayerCanvas, debugLayerCtx, guildContainer, guildName, guildRank, guildMembersList,
     guildMemberCount, guildMemberInviteInput, guildMemberInviteButton, collisionDebugCheckbox, chunkOutlineDebugCheckbox,
     collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText, clusterNodesDebugCheckbox, clusterNodesText, collectablesUI, timeOverrideSlider, timeOverrideLabel, timeOverrideCheckbox, timelapseBtn,
     hotbarSlots, saveHotbarConfiguration, loadHotbarConfiguration, equipmentLeftColumn, equipmentRightColumn, equipmentBottomCenter,

@@ -128,3 +128,29 @@ export async function reapplyPose(
     console.error("Error applying pose:", error);
   }
 }
+
+const FACINGS = ["up", "down", "left", "right", "upleft", "upright", "downleft", "downright"];
+
+/**
+ * Faces a player the way a warp put them (the server's direction: a portal's far side faces down), standing, before
+ * any pose packet from there: LOAD_MAP's direction for the local player, a MOVEXY jump's for anyone. Only a plain
+ * walk or stand is turned; a cast or any other pose is left to its own packets.
+ */
+export async function faceArrival(
+  player: any,
+  direction: unknown,
+  changeLayeredAnimation: (animation: any, name: string) => Promise<void>
+): Promise<void> {
+  try {
+    const dir = typeof direction === "string" ? direction.toLowerCase() : "";
+    if (!player || !FACINGS.includes(dir)) return;
+    player.lastDirection = dir;
+    const animation = player.layeredAnimation;
+    const name = animation?.currentAnimationName;
+    if (typeof name !== "string" || !/^(idle|walk)_/.test(name) || name === `idle_${dir}`) return;
+    player.animation = null;
+    await changeLayeredAnimation(animation, `idle_${dir}`);
+  } catch (error) {
+    console.error("Error facing an arrival:", error);
+  }
+}

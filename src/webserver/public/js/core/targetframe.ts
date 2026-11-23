@@ -1,6 +1,7 @@
 import Cache from "./cache.js";
 import { creatures, parseCreatureTarget, levelColor } from "./creature.js";
 import { getLayerStillFrame } from "./layeredAnimation.js";
+import { getFarPartyTarget } from "./partytarget.js";
 
 const cache = Cache.getInstance();
 
@@ -205,7 +206,7 @@ const selfFrame = new UnitFrame("self-frame");
 /** Refresh both frames. Called every frame from the render loop. */
 export function updateUnitFrames(self: any): void {
   const playerLevel = Number(self?.stats?.level) || 1;
-  const targetedPlayer = Array.from(cache.players as Iterable<any>).find((p: any) => p?.targeted);
+  const targetedPlayer = Array.from(cache.players as Iterable<any>).find((p: any) => p?.targeted) ?? getFarPartyTarget();
   targetFrame.render(creatureView(playerLevel) ?? playerView(targetedPlayer));
   selfFrame.render(playerView(self));
 }

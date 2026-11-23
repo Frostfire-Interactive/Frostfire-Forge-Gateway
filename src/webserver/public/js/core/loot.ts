@@ -1,6 +1,6 @@
 import Cache from "./cache.js";
 import { canvasDpr, worldToScreen, worldZoom } from "./worldzoom.js";
-import { badgeLabel, CHEST_BADGE, drawKeyBadge, LOOT_BADGE } from "./keybadge.js";
+import { drawKeyBadge, LOOT_BADGE, PLAIN_BADGE } from "./keybadge.js";
 
 const QUALITY_COLORS: Record<string, string> = {
   common: "#9d9d9d",
@@ -331,26 +331,12 @@ export function renderLootChests(
   const chests = cache.lootChests || [];
   if (chests.length === 0) return;
 
-  const now = performance.now();
-  const fo = Math.round(Math.sin(now * 0.0015) * 3);
-  // the Open Chest key as bound, over each chest
-  const chestKey = badgeLabel("openChest");
+  // Each chest sits on the ground at its spot: no bob, no shadow.
   ctx.save();
   for (const c of chests) {
-    const sx = c.x, sy = c.y;
-    const sz = 44, h = sz / 2, x = sx - h, y = sy - 56 + fo;
-    const sw = 10 + fo * 1.2, sh = 4 + fo * 0.6, sy2 = sy - 6 + fo;
-    if (sw > 0 && sh > 0) { ctx.beginPath(); ctx.ellipse(sx, sy2, sw, sh, 0, 0, Math.PI * 2); ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fill(); }
-    const gs = 36;
-    const g = ctx.createRadialGradient(sx, sy - 36, 2, sx, sy - 36, gs);
-    g.addColorStop(0, "rgba(255,215,0,0.12)"); g.addColorStop(0.7, "rgba(255,215,0,0.03)"); g.addColorStop(1, "transparent");
-    ctx.fillStyle = g; ctx.fillRect(sx - gs, sy - 36 - gs, gs * 2, gs * 2);
+    const sz = 44;
     const img = lootImageCache?.get(c.iconUrl);
-    if (img && img.complete) { ctx.drawImage(img, x, y, sz, sz); }
-    ctx.font = "bold 9px 'Comic Relief', sans-serif"; ctx.textAlign = "center";
-    ctx.fillStyle = "#FFD700"; ctx.shadowColor = "rgba(0,0,0,0.8)"; ctx.shadowBlur = 3;
-    ctx.fillText(chestKey, sx, y - 8);
-    ctx.shadowColor = "transparent"; ctx.shadowBlur = 0;
+    if (img && img.complete) { ctx.drawImage(img, c.x - sz / 2, c.y - sz, sz, sz); }
   }
   ctx.restore();
 }
@@ -365,16 +351,20 @@ export function renderChestInteractionHint(
   const cache = Cache.getInstance();
   const chests = cache.lootChests || [];
   if (!playerId || chests.length === 0) return;
+  // From the player, not the camera: on a small map the camera stays centred.
+  const me = Array.from(cache.players as Iterable<any>).find((p: any) => p.id === playerId);
+  const px = Number.isFinite(Number(me?.position?.x)) ? Number(me.position.x) : cameraX;
+  const py = Number.isFinite(Number(me?.position?.y)) ? Number(me.position.y) : cameraY;
   let nc: any = null, nd = Infinity;
   for (const c of chests) {
-    const d = Math.sqrt((c.x - cameraX) ** 2 + (c.y - cameraY) ** 2);
+    const d = Math.sqrt((c.x - px) ** 2 + (c.y - py) ** 2);
     if (d < nd && d <= 120) { nd = d; nc = { x: c.x, y: c.y }; }
   }
   if (!nc) return;
   ctx.shadowBlur = 0; ctx.shadowColor = "transparent"; ctx.globalAlpha = 1; ctx.lineWidth = 2;
   const dpr = canvasDpr();
-  const at = worldToScreen(nc.x, nc.y - 72);
-  drawKeyBadge(ctx, at.x * dpr, at.y * dpr, "openChest", dpr * worldZoom(), CHEST_BADGE, progress);
+  const at = worldToScreen(nc.x, nc.y - 52);
+  drawKeyBadge(ctx, at.x * dpr, at.y * dpr, "openChest", dpr * worldZoom(), PLAIN_BADGE, progress);
 }
 
 (window as any).renderLootChests = renderLootChests;

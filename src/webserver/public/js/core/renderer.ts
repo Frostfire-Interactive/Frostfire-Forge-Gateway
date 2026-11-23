@@ -15,6 +15,9 @@ import { renderCreatureEditorOverlays, renderThreatPanel } from "./creaturedebug
 import { renderGatherHint, renderGatherPreviewArea, standingGatherNodes } from "./gathering.js";
 import { renderFishing } from "./fishing.js";
 import { renderFootprints } from "./footprints.js";
+import { drawStoneShadows, standingStones } from "./summonstones.js";
+import { drawStanding, renderDungeonPortalGround, setPortalWalkers, standingDungeonPortals, type PortalWalker } from "./portalfx.js";
+import { heldThroughWarp, portalRects, steerWaitPose, steerWalkInPose, steerWalkOutPose, transit, type PortalRect } from "./portaltransit.js";
 import { renderCorpseLootHint, updateCreatureLootProximity } from "./creatureloot.js";
 let weatherType = null as string | null;
 let currentWeatherData = null as any; // Store full weather object for wind speed
@@ -63,7 +66,7 @@ const CHUNK_FADE_DURATION = 0.5; // Fade duration in seconds
 
 // Tileset lookup cache for fast tile->tileset resolution
 
-import { canvas, ctx, ghostCanvas, ghostCtx, aboveCanvas, aboveCtx, debugLayerCanvas, debugLayerCtx, fpsSlider, healthBar, staminaBar, collisionDebugCheckbox, chunkOutlineDebugCheckbox, collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText, clusterNodesDebugCheckbox } from "./ui.js";
+import { canvas, ctx, ghostCanvas, ghostCtx, aboveCanvas, aboveCtx, castbarCanvas, castbarCtx, debugLayerCanvas, debugLayerCtx, fpsSlider, healthBar, staminaBar, collisionDebugCheckbox, chunkOutlineDebugCheckbox, collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText, clusterNodesDebugCheckbox } from "./ui.js";
 import { drawClusterNodes } from "./clusternodes.ts";
 
 // Frame pacing: the measured display refresh interval (ms), from rAF deltas.
@@ -90,6 +93,37 @@ function updateRemotePlayerInterpolation(player: any, deltaSeconds: number) {
     player.position.x = Math.round(player.position.x + dx * lerpFactor);
     player.position.y = Math.round(player.position.y + dy * lerpFactor);
   }
+}
+
+// The map's portal rectangles, made again when its portals change (portaltransit.ts).
+let transitPortals: { raw: unknown; map: string; rects: PortalRect[] } | null = null;
+// The local player's trips through a portal seen so far: each one holds the keys held through it (HeldKeys).
+let heldWarps = 0;
+
+/** Shows this frame's players to the portal transit tracker (who goes into a portal and who comes out of one), and
+ *  poses those walking out of one. */
+function observeTransit(players: any[], now: number): void {
+  const map = String(window.mapData?.name ?? "");
+  const raw = (window.mapData as any)?.dungeonPortals;
+  if (!transitPortals || transitPortals.raw !== raw || transitPortals.map !== map) transitPortals = { raw, map, rects: portalRects(raw, map) };
+  const seen = [];
+  for (const p of players) {
+    const at = p?.position ?? p?.renderPosition, drawn = p?.renderPosition ?? p?.position;
+    if (p?.id == null || !at || !drawn) continue;
+    seen.push({ id: String(p.id), x: at.x, y: at.y, dx: drawn.x, dy: drawn.y, ref: p, fast: atMountSpeed(p) });
+  }
+  transit.observe({ map, now, localId: cachedPlayerId ? String(cachedPlayerId) : null, portals: transitPortals.rects, players: seen });
+  for (const p of seen) {
+    const walk = transit.walkOutOf(p.id);
+    if (walk && now >= walk.at) steerWalkOutPose(p.ref, walk, now, changeLayeredAnimation);
+  }
+}
+
+/** Draws a player as if they stood at (x, y): on a walk into or out of a portal (portaltransit.ts). */
+function showAt(p: any, x: number, y: number, into: CanvasRenderingContext2D, currentPlayer: any): void {
+  const was = p.renderPosition;
+  p.renderPosition = { x, y };
+  try { p.show(into, currentPlayer); } finally { p.renderPosition = was; }
 }
 
 function smoothPlayerRenderPositions(players: any[], now: number) {
@@ -130,11 +164,14 @@ declare global {
 
 const loadedChunksSet = new Set<string>();
 const pendingChunks = new Set<string>();
+// Chunks asked for that came back with none (off the map, or nothing there).
+const noChunk = new Set<string>();
 let pendingRequest: boolean = false;
 
 function clearChunkTracking() {
   loadedChunksSet.clear();
   pendingChunks.clear();
+  noChunk.clear();
   chunkLoadTimes.clear();
   frameVisibleChunksCache = null;
 }
@@ -160,7 +197,7 @@ function coveredBottom(): number {
   return bottomCover;
 }
 
-function updateCamera(currentPlayer: any, deltaTime: number) {
+function updateCamera(currentPlayer: any, deltaTime: number, focus?: { x: number; y: number }) {
   if (!getIsLoaded()) return;
 
   const tileEditor = (window as any).tileEditor;
@@ -210,8 +247,9 @@ function updateCamera(currentPlayer: any, deltaTime: number) {
   }
 
   if (currentPlayer && window.mapData) {
-    const targetX = currentPlayer.renderPosition.x;
-    const targetY = currentPlayer.renderPosition.y;
+    // (on a walk through a portal, where the walk draws them: portaltransit.ts cameraAt)
+    const targetX = (focus ?? currentPlayer.renderPosition).x;
+    const targetY = (focus ?? currentPlayer.renderPosition).y;
 
     cameraX = targetX;
     cameraY = targetY;
@@ -309,16 +347,21 @@ export function panEditorCamera(dx: number, dy: number) {
 }
 
 function getVisibleChunks(): Array<{x: number, y: number}> {
+  return chunksAround(cameraX, cameraY);
+}
+
+// The chunks a view centred at (x, y) shows, with one chunk round them.
+function chunksAround(x: number, y: number): Array<{x: number, y: number}> {
   if (!window.mapData) return [];
 
   const chunkPixelSize = window.mapData.chunkSize * window.mapData.tilewidth;
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
 
-  const cameraLeft = cameraX - viewportWidth / 2;
-  const cameraTop = cameraY - viewportHeight / 2;
-  const cameraRight = cameraX + viewportWidth / 2;
-  const cameraBottom = cameraY + viewportHeight / 2;
+  const cameraLeft = x - viewportWidth / 2;
+  const cameraTop = y - viewportHeight / 2;
+  const cameraRight = x + viewportWidth / 2;
+  const cameraBottom = y + viewportHeight / 2;
 
   const padding = chunkPixelSize;
 
@@ -364,7 +407,7 @@ async function loadVisibleChunks() {
 
   const editorActiveForUnload = (window as any).tileEditor?.isActive;
   if (!editorActiveForUnload) for (const chunkKey of loadedChunksSet) {
-    if (!visibleKeys.has(chunkKey)) {
+    if (!visibleKeys.has(chunkKey) && !landingKeys.has(chunkKey)) {
 
       const chunkData = window.mapData.loadedChunks.get(chunkKey);
       if (chunkData) {
@@ -391,9 +434,16 @@ async function loadVisibleChunks() {
     }
   }
 
+  requestChunks(visibleChunks, cameraX, cameraY);
+}
+
+// Asks for those of `chunks` not loaded or asked for yet, the nearest to (x, y) first so they arrive first.
+function requestChunks(chunks: Array<{x: number, y: number}>, x: number, y: number): void {
+  if (!window.mapData) return;
+  const chunkPixelSize = window.mapData.chunkSize * window.mapData.tilewidth;
   const chunksToLoad: Array<{x: number, y: number, key: string}> = [];
 
-  for (const chunk of visibleChunks) {
+  for (const chunk of chunks) {
     const chunkKey = `${chunk.x}-${chunk.y}`;
 
     if (!loadedChunksSet.has(chunkKey) && !pendingChunks.has(chunkKey)) {
@@ -403,9 +453,8 @@ async function loadVisibleChunks() {
   }
 
   if (chunksToLoad.length > 0) {
-    // Request the nearest chunks first so they arrive first.
     const distanceToCamera = (c: { x: number; y: number }) =>
-      Math.hypot((c.x + 0.5) * chunkPixelSize - cameraX, (c.y + 0.5) * chunkPixelSize - cameraY);
+      Math.hypot((c.x + 0.5) * chunkPixelSize - x, (c.y + 0.5) * chunkPixelSize - y);
     chunksToLoad.sort((a, b) => distanceToCamera(a) - distanceToCamera(b));
 
     const loadPromises = chunksToLoad.map(chunk =>
@@ -413,6 +462,9 @@ async function loadVisibleChunks() {
         .then((chunkData: any) => {
           if (chunkData) {
             loadedChunksSet.add(chunk.key);
+            noChunk.delete(chunk.key);
+          } else {
+            noChunk.add(chunk.key);
           }
         })
         .catch((error: any) => {
@@ -424,6 +476,22 @@ async function loadVisibleChunks() {
 
     Promise.all(loadPromises).catch(() => {});
   }
+}
+
+// The ground round where the local player lands from a portal on this map, far off: asked for while they wait in the
+// portal they went into, kept while they wait, and shown at once (not faded in) when it is all there, as they walk out.
+const landingKeys = new Set<string>();
+function prepareLanding(now: number): void {
+  const land = transit.landingSpot();
+  landingKeys.clear();
+  if (!land || !window.mapData) return;
+  const chunks = chunksAround(land.x, land.y).filter((c) => !noChunk.has(`${c.x}-${c.y}`));
+  for (const c of chunks) landingKeys.add(`${c.x}-${c.y}`);
+  requestChunks(chunks, land.x, land.y);
+  for (const key of landingKeys) if (!loadedChunksSet.has(key)) return;
+  for (const key of landingKeys) chunkLoadTimes.set(key, -Infinity);
+  landingKeys.clear();
+  transit.landed(now);
 }
 
 let chunkLoadThrottle = 0;
@@ -442,7 +510,7 @@ function renderGraveyardsAndWarps(renderCtx: CanvasRenderingContext2D, offsetX: 
     Object.entries(window.mapData.graveyards).forEach(([name, data]: [string, any]) => {
       const x = data.position?.x || 0;
       const y = data.position?.y || 0;
-      const isSelected = tileEditor && tileEditor.getSelectedObjectName?.() === name;
+      const isSelected = isEditorSelected(tileEditor, 'Graveyards', name);
 
       // Draw selection highlight first (behind everything)
       if (isSelected) {
@@ -582,7 +650,7 @@ function renderGraveyardsAndWarps(renderCtx: CanvasRenderingContext2D, offsetX: 
       const y = data.position?.y || 0;
       const width = data.size?.width || tilesize;
       const height = data.size?.height || tilesize;
-      const isSelected = tileEditor && tileEditor.getSelectedObjectName?.() === name;
+      const isSelected = isEditorSelected(tileEditor, 'Warps', name);
 
       // Draw selection highlight first (behind everything)
       if (isSelected) {
@@ -696,6 +764,131 @@ function renderGraveyardsAndWarps(renderCtx: CanvasRenderingContext2D, offsetX: 
       renderCtx.globalAlpha = prevAlpha;
     });
   }
+
+  renderDungeonPortals(renderCtx, offsetX, offsetY, tileEditor);
+  renderMapChests(renderCtx, offsetX, offsetY, tileEditor);
+}
+
+function drawObjectLabel(renderCtx: CanvasRenderingContext2D, tileEditor: any, type: string, name: string, labelX: number, labelY: number, offsetX: number, offsetY: number, color: string) {
+  renderCtx.font = 'bold 13px monospace';
+  renderCtx.textAlign = 'center';
+  renderCtx.textBaseline = 'middle';
+  const textWidth = renderCtx.measureText(name).width;
+  const textHeight = 16;
+  renderCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+  renderCtx.fillRect(labelX - textWidth / 2 - 4, labelY - textHeight / 2 - 2, textWidth + 8, textHeight + 4);
+  renderCtx.fillStyle = color;
+  renderCtx.fillText(name, labelX, labelY);
+  if (tileEditor) {
+    tileEditor.setLabelCoords(name, type, labelX + offsetX - textWidth / 2 - 4, labelY + offsetY - textHeight / 2 - 2, textWidth + 8, textHeight + 4);
+  }
+}
+
+function drawObjectDeleteButton(renderCtx: CanvasRenderingContext2D, tileEditor: any, type: string, name: string, buttonX: number, buttonY: number) {
+  const buttonSize = 16;
+  renderCtx.fillStyle = 'rgba(255, 100, 100, 0.9)';
+  renderCtx.fillRect(buttonX, buttonY, buttonSize, buttonSize);
+  renderCtx.strokeStyle = 'rgba(200, 50, 50, 1)';
+  renderCtx.lineWidth = 1.5;
+  renderCtx.strokeRect(buttonX, buttonY, buttonSize, buttonSize);
+  renderCtx.strokeStyle = 'rgba(255, 255, 255, 1)';
+  renderCtx.beginPath();
+  renderCtx.moveTo(buttonX + 3, buttonY + 3);
+  renderCtx.lineTo(buttonX + buttonSize - 3, buttonY + buttonSize - 3);
+  renderCtx.moveTo(buttonX + buttonSize - 3, buttonY + 3);
+  renderCtx.lineTo(buttonX + 3, buttonY + buttonSize - 3);
+  renderCtx.stroke();
+  if (tileEditor) tileEditor.setDeleteButtonCoords(type, name, buttonX, buttonY, buttonSize);
+}
+
+function isEditorSelected(tileEditor: any, type: string, name: string): boolean {
+  return !!tileEditor && tileEditor.getSelectedObject?.() === type && tileEditor.getSelectedObjectName?.() === name;
+}
+
+// Dungeon portals: rectangles like warps, in purple
+function renderDungeonPortals(renderCtx: CanvasRenderingContext2D, offsetX: number, offsetY: number, tileEditor: any) {
+  const portals = window.mapData?.dungeonPortals;
+  if (!portals || typeof portals !== 'object') return;
+  const visible = !tileEditor || tileEditor.isObjectLayerVisible('DungeonPortals');
+  Object.entries(portals).forEach(([key, data]: [string, any]) => {
+    const name = Array.isArray(portals) ? String(data?.name ?? key) : key;
+    const x = data?.position?.x || 0;
+    const y = data?.position?.y || 0;
+    const width = data?.size?.width || 32;
+    const height = data?.size?.height || 32;
+    const isSelected = isEditorSelected(tileEditor, 'DungeonPortals', name);
+    const prevAlpha = renderCtx.globalAlpha;
+    renderCtx.save();
+    if (isSelected) {
+      renderCtx.fillStyle = 'rgba(190, 130, 255, 0.2)';
+      renderCtx.fillRect(x - 5, y - 5, width + 10, height + 10);
+    }
+    renderCtx.globalAlpha = visible ? 1.0 : 0;
+    renderCtx.strokeStyle = isSelected ? 'rgba(220, 180, 255, 1)' : 'rgba(170, 90, 255, 0.8)';
+    renderCtx.lineWidth = isSelected ? 3 : 2;
+    renderCtx.strokeRect(x, y, width, height);
+    renderCtx.fillStyle = 'rgba(110, 50, 180, 1)';
+    const markerSize = isSelected ? 6 : 4;
+    [[x, y], [x + width, y], [x, y + height], [x + width, y + height]].forEach(([cx, cy]) => {
+      renderCtx.fillRect(cx - markerSize / 2, cy - markerSize / 2, markerSize, markerSize);
+    });
+    if (isSelected) {
+      const edge = 5;
+      renderCtx.fillStyle = 'rgba(100, 255, 100, 1)';
+      renderCtx.fillRect(x + width / 2 - edge / 2, y - edge / 2, edge, edge);
+      renderCtx.fillRect(x + width / 2 - edge / 2, y + height - edge / 2, edge, edge);
+      renderCtx.fillStyle = 'rgba(255, 100, 100, 1)';
+      renderCtx.fillRect(x - edge / 2, y + height / 2 - edge / 2, edge, edge);
+      renderCtx.fillRect(x + width - edge / 2, y + height / 2 - edge / 2, edge, edge);
+    }
+    drawObjectLabel(renderCtx, tileEditor, 'DungeonPortals', name, x + width / 2, y - 12, offsetX, offsetY, 'rgba(210, 170, 255, 1)');
+    if (isSelected) drawObjectDeleteButton(renderCtx, tileEditor, 'DungeonPortals', name, x + width + 4, y + height + 4);
+    renderCtx.restore();
+    renderCtx.globalAlpha = prevAlpha;
+  });
+}
+
+// Placed chests: a small chest drawn centred on its position, like a graveyard
+function renderMapChests(renderCtx: CanvasRenderingContext2D, offsetX: number, offsetY: number, tileEditor: any) {
+  const chests = window.mapData?.chests;
+  if (!chests || typeof chests !== 'object') return;
+  const visible = !tileEditor || tileEditor.isObjectLayerVisible('Chests');
+  const width = 18;
+  const height = 14;
+  Object.entries(chests).forEach(([key, data]: [string, any]) => {
+    const name = Array.isArray(chests) ? String(data?.name ?? key) : key;
+    const x = data?.position?.x || 0;
+    const y = data?.position?.y || 0;
+    const isSelected = isEditorSelected(tileEditor, 'Chests', name);
+    const prevAlpha = renderCtx.globalAlpha;
+    renderCtx.save();
+    if (isSelected) {
+      renderCtx.fillStyle = 'rgba(100, 200, 255, 0.3)';
+      renderCtx.beginPath();
+      renderCtx.arc(x, y, 25, 0, Math.PI * 2);
+      renderCtx.fill();
+    }
+    renderCtx.globalAlpha = visible ? 1.0 : 0;
+    renderCtx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    renderCtx.fillRect(x - width / 2 + 1, y - height / 2 + 1, width, height);
+    renderCtx.fillStyle = isSelected ? 'rgba(160, 110, 60, 0.95)' : 'rgba(120, 75, 35, 0.95)';
+    renderCtx.strokeStyle = isSelected ? 'rgba(230, 200, 120, 1)' : 'rgba(70, 40, 15, 1)';
+    renderCtx.lineWidth = isSelected ? 2.5 : 1.5;
+    renderCtx.fillRect(x - width / 2, y - height / 2, width, height);
+    renderCtx.strokeRect(x - width / 2, y - height / 2, width, height);
+    renderCtx.strokeStyle = 'rgba(70, 40, 15, 1)';
+    renderCtx.lineWidth = 1;
+    renderCtx.beginPath();
+    renderCtx.moveTo(x - width / 2, y - 2);
+    renderCtx.lineTo(x + width / 2, y - 2);
+    renderCtx.stroke();
+    renderCtx.fillStyle = 'rgba(230, 190, 80, 1)';
+    renderCtx.fillRect(x - 2, y - 4, 4, 5);
+    drawObjectLabel(renderCtx, tileEditor, 'Chests', name, x, y - height / 2 - 12, offsetX, offsetY, 'rgba(240, 210, 140, 1)');
+    if (isSelected) drawObjectDeleteButton(renderCtx, tileEditor, 'Chests', name, x + width / 2 + 8, y + height / 2 + 8);
+    renderCtx.restore();
+    renderCtx.globalAlpha = prevAlpha;
+  });
 }
 
 function recordChunkLoadTime(chunkKey: string) {
@@ -1193,11 +1386,25 @@ function animationLoop() {
 
   smoothPlayerRenderPositions(playersArray, now);
 
+  // Who is going into or coming out of a portal: drawn walking on into it, or out of it (portaltransit.ts). Seen before
+  // the camera, which keeps with the local player along such a walk.
+  const transitNow = performance.now();
+  observeTransit(playersArray, transitNow);
+  prepareLanding(transitNow);
+
   tickCutscene(now);
-  updateCamera(currentPlayer, deltaTime * 60);
+  updateCamera(currentPlayer, deltaTime * 60, currentPlayer?.renderPosition ? transit.cameraAt(transitNow, currentPlayer.renderPosition) : undefined);
 
   (window as any).cameraX = cameraX;
   (window as any).cameraY = cameraY;
+
+  // The keys held through a portal do not walk until let go (portaltransit.ts HeldKeys): the far side is stood on,
+  // facing down, not walked straight back up into the portal. Seen every frame, so a key let go is let go.
+  if (transit.warps !== heldWarps) {
+    heldWarps = transit.warps;
+    heldThroughWarp.hold(pressedKeys, !!getStickDirection());
+  }
+  const walkKeys = heldThroughWarp.free(pressedKeys);
 
   if (!getMovementAllowed()) lastDirection = "";
 
@@ -1208,7 +1415,7 @@ function animationLoop() {
       return;
     }
 
-    const keys = pressedKeys;
+    const keys = walkKeys;
     let dir = "";
     if (keys.has("KeyW") && keys.has("KeyA")) dir = "UPLEFT";
     else if (keys.has("KeyW") && keys.has("KeyD")) dir = "UPRIGHT";
@@ -1385,6 +1592,7 @@ function animationLoop() {
   }
 
   renderGroundAoeZones(ctx, deltaTime);
+  renderDungeonPortalGround(ctx, performance.now());
 
   renderSkeletons(ctx);
   // Footprints lie on the ground, under every character and under the water's waves (footprints.ts)
@@ -1453,39 +1661,94 @@ function animationLoop() {
       ghostCtx.imageSmoothingEnabled = false;
     }
 
+    // Chests lie on the ground, under everyone standing.
+    (window as any).renderLootChests?.(ctx, cameraX, cameraY, cachedPlayerId);
+
     const targetedCreature = parseCreatureTarget(cache.targetId);
     const standing: Standing[] = [];
+    // Those walking through a portal whose feet are past its plane: drawn in its opening, on its picture (portalfx.ts).
+    const through: PortalWalker[] = [];
     const scene = ctx;
     for (const npc of visibleNpcs) {
       standing.push({
         feet: spriteOccluder((npc as any).layeredAnimation, (npc as any).staticImage, npc.position.x, npc.position.y, 1)[4],
-        draw: () => npc.show(scene),
+        x: npc.position.x,
+        draw: (into = scene) => npc.show(into),
       });
     }
     for (const p of visiblePlayers) {
-      const context = p.isGhost && ghostCtx ? ghostCtx : scene;
+      const ghost = p.isGhost && ghostCtx ? ghostCtx : null;
+      // On a walk out of a portal they are drawn along it, and not at all until past its plane; gone into one, not here.
+      const at = transit.drawnAt(String(p.id), transitNow, p.renderPosition);
+      if (!at) continue;
+      const out = transit.walkOutOf(String(p.id));
+      if (out && at.y + PLAYER_FEET < out.foot) {
+        through.push({ portal: out.portal, anim: p.layeredAnimation, x: at.x, y: at.y });
+        continue;
+      }
+      const walked = at !== p.renderPosition;
       standing.push({
-        feet: p.renderPosition.y + PLAYER_FEET,
+        feet: at.y + PLAYER_FEET,
         own: p.id === cachedPlayerId,
-        draw: () => p.show(context, currentPlayer),
+        x: at.x,
+        draw: (into = scene) => walked ? showAt(p, at.x, at.y, ghost ?? into, currentPlayer) : p.show(ghost ?? into, currentPlayer),
+      });
+    }
+    // Those walking on into a portal, each where that walk is now, in front of its arch until they pass its plane,
+    // then in its opening, walking up into it. One who has left the world is still animated here.
+    for (const gone of transit.walkersAt(transitNow)) {
+      const p = gone.ref;
+      if (!p?.show || !isInView(gone.x, gone.y)) continue;
+      steerWalkInPose(p, gone.walk, changeLayeredAnimation);
+      if (p.layeredAnimation && !playersArray.includes(p)) updateLayeredAnimation(p.layeredAnimation, deltaTime);
+      if (gone.y + PLAYER_FEET < gone.foot) {
+        through.push({ portal: gone.portal, anim: p.layeredAnimation, x: gone.x, y: gone.y });
+        continue;
+      }
+      const ghost = p.isGhost && ghostCtx ? ghostCtx : null;
+      standing.push({
+        feet: gone.y + PLAYER_FEET,
+        own: p.id === cachedPlayerId,
+        x: gone.x,
+        draw: (into = scene) => showAt(p, gone.x, gone.y, ghost ?? into, currentPlayer),
+      });
+    }
+    // The local player between their walk in and their walk out, standing on the portal's plane, never gone.
+    const waiting = transit.waitingAt(transitNow);
+    if (waiting?.ref?.show && isInView(waiting.x, waiting.y)) {
+      const p = waiting.ref;
+      steerWaitPose(p, waiting.key, changeLayeredAnimation);
+      if (p.layeredAnimation && !playersArray.includes(p)) updateLayeredAnimation(p.layeredAnimation, deltaTime);
+      const ghost = p.isGhost && ghostCtx ? ghostCtx : null;
+      standing.push({
+        feet: waiting.y + PLAYER_FEET,
+        own: true,
+        x: waiting.x,
+        draw: (into = scene) => showAt(p, waiting.x, waiting.y, ghost ?? into, currentPlayer),
       });
     }
     for (const c of stepCreatures(isInView)) {
       if (cutsceneHidesCreatures()) continue;
       if (c.state === "dead") drawCreature(scene, c, c.id === targetedCreature);
-      else standing.push({ feet: creatureFeetY(c), draw: () => drawCreature(scene, c, c.id === targetedCreature) });
+      else standing.push({ feet: creatureFeetY(c), x: c.renderX, draw: (into = scene) => drawCreature(into, c, c.id === targetedCreature) });
     }
     // Mailboxes stand among them, at their foot.
     for (const box of (window as any).mailboxesHere?.(String(window.mapData?.name ?? "")) ?? []) {
-      standing.push({ feet: box.y, draw: () => (window as any).drawMailbox?.(scene, box) });
+      standing.push({ feet: box.y, draw: (into = scene) => (window as any).drawMailbox?.(into, box) });
     }
+    // Summoning stones stand among them, at their foot; the shadows they cast lie on the ground, under everyone standing.
+    drawStoneShadows(scene);
+    for (const stone of standingStones()) standing.push({ feet: stone.feet, prop: true, draw: (into = scene) => stone.draw(into) });
     // Gathering nodes stand among them too, with the gathering editor's preview spots.
-    for (const node of standingGatherNodes()) standing.push({ feet: node.feet, draw: () => node.draw(scene) });
+    for (const node of standingGatherNodes()) standing.push({ feet: node.feet, draw: (into = scene) => node.draw(into) });
+    // Dungeon portals stand among them, at their foot.
+    setPortalWalkers(through, transit.travellers());
+    for (const portal of standingDungeonPortals(scene, performance.now())) standing.push(portal);
     stepTornadoes(deltaTime, smoothMapX, smoothMapY);
     if (!MOBILE_RENDERER && aboveCtx) {
-      for (const twister of standingTornadoes()) standing.push({ feet: twister.feet, draw: () => twister.draw(scene) });
+      for (const twister of standingTornadoes()) standing.push({ feet: twister.feet, draw: (into = scene) => twister.draw(into) });
     }
-    for (const character of backToFront(standing)) character.draw();
+    for (const character of backToFront(standing)) drawStanding(scene, character);
 
     drawFloatingTexts(ctx, (playerId) => {
       const p = playersArray.find((pl: any) => pl.id === playerId);
@@ -1496,8 +1759,6 @@ function animationLoop() {
     renderGatherPreviewArea(ctx);
 
     renderLoot(ctx, cameraX, cameraY, canvas.width, canvas.height, cachedPlayerId);
-
-    (window as any).renderLootChests?.(ctx, cameraX, cameraY, cachedPlayerId);
 
     const now = performance.now();
     for (let i = cache.projectiles.length - 1; i >= 0; i--) {
@@ -1725,6 +1986,20 @@ function animationLoop() {
     aboveCtx.clearRect(0, 0, aboveCanvas.width, aboveCanvas.height);
     aboveCtx.setTransform(ctx.getTransform());
     aboveCtx.imageSmoothingEnabled = false;
+  }
+
+  // Other players' cast bars: cleared every frame and drawn in the world's place, above the light layer.
+  if (castbarCanvas && castbarCtx) {
+    if (castbarCanvas.width !== canvas.width || castbarCanvas.height !== canvas.height) {
+      castbarCanvas.width = canvas.width;
+      castbarCanvas.height = canvas.height;
+      castbarCanvas.style.width = canvas.style.width;
+      castbarCanvas.style.height = canvas.style.height;
+    }
+    castbarCtx.setTransform(1, 0, 0, 1, 0, 0);
+    castbarCtx.clearRect(0, 0, castbarCanvas.width, castbarCanvas.height);
+    castbarCtx.setTransform(ctx.getTransform());
+    castbarCtx.imageSmoothingEnabled = false;
   }
 
   // The debug layer: cleared every frame and drawn in the world's place, like the layer above.
@@ -2360,11 +2635,17 @@ function animationLoop() {
     }
     if (bubbleCtx !== ctx) bubbleCtx.restore();
 
+    const barCtx = castbarCtx ?? ctx;
+    if (barCtx !== ctx) {
+      barCtx.save();
+      barCtx.translate(offsetX, offsetY);
+    }
     for (const p of visiblePlayers) {
       if (p.id !== cachedPlayerId) {
-        p.showCastbar(ctx);
+        p.showCastbar(barCtx);
       }
     }
+    if (barCtx !== ctx) barCtx.restore();
 
     ctx.restore();
   }

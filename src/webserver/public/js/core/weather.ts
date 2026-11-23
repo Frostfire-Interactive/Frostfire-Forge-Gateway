@@ -4,6 +4,7 @@ import {
   calculateWindSpeed
 } from "./windphysics.ts";
 import { windStreaks } from "./windstreaks.ts";
+import { windGust } from "./windgust.ts";
 import { drawSandstorm } from "./sandstorm.ts";
 import { drawBlizzard } from "./blizzard.ts";
 import { drawFog } from "./fog.ts";
@@ -602,7 +603,8 @@ function weather(type: string, weatherData?: any): void {
     cameraX: viewX, cameraY: viewY, width: viewWidth, height: viewHeight, focusX, focusY,
   });
 
-  windStreaks(weatherCtx, deltaMs, windSpeed * (1 - Math.max(sandstorm, blizzard)), windDirection, viewX, viewY, viewWidth, viewHeight, buffer / zoom);
+  // The streaks gust on their own slow, uneven curve (windGust), which the wind sound follows too.
+  windStreaks(weatherCtx, deltaMs, (Number(baseWindSpeed) || 0) * (1 - Math.max(sandstorm, blizzard)), windGust(currentTime / 1000), windDirection, viewX, viewY, viewWidth, viewHeight, buffer / zoom);
   weatherCtx.restore();
 }
 
@@ -615,12 +617,12 @@ function rainAmount(type: string | null, weatherData?: any): number {
 }
 const WIND_FULL = 40, WIND_CURVE = 1, PITCH_LOW = 0.85, PITCH_HIGH = 1.15, WIND_GLIDE = 0.35;
 const WIND_DIRECTIONS = ["left", "right", "up", "down"];
-/** How fast the wind blows now with its gust, mph: 0 when it has no direction. */
+/** How fast the wind blows now with its gust (the same gust the wind streaks show), mph: 0 when it has no direction. */
 function windSpeed(type: string | null, weatherData?: any): number {
   if (!type) return 0;
   const direction = String(weatherData?.wind_direction ?? "").trim().toLowerCase();
   if (!WIND_DIRECTIONS.includes(direction)) return 0;
-  return Math.max(0, calculateWindSpeed(Number(weatherData?.wind_speed) || 0, windBurst.getIntensity()));
+  return Math.max(0, calculateWindSpeed(Number(weatherData?.wind_speed) || 0, windGust(performance.now() / 1000)));
 }
 type SoundKind = "rain" | "wind";
 interface WeatherSoundEntry { name: string; from: number; to: number; volume: number }

@@ -1,7 +1,7 @@
 import { qualityOf } from "./itemframe.js";
 import { EditorShell, type ListRow, type RecordState } from "./tooleditor.js";
 import { FieldRenderer, coinWords, setFieldError, sheetOptions, type AssetOption, type Field } from "./toolfields.js";
-import { button, card, count, el, note, noticeDialog, shown, tag, thumb, toast, words } from "./toolkit.js";
+import { button, card, count, el, noticeDialog, shown, tag, thumb, toast, words } from "./toolkit.js";
 
 const DEFAULT_TYPES = ["consumable", "equipment", "material", "quest", "miscellaneous"];
 const DEFAULT_QUALITIES = ["common", "uncommon", "rare", "epic", "legendary"];
@@ -42,10 +42,6 @@ const PROBLEM_FIELDS: Array<[RegExp, string]> = [
   [/^Only equipment can be equipable/, "equipable"],
   [/^Level requirement /, "level_requirement"],
   [/^Bag slots /, "bag_slots"],
-  [/^Minimum damage /, "damage_min"],
-  [/^Maximum damage /, "damage_max"],
-  [/^Attack speed /, "attack_speed_ms"],
-  [/^Weapon damage and speed only apply/, "equipment_slot"],
   [/^Sell price /, "sell_price"],
   [/^Buy price /, "buy_price"],
   [/^(What a consumable restores|A consumable must restore)/, "restore_health"],
@@ -85,7 +81,6 @@ class ItemEditorBridge {
 
   /** The parts of the page that follow the fields as they are typed in. */
   private asideEl: HTMLElement | null = null;
-  private weaponEl: HTMLElement | null = null;
   private headThumb: { key: string; node: HTMLElement } | null = null;
 
   private shell = new EditorShell({
@@ -206,7 +201,7 @@ class ItemEditorBridge {
   private tabOf(key: string): string {
     if (key.startsWith("stat_")) return "stats";
     if (key === "level_requirement") return this.draft?.type === "equipment" ? "equipment" : "general";
-    return ["equipable", "equipment_slot", "sprite_sheet", "damage_min", "damage_max", "attack_speed_ms", "bag_slots"].includes(key) ? "equipment" : "general";
+    return ["equipable", "equipment_slot", "sprite_sheet", "bag_slots"].includes(key) ? "equipment" : "general";
   }
 
   private problemsByTab(): Record<string, number> {
@@ -278,20 +273,9 @@ class ItemEditorBridge {
     }
   }
 
-  /** Weapon / bag fields, shown in their own card under the slot. */
+  /** Bag fields, shown in their own card under the slot. */
   private slotFields(): { title: string; lead: string; fields: Field[] } | null {
     if (this.tab !== "equipment" || !this.draft?.equipable) return null;
-    if (this.draft.equipment_slot === "weapon") {
-      return {
-        title: "Weapon",
-        lead: "What a swing of it does",
-        fields: [
-          { key: "damage_min", label: "Minimum damage per swing", type: "number", hint: "Leave both empty to use the Damage stat instead." },
-          { key: "damage_max", label: "Maximum damage per swing", type: "number" },
-          { key: "attack_speed_ms", label: "Swing speed", type: "number", unit: "ms", hint: "Its attack speed: milliseconds between swings. Lower is faster." },
-        ],
-      };
-    }
     if (this.draft.equipment_slot === "bag") {
       return { title: "Bag", lead: "", fields: [{ key: "bag_slots", label: "Bag slots", type: "number", hint: "Extra inventory slots it gives." }] };
     }
@@ -323,7 +307,6 @@ class ItemEditorBridge {
       stat_armor: null, stat_damage: null, stat_critical_chance: null, stat_critical_damage: null,
       stat_health: null, stat_stamina: null, stat_avoidance: null, level_requirement: 1,
       equipable: false, equipment_slot: null, bag_slots: null,
-      damage_min: null, damage_max: null, attack_speed_ms: null,
       // What a vendor pays for one, in copper.
       sell_price: 1,
       // What a vendor charges for one, in copper.
@@ -433,7 +416,7 @@ class ItemEditorBridge {
 
   private renderForm(): void {
     this.chrome();
-    this.asideEl = this.weaponEl = null;
+    this.asideEl = null;
     if (!this.ready) return;
     if (!this.draft) {
       const box = this.shell.idle("Search for an item on the left to edit it, or start a new one.", this.total === 0 ? "Start the first one." : null);
@@ -461,11 +444,6 @@ class ItemEditorBridge {
     if (slot) {
       const slotGrid = this.section(main, slot.title, slot.lead);
       for (const field of slot.fields) slotGrid.appendChild(this.field(field));
-      if (slot.title === "Weapon") {
-        this.weaponEl = el("div", "tl-field-wide");
-        slotGrid.appendChild(this.weaponEl);
-        this.paintWeapon();
-      }
     }
 
     this.asideEl = aside;
@@ -498,24 +476,7 @@ class ItemEditorBridge {
       this.shell.setProblems(this.problems, false);
     }
     this.chrome();
-    this.paintWeapon();
     this.paintAside();
-  }
-
-  /** What the weapon actually does in combat, so the numbers are not abstract. */
-  private paintWeapon(): void {
-    if (!this.weaponEl || this.draft?.equipment_slot !== "weapon") return;
-    const min = Number(this.draft.damage_min) || 0;
-    const max = Number(this.draft.damage_max) || 0;
-    const speed = Number(this.draft.attack_speed_ms) || 2000;
-    let text: string;
-    if (min <= 0 && max <= 0) text = "No damage range set: swings fall back to the item's damage stat.";
-    else {
-      const dps = ((min + max) / 2) / (speed / 1000);
-      text = `${min} to ${max} damage every ${(speed / 1000).toFixed(1)} seconds: ${dps.toFixed(1)} per second before stats. `
-        + `Damage stats are scaled by swing speed, so this weapon gets ${(speed / 2000).toFixed(2)} times their value.`;
-    }
-    this.weaponEl.replaceChildren(note(text, "plain", "sword"));
   }
 
   /** The item at a glance, beside the form: its icon in its frame, its name in its colour, and what it gives. */
@@ -535,11 +496,6 @@ class ItemEditorBridge {
     box.appendChild(head);
 
     const line = (text: string, kind = "") => box.appendChild(el("div", "tl-preview-line" + (kind ? ` tl-preview-line-${kind}` : ""), text));
-    const min = Number(d.damage_min) || 0;
-    const max = Number(d.damage_max) || 0;
-    if (d.equipable && d.equipment_slot === "weapon" && (min > 0 || max > 0)) {
-      line(`${min} to ${max} damage, one swing every ${((Number(d.attack_speed_ms) || 2000) / 1000).toFixed(1)} seconds`);
-    }
     if (d.equipable && d.equipment_slot === "bag" && Number(d.bag_slots) > 0) line(`${count(Number(d.bag_slots), "extra inventory slot")}`);
     for (const [key, label, unit] of STATS) {
       const value = Number(d[key]);

@@ -15,17 +15,13 @@ export type BadgeStyle = {
   nudge: number;
 };
 
-/** White ring and letter: the NPC, corpse, mailbox and gathering badges. */
+/** White ring and letter: the NPC, corpse, chest, mailbox and gathering badges. */
 export const PLAIN_BADGE: BadgeStyle = {
   radius: 10, font: 11, fill: "rgba(0, 0, 0, 0.6)", ring: "#FFFFFF", ringWidth: 1.5, text: "#FFFFFF", shadow: 3, nudge: 0.5,
 };
 /** Larger, a softer ring: the loot badge. */
 export const LOOT_BADGE: BadgeStyle = {
   radius: 14, font: 12, fill: "rgba(0, 0, 0, 0.65)", ring: "rgba(255, 255, 255, 0.6)", ringWidth: 2, text: "#FFFFFF", shadow: 0, nudge: 0,
-};
-/** Gold: the chest badge. */
-export const CHEST_BADGE: BadgeStyle = {
-  radius: 15, font: 12, fill: "rgba(0, 0, 0, 0.65)", ring: "rgba(255, 215, 0, 0.8)", ringWidth: 2, text: "#FFD700", shadow: 0, nudge: 0,
 };
 
 /** The key an action is bound to, as a badge shows it. */

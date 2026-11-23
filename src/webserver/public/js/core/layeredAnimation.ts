@@ -395,13 +395,14 @@ export function updateLayeredAnimation(
       layer.currentFrame = 0;
     }
 
-    const currentFrame = layer.frames[layer.currentFrame];
-    if (!currentFrame) continue;
+    if (!layer.frames[layer.currentFrame]) continue;
 
-    const frameDuration = currentFrame.delay || 125;
-
-    // Advance frame when enough time has elapsed
-    if (now - layer.lastFrameTime >= frameDuration) {
+    // Advance every frame whose time has passed; after a long gap (hidden tab)
+    // drop the backlog instead of replaying it one frame per tick.
+    for (let steps = 0; ; steps++) {
+      const frameDuration = layer.frames[layer.currentFrame]?.delay || 125;
+      if (now - layer.lastFrameTime < frameDuration) break;
+      if (steps >= layer.frames.length) { layer.lastFrameTime = now; break; }
       layer.currentFrame = (layer.currentFrame + 1) % layer.frames.length;
       layer.lastFrameTime += frameDuration;
     }

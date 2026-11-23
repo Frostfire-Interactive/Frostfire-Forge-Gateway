@@ -15,6 +15,7 @@ Frostfire Forge ships its content tools inside the game client. An admin logs in
 | [Spell Editor](#/tools/spell-editor) | `/se` or `/spelleditor` | `/spell-editor` | Admin role, `tools.spell_editor`, `tools.*`, `server.admin` or `server.*` |
 | [Weather Editor](#/tools/weather-editor) | `/we` or `/weathereditor` | `/weather-editor` | Admin role, `tools.weather_editor`, `tools.*`, `server.admin` or `server.*` |
 | [Class Editor](#/tools/class-editor) | `/cle` or `/classeditor` | `/class-editor` | Admin role, `tools.class_editor`, `tools.*`, `server.admin` or `server.*` |
+| [Dungeon Tool](#/tools/dungeon-tool) | `/de`, `/dungeoneditor`, `/poe` or `/portaleditor` | `/dungeon-editor` | Admin role, `tools.dungeon_editor`, `tools.*`, `server.admin` or `server.*` |
 | [Mailbox Editor](#/tools/mailbox-editor) | `/mailbox` | `/mailbox-editor` | Admin role, `tools.mailbox_editor`, `tools.*`, `server.admin` or `server.*` |
 | [Gathering Editor](#/tools/gathering-editor) | `/gathering` | `/gathering-editor` | Admin role, `tools.gathering`, `tools.*`, `server.admin` or `server.*` |
 | [Achievement Editor](#/tools/achievement-editor) | `/achievements` | `/achievement-editor` | Admin role, `tools.achievement_editor`, `tools.*`, `server.admin` or `server.*` |
@@ -32,6 +33,8 @@ Frostfire Forge ships its content tools inside the game client. An admin logs in
 One more tool runs outside the game: [Frostfire Worlds for Tiled](#/tools/tiled-worlds), an extension for the Tiled map editor that edits large `.world` maps region by region and saves straight into the world's files. It needs no chat command and no permission, only access to the maps folder.
 
 Commands are not case sensitive. Typing a tool's command again while it is open closes it. The player editor is the exception: its command opens the editor on the player you name.
+
+**The staff bar.** If you may open at least one tool, a small panel of buttons floats near the right edge of the game screen, one button for each tool you may open. Drag the panel by the top of its frame to move it anywhere on the screen. The arrow in the middle of its top folds the panel down to just the top of the frame, and the same arrow opens it again. Your browser remembers where you put the panel and whether it is minimized. Hover a button to see the tool's name and its chat command. A button sends the tool's chat command for you, so it opens and closes the tool just as typing the command does. The Player Editor button opens the editor on your own character, and you can search for another player from there. The server works out the bar when you log in, so after your role or permissions change, log in again to see the new set.
 
 :::note The permission column is what the code checks
 The engine README lists a single `tools.<name>` permission per editor. The table above shows what the server needs to open each tool. Some editors also accept the admin role or a `server.*` permission, some do not. The map, NPC and particle editor commands check the named permission only, so an admin without it is refused. Three editors ask for more when you save: see [Opening is not the same as saving](#/tools/overview/opening-is-not-the-same-as-saving).
@@ -82,6 +85,8 @@ Tool access is decided by the game server from two things on your account:
 | `tools.spell_editor` | Spell Editor |
 | `tools.weather_editor` | Weather Editor |
 | `tools.class_editor` | Class Editor |
+| `tools.dungeon_editor` | Dungeon Tool (every tab) |
+| `tools.portal_editor` | Nothing any more (still seeded) |
 | `tools.quest_editor` | Quest Editor |
 | `tools.mailbox_editor` | Mailbox Editor |
 | `tools.gathering` | Gathering Editor |

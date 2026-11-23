@@ -1,0 +1,20 @@
+/* The Dungeon Tool's own lines; everything else is tools.css. */
+.dg-sizes .tl-checks { grid-template-columns: repeat(2, max-content); gap: 0 var(--s-5); }
+
+/* The portal colour: a swatch that opens the system's picker, its code, and the way back to the type's colour. */
+.pe-colour { display: flex; gap: var(--s-2); min-width: 0; align-items: center; }
+.pe-colour-swatch {
+  position: relative;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--pe-colour, #000);
+  box-shadow: inset 0 0 0 2px var(--bg);
+}
+.pe-colour-swatch:hover { border-color: rgba(148, 163, 184, 0.45); }
+.pe-colour-swatch:focus-within { border-color: var(--accent); }
+.pe-colour-swatch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; }
+.pe-colour-code { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: var(--t-sm); }
+.pe-colour .tl-btn[hidden] { display: none; }

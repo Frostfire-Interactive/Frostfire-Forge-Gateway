@@ -1,4 +1,7 @@
 import { TELEPORT_PX, getTickMs, positionAt, pushSample } from "./movementsmoothing.ts";
+import { archBlocksStep, archesOnMap } from "./portalarch.ts";
+import { stoneBlocksStep, stonesAt } from "./stoneblock.ts";
+import { stonesOnMap } from "./stonelist.ts";
 
 /** px a second at 30 Hz: 6 px a tick, as the engine's MOVEXY handler steps. */
 export const WALK_SPEED_PX_S = 180;
@@ -43,9 +46,16 @@ export interface WalkMap {
   tileheight: number;
   chunkSize: number;
   loadedChunks: ReadonlyMap<string, { width: number; layers: ReadonlyArray<{ name?: string; data?: ArrayLike<number> }> }>;
+  /** The map's portals: the arches they stand in are solid (core/portalarch.ts). */
+  dungeonPortals?: unknown;
+  /** The map's summoning stones: they are solid too (core/stoneblock.ts). */
+  summoningStones?: unknown;
 }
 
-export function blockedAt(map: WalkMap | null | undefined, x: number, y: number): boolean {
+/** Whether the player's box at (x, y) is on a wall tile, or a step there (from `from`, when known) walks onto a portal's arch. */
+export function blockedAt(map: WalkMap | null | undefined, x: number, y: number, from?: { x: number; y: number }): boolean {
+  if (map?.dungeonPortals && archBlocksStep(archesOnMap(map.dungeonPortals), from ?? null, { x, y })) return true;
+  if (map?.summoningStones && stoneBlocksStep(stonesAt(stonesOnMap(map.summoningStones).map((st) => ({ position: { x: st.x, y: st.y } }))), from ?? null, { x, y })) return true;
   if (!map || !(map.tilewidth > 0) || !(map.tileheight > 0) || !(map.chunkSize > 0)) return false;
   const left = Math.floor((x - PLAYER_WIDTH / 2 + MARGIN) / map.tilewidth);
   const right = Math.floor((x + PLAYER_WIDTH / 2 - MARGIN) / map.tilewidth);
@@ -71,7 +81,7 @@ export function walkStep(
   direction: string,
   dtMs: number,
   mounted: boolean,
-  blocked: (x: number, y: number) => boolean,
+  blocked: (x: number, y: number, from: { x: number; y: number }) => boolean,
 ): { x: number; y: number } {
   const unit = UNITS[direction];
   if (!unit || !(dtMs > 0)) return { x: from.x, y: from.y };
@@ -79,10 +89,10 @@ export function walkStep(
   // The engine steps 6 px on each axis of a diagonal (the same px, not a unit vector).
   const nx = from.x + unit[0] * distance;
   const ny = from.y + unit[1] * distance;
-  if (!blocked(nx, ny)) return { x: nx, y: ny };
+  if (!blocked(nx, ny, from)) return { x: nx, y: ny };
   if (unit[0] !== 0 && unit[1] !== 0) {
-    if (!blocked(nx, from.y)) return { x: nx, y: from.y };
-    if (!blocked(from.x, ny)) return { x: from.x, y: ny };
+    if (!blocked(nx, from.y, from)) return { x: nx, y: from.y };
+    if (!blocked(from.x, ny, from)) return { x: from.x, y: ny };
   }
   return { x: from.x, y: from.y };
 }
@@ -112,7 +122,7 @@ export function advanceSelf(player: WalkPlayer, direction: string, dtMs: number,
   const from = carried && Math.abs(carried.x - player.position.x) <= 1 && Math.abs(carried.y - player.position.y) <= 1
     ? carried
     : { x: player.position.x, y: player.position.y };
-  const to = walkStep(from, direction, dtMs, atMountSpeed(player), (x, y) => blockedAt(map, x, y));
+  const to = walkStep(from, direction, dtMs, atMountSpeed(player), (x, y, at) => blockedAt(map, x, y, at));
   player.handoffWalk = to;
   const x = Math.round(to.x);
   const y = Math.round(to.y);

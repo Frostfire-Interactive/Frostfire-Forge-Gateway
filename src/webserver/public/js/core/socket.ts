@@ -14,7 +14,7 @@ import { addLightningStrike } from "./weather.ts";
 import { setTornadoes } from "./tornado.ts";
 import { setupItemTooltip, removeItemTooltip, hideItemTooltip, setupSpellTooltip } from "./tooltip.ts";
 import { startPersistentSpellCooldown } from "./ui.js";
-import { sampleTime, pushSample, pushEcho, setServerTickRate, noteBatch, seedSamples, resetClockEpoch, lastRenderTime, renderHeadroom, getClockOffset, getTickMs } from "./movementsmoothing.ts";
+import { sampleTime, pushSample, pushEcho, setServerTickRate, noteBatch, seedSamples, resetClockEpoch, lastRenderTime, renderHeadroom, getClockOffset, getTickMs, TELEPORT_PX } from "./movementsmoothing.ts";
 import { renderMessageParts } from "./itemlinks.ts";
 import { keepReconnecting, reconnectDelay } from "./reconnect.ts";
 import { audioSettingsApplied } from "./audio.js";
@@ -95,7 +95,8 @@ import { createPlayer } from "./player.ts";
 import { setSelfDead, setSelfGhost, clearSelfDeath, showReviveOfferPopup, hideReviveOfferPopup, noteGhostDestination, setCorpseMarker, clearCorpseMarker, scheduleGraveyardOffer } from "./death.js";
 import { updateFriendsList, updateIgnoredList } from "./friends.ts";
 import { startStatPreview, noteSelfSpritesChanged } from "./preview.js";
-import { createInvitationPopup } from "./invites.ts";
+import { createInvitationPopup, createDungeonSizePopup } from "./invites.ts";
+import { selectedPlayerOf, setFarPartyTarget, setFarPartyTargetAnim, setPartyTarget } from "./partytarget.ts";
 import { showTrade, closeTrade } from "./trade.ts";
 import { showVendor, closeVendor, refreshVendor } from "./vendor.ts";
 import { setMailboxes, showMail, mailSent, setUnreadMail, closeMail, refreshMail } from "./mail.ts";
@@ -155,9 +156,9 @@ import {
 } from "./ui.ts";
 import { updateXp } from "./xp.ts";
 import { createNPC, reinitNpcSprite, sellsThings } from "./npc.ts";
-import { applyCreatureSpawn, applyCreatureDespawn, applyCreatureMove, applyCreatureState, applyCreatureHealth, applyCreatureCombatText, applyCreatureAttackStopped, applyCreatureTap, applyCreatureLootable, applyCreatureXp, applyCreatureCast, applyCreatureCastEnd, applyCreatureAuras, clearCreatures, parseCreatureTarget, creaturePositionFor } from "./creature.ts";
+import { applyCreatureSpawn, applyCreatureDespawn, applyCreatureMove, applyCreatureState, applyCreatureHealth, applyCreatureCombatText, applyCreatureTap, applyCreatureLootable, applyCreatureXp, applyCreatureCast, applyCreatureCastEnd, applyCreatureAuras, clearCreatures, parseCreatureTarget, creaturePositionFor } from "./creature.ts";
 import { CREATURE_MOVE_HEADER, decodeCreatureMoves } from "./creaturemoves.ts";
-import { POSE_DATAGRAM_HEADER, applyPoseDatagram, applyPoseUpdate, poseMark, reapplyPose, sheetPoseState } from "./posepacket.ts";
+import { POSE_DATAGRAM_HEADER, applyPoseDatagram, applyPoseUpdate, faceArrival, poseMark, reapplyPose, sheetPoseState } from "./posepacket.ts";
 import { planSelfSpawn } from "./selfspawn.ts";
 import { layerSheetsChanged } from "./layersheets.ts";
 import { applyClusterDebug, pauseClusterRefresh, requestClusterRefresh, setClusterDebugRequester } from "./clusternodes.ts";
@@ -1725,6 +1726,11 @@ async function handleLoadPlayersPacket(data: any) {
     snapshotRevision = data.snapshotRevision ?? null;
 
     const playerArray = Array.isArray(players) ? players : [];
+    // those a portal just put here walk out of it; any other is just there (portaltransit.ts)
+    if (playerArray.some((p: any) => p?.arrived)) {
+      const { transit } = await import("./portaltransit.js");
+      for (const p of playerArray) if (p?.arrived && String(p.id) !== String(cachedPlayerId)) transit.cameThrough(String(p.id), performance.now());
+    }
 
     for (const player of playerArray) {
       handoffHeld?.seenPlayers.add(player.id);
@@ -2011,6 +2017,15 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     }
     case "EDITOR_SYNC_READY": {
       (window as any).tileEditor?.onSyncReady();
+      break;
+    }
+    case "MAP_OBJECT_OPTIONS_DATA": {
+      (window as any).tileEditor?.mapObjectOptionsData(data);
+      break;
+    }
+    case "MAP_SAVE_RESULT": {
+      // The answer to the map editor's SAVE_MAP: its unsaved marks clear only when the save worked
+      (window as any).tileEditor?.mapSaveResult(data);
       break;
     }
     case "CREATE_MAP_FAILED": {
@@ -2533,6 +2548,10 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       createInvitationPopup(data);
       break;
     }
+    case "DUNGEON_SIZE_CHOICE": {
+      createDungeonSizePopup(data);
+      break;
+    }
     case "UPDATE_FRIENDS": {
       const currentPlayer = cache.players.size
         ? Array.from(cache.players).find((p) => p.id === cachedPlayerId)
@@ -3004,6 +3023,11 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       }
 
       await isLoaded();
+      // one a portal just put here walks out of it; any other is just there (portaltransit.ts)
+      if (data?.arrived && String(data.id) !== String(cachedPlayerId)) {
+        const { transit } = await import("./portaltransit.js");
+        transit.cameThrough(String(data.id), performance.now());
+      }
 
       handoffHeld?.seenPlayers.add(data.id);
       const existingByUsername = Array.from(cache.players).find(
@@ -3490,6 +3514,39 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       import("./classeditor.js").then((m) => m.default.onUpdated(data));
       break;
     }
+    // The Dungeon Tool: one window with the tabs Dungeons, Portals and Summoning stones (/de, /poe open it alike).
+    case "TOGGLE_DUNGEON_EDITOR": {
+      import("./dungeontool.js").then((m) => m.default.toggle());
+      break;
+    }
+    case "DUNGEON_EDITOR_DATA": {
+      import("./dungeontool.js").then((m) => m.default.onData("dungeons", data));
+      break;
+    }
+    case "DUNGEON_EDITOR_RESULT": {
+      import("./dungeontool.js").then((m) => m.default.onResult("dungeons", data));
+      break;
+    }
+    case "DUNGEON_EDITOR_UPDATED": {
+      import("./dungeontool.js").then((m) => m.default.onUpdated(data));
+      break;
+    }
+    case "PORTAL_EDITOR_DATA": {
+      import("./dungeontool.js").then((m) => m.default.onData("portals", data));
+      break;
+    }
+    case "PORTAL_EDITOR_RESULT": {
+      import("./dungeontool.js").then((m) => m.default.onResult("portals", data));
+      break;
+    }
+    case "SUMMON_STONE_EDITOR_DATA": {
+      import("./dungeontool.js").then((m) => m.default.onData("stones", data));
+      break;
+    }
+    case "SUMMON_STONE_EDITOR_RESULT": {
+      import("./dungeontool.js").then((m) => m.default.onResult("stones", data));
+      break;
+    }
     case "PLAYER_EDITOR_OPEN": {
       if (typeof data?.target === "string") import("./playereditor.js").then((m) => m.default.open(data.target));
       break;
@@ -3504,6 +3561,11 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     }
     case "PLAYER_EDITOR_RESULT": {
       import("./playereditor.js").then((m) => m.default.onResult(data));
+      break;
+    }
+    case "STAFF_TOOLS": {
+      // The tools this player may open, sent at login: the staff bar on the right of the screen.
+      import("./stafftoolbar.js").then((m) => m.showStaffTools(data?.tools));
       break;
     }
     case "TOGGLE_CONTROL_PANEL": {
@@ -3551,6 +3613,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       cache.players.forEach((player) => {
         player.targeted = false;
       });
+      setPartyTarget(null);
       cache.targetId = `c:${data.id}`;
       break;
     }
@@ -3588,10 +3651,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     case "CREATURE_LOOT_CONTENTS": {
       if (typeof data?.id !== "number") break;
       import("./creatureloot.js").then(({ showCreatureLoot }) => showCreatureLoot(data.id, data.items || [], data.copper || 0));
-      break;
-    }
-    case "CREATURE_ATTACK_STOPPED": {
-      applyCreatureAttackStopped(data);
       break;
     }
     case "CREATURE_DESPAWN": {
@@ -3669,11 +3728,14 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         if (drawnPoint.held) Object.assign(player.moveSamples[player.moveSamples.length - 1], { held: true, heldUntil: drawnPoint.until });
         // (A held echo leaves the settle armed: it is not the node's walk shown yet.)
         if (playerId == cachedPlayerId && !drawnPoint.held) handoffSettle.cancel();
+        // A warp, not a step (a teleport portal on the same map): they face the way the server says (down) at once.
+        const warped = !!player.serverPosition && Math.hypot(sx - player.serverPosition.x, sy - player.serverPosition.y) >= TELEPORT_PX;
         player.serverPosition.x = sx;
         player.serverPosition.y = sy;
         player.lastServerUpdate = performance.now();
         player.position.x = sx;
         player.position.y = sy;
+        if (warped) void import('./layeredAnimation.js').then(({ changeLayeredAnimation }) => faceArrival(player, moveData?.dr, changeLayeredAnimation));
 
         if (playerId == cachedPlayerId) {
           positionText.innerText = `Position: ${player.serverPosition.x}, ${player.serverPosition.y}`;
@@ -3784,11 +3846,14 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         if (!pushSample(player.moveSamples ??= [], sx, sy, batchTime)) continue;
 
         player.typing = false;
+        // A warp, not a step (as MOVEXY): they face the way the server says at once.
+        const warped = !!player.serverPosition && Math.hypot(sx - player.serverPosition.x, sy - player.serverPosition.y) >= TELEPORT_PX;
         player.serverPosition.x = sx;
         player.serverPosition.y = sy;
         player.lastServerUpdate = performance.now();
         player.position.x = sx;
         player.position.y = sy;
+        if (warped) void import('./layeredAnimation.js').then(({ changeLayeredAnimation }) => faceArrival(player, moveData?.dr, changeLayeredAnimation));
       }
       break;
     }
@@ -3831,6 +3896,18 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     }
     case "LOAD_MAP":
       {
+        // A player by a portal walks on into it, and is not drawn until the next map is shown (portaltransit.ts). That
+        // walk is seen to its end, into the portal's opening, before the last map goes.
+        const { transit } = await import("./portaltransit.js");
+        transit.mapLoading(performance.now());
+        const walkingIn = loaded ? transit.walkInLeft(performance.now()) : 0;
+        if (walkingIn > 0) {
+          movementAllowed = false;
+          await new Promise((resolve) => setTimeout(resolve, walkingIn));
+        }
+        // Nothing of the last map's portals is kept: their pictures, colours and feeds.
+        (await import("./portalfx.js")).resetPortalFx();
+        import("./dungeontool.js").then((m) => m.default.onMapChanged());
         // The node took the login (a SWITCH comes before this): the switches that led here were not a loop.
         lastHandoffDoneAt = null;
         lastHandoffDoneStamp = null;
@@ -3961,6 +4038,15 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         loaded = await loadMap(data);
         // NPCs sent ahead for this map while nearing its warp (held by addStreamedNpc)
         if (loaded) applyPreloadedNpcs();
+        // The player faces the way the server puts them (down, out of a portal) from the first frame there, not the
+        // way they walked in: before the self spawn, and any pose, from the new map. (After the walk in is drawn.)
+        if (loaded) {
+          const arriving = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
+          if (arriving) {
+            const { changeLayeredAnimation } = await import('./layeredAnimation.js');
+            await faceArrival(arriving, data?.direction, changeLayeredAnimation);
+          }
+        }
 
         if (loaded) {
           requestWakeLock();
@@ -3982,6 +4068,51 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         }
       }
       break;
+    case "DUNGEON_PORTAL_PREVIEW_DATA": {
+      const { setPortalPreview } = await import("./portalfx.js");
+      void setPortalPreview(data);
+      break;
+    }
+    // A dungeon or a dungeon portal was saved or deleted: its portals are drawn again from previews asked for anew.
+    case "DUNGEON_PORTALS_CHANGED": {
+      const { forgetPortalPreviews } = await import("./portalfx.js");
+      forgetPortalPreviews();
+      // the Dungeon Tool's Dungeons tab lists the dungeon portals to pick from
+      import("./dungeontool.js").then((m) => m.default.onPortalsChanged());
+      break;
+    }
+    // A frame of the portal peek feed: the live players on the far side of a portal the player stands near.
+    case "DUNGEON_PORTAL_PEEK_DATA": {
+      const { setPortalPeek } = await import("./portalfx.js");
+      setPortalPeek(data);
+      break;
+    }
+    // The portals of a map were saved in the Dungeon Tool (on its Portals tab, or linked on its Dungeons tab): the map the
+    // player is on takes them at once, and an open Dungeon Tool lists them again.
+    case "MAP_PORTALS": {
+      const map = window.mapData as any;
+      const bare = (name: unknown) => String(name ?? "").replace(/\.json$/i, "");
+      if (!map || !data || bare(data.mapName) !== bare(map.name)) break;
+      const list = Array.isArray(data.portals) ? data.portals : [];
+      // the map editor, once opened, keeps the portals by name (tileeditor.ts): they stay that way
+      if (map.dungeonPortals && !Array.isArray(map.dungeonPortals)) map.dungeonPortals = Object.fromEntries(list.map((p: any) => [p.name, p]));
+      else map.dungeonPortals = list.length ? list : null;
+      const { forgetPortalPreviews } = await import("./portalfx.js");
+      forgetPortalPreviews();
+      import("./dungeontool.js").then((m) => m.default.onMapChanged());
+      break;
+    }
+    case "MAP_SUMMONING_STONES": {
+      const map = window.mapData as any;
+      const bare = (name: unknown) => String(name ?? "").replace(/\.json$/i, "");
+      if (!map || !data || bare(data.mapName) !== bare(map.name)) break;
+      const list = Array.isArray(data.stones) ? data.stones : [];
+      // kept by name when the map has them that way, as the portals are
+      if (map.summoningStones && !Array.isArray(map.summoningStones)) map.summoningStones = Object.fromEntries(list.map((s: any) => [s.name, s]));
+      else map.summoningStones = list.length ? list : null;
+      import("./dungeontool.js").then((m) => m.default.onMapChanged());
+      break;
+    }
     case "PRELOAD_MAP_CHUNKS":
       {
         const { preloadChunks } = await import('./map.js');
@@ -5145,10 +5276,11 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     }
     case "SELECTPLAYER": {
 
-      if (!data || !data.id) {
+      if (selectedPlayerOf(data) === null) {
         const target = Array.from(cache.players).find((p) => p.targeted);
         if (target) target.targeted = false;
         cache.targetId = null;
+        setFarPartyTarget(null);
 
         break;
       }
@@ -5157,6 +5289,27 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         player.targeted = player.id === data.id;
       });
       cache.targetId = null;
+      // A party member targeted in the world is also their party frame's target; anyone else is not.
+      {
+        const me = Array.from(cache.players).find((p) => p.id === cachedPlayerId);
+        const name = String(data.username ?? "").toLowerCase();
+        const inParty = Array.isArray(me?.party) && me.party.some((m: unknown) => String(m).toLowerCase() === name);
+        setPartyTarget(inParty ? name : null);
+        // A party member on another map or out of sight is not loaded here: the target frame shows them from this packet.
+        const loaded = Array.from(cache.players).some((p) => p.id === data.id);
+        setFarPartyTarget(inParty && !loaded ? data : null);
+        const s = data.sprites;
+        if (inParty && !loaded && s && (s.bodySprite || s.headSprite)) {
+          const { initializeLayeredAnimation } = await import('./layeredAnimation.js');
+          const anim = await initializeLayeredAnimation(
+            s.mountSprite || null, s.bodySprite || null, s.headSprite || null, s.armorHelmetSprite || null,
+            s.armorShoulderguardsSprite || null, s.armorNeckSprite || null, s.armorHandsSprite || null,
+            s.armorChestSprite || null, s.armorFeetSprite || null, s.armorLegsSprite || null,
+            s.armorWeaponSprite || null, s.animationState || 'idle_down'
+          );
+          setFarPartyTargetAnim(data.id, anim);
+        }
+      }
 
       break;
     }
@@ -5890,6 +6043,10 @@ async function hideLoadingScreen() {
   }
 
   const transitionOverlay = document.getElementById('map-transition-overlay');
+  // The map is shown: a player who came out of a portal walks out of it, and it flashes (portaltransit.ts), once the
+  // black fade or the loading screen has mostly lifted.
+  const covered = transitionOverlay ? "fade" : loadingScreen && loadingScreen.style.display !== "none" ? "loading" : null;
+  void import("./portaltransit.js").then((m) => m.transit.reveal(performance.now() + m.shownAfter(covered)));
   if (transitionOverlay) {
     transitionOverlay.style.transition = 'opacity 0.4s';
     transitionOverlay.style.opacity = '0';

@@ -216,7 +216,7 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `DESPAWN_PLAYER` | To client | Players | A player left the client's area of interest |
 | `DISCONNECT_PLAYER` | Unused | Players | In the registry only. The name is used as a topic that connections subscribe to |
 | `BATCH_DISCONNECT_PLAYER` | To client | Players | Several players to remove at once |
-| `SELECTPLAYER` | Both | Players | Select the player at a position, and the selection result |
+| `SELECTPLAYER` | Both | Players | Select the player at a position, or `{ username }` (a party frame clicked) the player of that name on the map, and the selection result. A name not on the map clears the selection |
 | `TARGETCLOSEST` | To server | Players | Tab targeting: select the nearest target |
 | `INSPECTPLAYER` | Both | Players | Ask for, and receive, a player's details |
 | `GET_ONLINE_PLAYERS` | To server | Players | An admin asks for the list of online players |
@@ -256,7 +256,7 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `SAVE_HOTBAR` | To server | Spells | Save the hotbar layout |
 | `LOAD_HOTBAR` | Unused | Spells | A builder exists (`packetManager.loadHotBar`) but nothing calls it |
 | `PLAYER_DIED` | To client | Death | The player died. Carries the corpse position |
-| `RELEASE_SPIRIT` | To server | Death | Release to the graveyard as a ghost |
+| `RELEASE_SPIRIT` | To server | Death | Release to the graveyard as a ghost. Inside a dungeon copy it revives the player at the dungeon entrance instead, or at their dungeon portal when the dungeon no longer exists |
 | `PLAYER_GHOST` | To client | Death | A player became, or stopped being, a ghost |
 | `REVIVE_OFFER` | To client | Death | A ghost may revive at its corpse, with the corpse position. Also sent with `revoked` to withdraw the offer |
 | `CONFIRM_REVIVE` | To server | Death | Accept the revive at the corpse |
@@ -305,7 +305,7 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `TRADE_STATE` | To client | Social | The trade as it stands for this player: `{ partner, mine, theirs, accepted: { mine, theirs }, acceptIn }`. Sent to both after every change |
 | `TRADE_CLOSED` | To client | Social | The trade ended: `{ completed, message }` |
 | `UPDATE_ONLINE_STATUS` | To client | Social | A friend, party member or guild member came online or went offline. The client takes a contact's status from this packet alone, never from who it sees |
-| `INVITATION_RESPONSE` | To server | Social | Accept or decline a friend, party or guild invitation |
+| `INVITATION_RESPONSE` | To server | Social | Accept or decline a friend, party or guild invitation. The action `RAID_CONVERT` is the party leader answering the offer to turn a full party into a raid group (it times out after 60 seconds). The action `SUMMON_STONE` is the target of a summoning stone answering whether to come (it times out after 60 seconds and counts as declined) |
 | `INVITE_PARTY` | To server | Social | Invite a player to the party |
 | `REMOVE_PARTY` | Unused | Social | In the registry only |
 | `UPDATE_PARTY` | To client | Social | The party's members |
@@ -357,8 +357,6 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `CREATURE_STATE` | To client | Creatures | A creature's AI state and current victim |
 | `CREATURE_HEALTH` | To client | Creatures | A creature's health |
 | `CREATURE_COMBAT_TEXT` | To client | Creatures | Floating combat text: damage, immune, interrupted |
-| `CREATURE_ATTACK` | To server | Creatures | Start, or stop, auto-attacking a creature |
-| `CREATURE_ATTACK_STOPPED` | To client | Creatures | Auto-attack on a creature ended |
 | `CREATURE_TAP` | To client | Creatures | Who has tagged a creature |
 | `CREATURE_LOOTABLE` | To client | Creatures | A corpse has loot for this player |
 | `CREATURE_LOOT` | To server | Creatures | Open a creature's corpse |
@@ -381,7 +379,8 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `LIGHTNING` | To client | Weather | A lightning flash |
 | `TORNADOES` | To client | Weather | `{ map, tornadoes: [{ id, x, y }] }`: where each tornado on the player's map is. Sent repeatedly while there are any, and once with none when the last has gone |
 | `TOGGLE_TILE_EDITOR` | To client | Map editor | Open or close the map editor |
-| `SAVE_MAP` | To server | Map editor | Save map changes (chunks, and when changed graveyards, warps and `zones`). Needs `server.admin` or `server.*` |
+| `SAVE_MAP` | To server | Map editor | Save map changes (chunks, and when changed graveyards, warps and `zones`), with the editor's `saveId`. Needs `server.admin` or `server.*` |
+| `MAP_SAVE_RESULT` | To client | Map editor | The answer to every `SAVE_MAP`: `{ saveId, mapName, ok }`, with the `saveId` the save came with. The editor clears its unsaved marks only when `ok` is true |
 | `EDITOR_OPEN` | To server | Map editor | An admin opened the editor on this map |
 | `EDITOR_CLOSE` | To server | Map editor | An admin closed the editor |
 | `EDITOR_TILE_EDIT` | Both | Map editor | Live tile edits, relayed to other admins editing the same map |
@@ -474,6 +473,35 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `CLASS_EDITOR_DELETE` | To server | Class editor | Delete a class |
 | `CLASS_EDITOR_RESULT` | To client | Class editor | Whether a change worked |
 | `CLASS_EDITOR_UPDATED` | To client | Class editor | The class list changed |
+| `TOGGLE_DUNGEON_EDITOR` | To client | Dungeon editor | Open or close the [Dungeon Tool](#/tools/dungeon-tool) (for `/de`, `/dungeoneditor`, `/poe` and `/portaleditor`) |
+| `DUNGEON_EDITOR_LIST` | To server | Dungeon editor | Ask for the editor's data |
+| `DUNGEON_EDITOR_DATA` | To client | Dungeon editor | The editor's data |
+| `DUNGEON_EDITOR_SAVE` | To server | Dungeon editor | Save a dungeon |
+| `DUNGEON_EDITOR_DELETE` | To server | Dungeon editor | Delete a dungeon |
+| `DUNGEON_EDITOR_RESULT` | To client | Dungeon editor | Whether a change worked |
+| `DUNGEON_EDITOR_UPDATED` | To client | Dungeon editor | The dungeon list changed |
+| `MAP_OBJECT_OPTIONS` | To server | Map editor | Ask for the dungeons and loot tables the chest and dungeon portal pickers offer. Needs `server.admin` or `server.*` |
+| `MAP_OBJECT_OPTIONS_DATA` | To client | Map editor | `{ dungeons, lootTables }`, each a list of `{ id, name }` |
+| `DUNGEON_SIZE_CHOICE` | To client | Dungeons | A raid that can open at more than one size asks the player for one: `{ dungeonId, name, sizes, authorization }` |
+| `DUNGEON_SIZE_PICK` | To server | Dungeons | The size picked: `{ authorization, size }`. Answers the choice within 60 seconds |
+| `DUNGEON_PORTAL_PREVIEW` | To server | Dungeons | Ask what a portal on the player's map leads to: `{ portal }` (its name). Sent once per portal with Mirror other side on, the first time it is drawn |
+| `DUNGEON_PORTAL_PREVIEW_DATA` | To client | Dungeons | `{ portal, map, x, y, tilewidth, tileheight, tilesets, color }`: the far place (a dungeon's entrance, a teleport's place, or the player's saved spot for an exit) in pixels and its map's tilesets, drawn inside the portal, and the `#rrggbb` colour the portal is drawn in. `map` is `null` when there is nothing to draw |
+| `DUNGEON_PORTAL_PEEK` | To server | Dungeons | `{ portal, on }`: start or stop the live feed of a portal the player is within 200 pixels of (two at most) |
+| `DUNGEON_PORTAL_PEEK_DATA` | To client | Dungeons | `{ portal, players: [{ i, x, y, d, m }], looks: [{ i, s }] }`: the players on the far side, up to 30 times a second when they change, relative to the far place; `s` is a player's sprites, sent once per player and look. Players only, from the viewer's own or party's copy, on the same node |
+| `MAP_PORTALS` | To client | Portal editor | `{ mapName, portals }`: a map's portals after a save on the Dungeon Tool's Portals tab or a dungeon link. Sent to the players on that map |
+| `PORTAL_EDITOR_LIST` | To server | Portal editor | Ask for the portals of the player's map |
+| `PORTAL_EDITOR_DATA` | To client | Portal editor | `{ map, portals, dungeons, maps, here, nameMax, sizeMin, sizeMax }` |
+| `PORTAL_EDITOR_SAVE` | To server | Portal editor | Create or change a portal: `{ original, name, mirror, destination, target, position, size, atMe }` |
+| `PORTAL_EDITOR_DELETE` | To server | Portal editor | Delete a portal: `{ name }` |
+| `PORTAL_EDITOR_RESULT` | To client | Portal editor | `{ ok, errors, fields, name, notes, action, data }` |
+| `SUMMON_STONE_EDITOR_LIST` | To server | Summoning stone editor | Ask for the summoning stones of the player's map |
+| `SUMMON_STONE_EDITOR_DATA` | To client | Summoning stone editor | `{ map, stones, here, nameMax, refused }`; `refused` is why stones cannot be placed on this map (a dungeon's map or a copy), or `null` |
+| `SUMMON_STONE_EDITOR_SAVE` | To server | Summoning stone editor | Create or change a stone: `{ original, name, position: { x, y }, glowColor, atMe }` |
+| `SUMMON_STONE_EDITOR_DELETE` | To server | Summoning stone editor | Delete a stone: `{ name }` |
+| `SUMMON_STONE_EDITOR_RESULT` | To client | Summoning stone editor | `{ ok, errors, fields, name, action, data }`; `fields` keys are `name`, `position.x`, `position.y` and `glowColor` |
+| `MAP_SUMMONING_STONES` | To client | Summoning stones | `{ mapName, stones }`: a map's summoning stones after a save on the Dungeon Tool's Summoning stones tab. Sent to the players on that map |
+| `SUMMON_STONE_TOUCH` | To server | Summoning stones | `{ name, target }`: the player clicked or tapped the stone of that name on their map, with the username of the party member they have targeted (left out when nobody is). The server checks the range (48 pixels of its foot) and runs the summon from there: a first touch with a target starts the summoner's 30 second cast, a second member's touch the 5 second cast. See [Summoning stones](#/player-guide/parties/summoning-stones) |
+| `DUNGEON_PORTALS_CHANGED` | To client | Dungeons | `{}`: a dungeon was saved or deleted. Sent to every player in the region; the client drops its portal previews and asks for them again |
 | `MAILBOXES` | To client | Mail | `{ map, mailboxes: [{ id, x, y }], iconUrl }`: where the mailboxes of the player's map stand. Sent with `MAP_MARKERS`, and again when an admin changes the map's mailboxes |
 | `MAIL_OPEN` | To server | Mail | Open the mail window. The player has to be alive and at a mailbox |
 | `MAIL_INBOX` | To client | Mail | `{ mail, postage, itemsMax, subjectMax, bodyMax }`: the player's mail. Opens the mail window, or brings it up to date |
@@ -576,8 +604,9 @@ The registry is only consulted for incoming packets, so the server can send type
 | `AUTH_CONNECT_SUCCESS` | `src/socket/transport.ts` | The WebTransport session was accepted |
 | `RECONNECT` | `packetManager.reconnect` | Tells the client to reconnect, for example after its admin role changed |
 | `SPELLS` | `packetManager.spells` | The player's spell book, sent at login |
+| `STAFF_TOOLS` | `packetManager.staffTools` | `{ tools: string[] }`: the dev tools the player may open, sent at login. The client shows them on the staff bar |
 | `EFFECTS` | `packetManager.effects` | The buffs and debuffs active on a player |
-| `INVITATION` | `packetManager.invitation` | A friend, party or guild invitation popup |
+| `INVITATION` | `packetManager.invitation` | A friend, party or guild invitation popup. With the action `SUMMON_STONE` it is a summoning stone's offer to come to the stone, answered with `INVITATION_RESPONSE` |
 | `UNLOAD_NPCS` | `packetManager.unloadNpcs` | NPCs the client should drop |
 | `SPRITE_SHEET_ANIMATION` | `packetManager.spriteSheetAnimation` | A player's sprite layers and animation |
 | `BATCH_SPRITE_SHEET_ANIMATION` | `packetManager.batchSpriteSheetAnimation` | The same for several players |

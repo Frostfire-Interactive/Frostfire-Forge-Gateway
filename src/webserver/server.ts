@@ -76,6 +76,7 @@ import cutsceneeditor_html from "./public/cutsceneeditor.html";
 import spelleditor_html from "./public/spelleditor.html";
 import weathereditor_html from "./public/weathereditor.html";
 import classeditor_html from "./public/classeditor.html";
+import dungeoneditor_html from "./public/dungeoneditor.html";
 import mailboxeditor_html from "./public/mailboxeditor.html";
 import gatheringeditor_html from "./public/gatheringeditor.html";
 import achievementeditor_html from "./public/achievementeditor.html";
@@ -328,6 +329,7 @@ const routes = {
   "/spell-editor": spelleditor_html,
   "/weather-editor": weathereditor_html,
   "/class-editor": classeditor_html,
+  "/dungeon-editor": dungeoneditor_html,
   "/mailbox-editor": mailboxeditor_html,
   "/gathering-editor": gatheringeditor_html,
   "/achievement-editor": achievementeditor_html,
@@ -640,6 +642,7 @@ Bun.serve({
       "/spell-editor": routes["/spell-editor"],
       "/weather-editor": routes["/weather-editor"],
       "/class-editor": routes["/class-editor"],
+      "/dungeon-editor": routes["/dungeon-editor"],
       "/mailbox-editor": routes["/mailbox-editor"],
       "/gathering-editor": routes["/gathering-editor"],
       "/achievement-editor": routes["/achievement-editor"],

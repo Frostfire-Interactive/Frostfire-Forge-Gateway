@@ -13,8 +13,9 @@ Casting spells and attacking creatures need a full account.
 ## Targeting
 
 - **Left-click** a player or creature to target it, or press **Tab** to target the nearest one in front of you. Press **Tab** again to cycle.
-- **Right-click** a creature to target it and start attacking it.
-- On a touch screen, tap a creature to target it, then tap it again to start attacking it.
+- **Right-click** a creature to target it.
+- **Left-click** a party member's frame in the party list to target them.
+- On a touch screen, tap a player or creature to target it.
 - Click empty ground to drop your target.
 
 The target frame shows your target's name, level, health and mana. A target that moves too far away is dropped.

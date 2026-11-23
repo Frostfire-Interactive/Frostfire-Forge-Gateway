@@ -23,6 +23,7 @@ If a gamepad is connected, its stick moves your character. Gamepad buttons are n
 Most spells need a target. You can pick one in several ways:
 
 - **Left-click** a player, creature or character to target it.
+- **Left-click** a party member's frame in the party list to target them. Spells reach them when they are on your map.
 - Press **Tab** to target the nearest player or creature in front of you. Press it again to step to the next one.
 - **Left-click** empty ground to clear your target.
 
@@ -81,6 +82,7 @@ When you stand next to something a key acts on, a small badge over it shows that
 | Action | Result |
 |--------|--------|
 | Left-click a player, creature or character | Target it |
+| Left-click a party member's frame | Target them |
 | Left-click empty ground | Clear your target |
 | Left-click a defeated creature that has loot for you | Open its loot window |
 | Left-click a resource node | Gather it |
@@ -88,7 +90,7 @@ When you stand next to something a key acts on, a small badge over it shows that
 | Hold the left mouse button with a line out | Reel it in, with a fish or without |
 | Left-click a mailbox | Open your mail |
 | Right-click a player | Open the player menu |
-| Right-click a creature | Target it and start attacking it |
+| Right-click a creature | Target it |
 | Right-click a party member's frame | Kick (leader), or leave the party on your own frame |
 | Right-click a name in the guild window | Kick, Promote or Demote (Guild Master only; other ranks use the member's panel), or leave the guild on your own name |
 | Right-click a name in the friends list | Remove that friend, or ignore them |
@@ -132,7 +134,6 @@ On phones and tablets the game adds on-screen controls. Hold your device sideway
 | Tap the round menu button | Open the wheel of windows |
 | Tap the chat button under your frame | Open or hide the chat. See [Chat and Commands](#/player-guide/chat-and-commands). |
 | Tap a player or creature | Target it |
-| Tap the creature you already target | Start attacking it |
 | Tap a defeated creature that has loot for you | Open its loot window |
 | Tap a character | Talk to them |
 | Tap a resource node | Gather it |

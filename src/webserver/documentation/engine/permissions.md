@@ -138,6 +138,8 @@ Every node name found in the engine source, and where it is checked.
 | `tools.quest_editor` | `/questeditor` and every quest editor packet | Yes |
 | `tools.weather_editor` | `/weathereditor` and every weather editor packet | Yes |
 | `tools.class_editor` | `/classeditor` and every class editor packet | Yes (and added at server start) |
+| `tools.dungeon_editor` | The whole Dungeon Tool: `/dungeoneditor`, `/portaleditor` and every dungeon, portal and summoning stone editor packet | Yes |
+| `tools.portal_editor` | Nothing any more. Still seeded, but no check reads it: `tools.dungeon_editor` opens the portals too | Yes |
 | `tools.mailbox_editor` | `/mailbox` and every mailbox editor packet | Yes (and added at server start) |
 | `tools.gathering` | `/gathering` and every gathering editor packet | No (added at server start only) |
 | `tools.achievement_editor` | `/achievements` and every achievement editor packet | No (added at server start only) |

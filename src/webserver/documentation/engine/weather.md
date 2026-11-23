@@ -87,10 +87,10 @@ How the values change the picture:
 
 - **Precipitation** sets how many rain drops or snow flakes are drawn: `precipitation / 100` of the full amount, never less than a tenth for a weather that is named for rain or snow.
 - **Temperature** below 32 turns the rain of `rainy` and `thunderstorm` into snow.
-- **Wind speed and direction** draw wind streaks across the screen and push rain and snow. A direction of `none` or a speed of 0 draws no streaks.
+- **Wind speed and direction** draw wind streaks across the screen and push rain and snow. A direction of `none` or a speed of 0 draws no streaks. The wind gusts: over a few seconds at a time it rises to half again its speed and falls back, at uneven times. In a gust the streaks come more often, run faster and show brighter and longer; in a lull only a few faint ones pass. The wind sound swells with the same gusts.
 - **Ambience** is the opacity of the dark overlay in `thunderstorm` and `darkness`.
 
-The drawing code is part of the game client (`weather.ts`, `ambience.ts`, `windstreaks.ts`, `sandstorm.ts`, `blizzard.ts`, `fog.ts` and `tornado.ts` in the gateway's `public/js/core`).
+The drawing code is part of the game client (`weather.ts`, `ambience.ts`, `windstreaks.ts`, `windgust.ts`, `sandstorm.ts`, `blizzard.ts`, `fog.ts` and `tornado.ts` in the gateway's `public/js/core`).
 
 ### Packets
 
@@ -104,7 +104,7 @@ The drawing code is part of the game client (`weather.ts`, `ambience.ts`, `winds
 `weather` is the name the client draws by, and `weatherData` is the row (or `null`). A weather with no sounds of its own carries the sounds of the weather it is drawn as. On `CHANGE_WEATHER` the client fades the old weather out and the new one in. If only the values changed, it applies them without a fade.
 
 :::note Maps without a world
-Weather belongs to worlds: a map takes part when the `worlds` table has a row with the map's name. The map data sent to the client carries a `hasWeather` flag that says whether such a row exists, and a map without one resolves to `clear`.
+Weather belongs to worlds: a map takes part when the `worlds` table has a row with the map's name. The map data sent to the client carries a `hasWeather` flag that says whether such a row exists, and a map without one resolves to `clear`. A dungeon copy (`<template>~<id>`) belongs to the world of its template map: it shows that world's weather, its random cycle, its lightning and every change made to it.
 :::
 
 ### Lightning
@@ -128,7 +128,7 @@ While any world shows `thunderstorm`, the server picks a random player on that w
 /weather weather_api
 ```
 
-`/weather` writes the new weather to the `worlds` table, so it survives a restart, and sends `CHANGE_WEATHER` to every player on that world. An unknown name answers `Weather '<name>' not found`.
+`/weather` writes the new weather to the `worlds` table, so it survives a restart, and sends `CHANGE_WEATHER` to every player on that world. Inside a dungeon copy it sets the world of the copy's template map, which the map and all its copies show. An unknown name answers `Weather '<name>' not found`.
 
 The full command list is on the [Admin commands](#/engine/admin-commands) page, and permissions are explained under [Permissions](#/engine/permissions).
 

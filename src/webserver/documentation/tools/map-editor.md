@@ -23,6 +23,10 @@ Typing the command again, or closing the tool window, closes the editor.
 When the editor closes, the map in your game window is put back to its last saved state. Save before you close.
 :::
 
+:::note The editor does not work inside a dungeon copy
+Standing in a dungeon copy, editing the map, saving it and opening the map editor are refused with the notice "Leave the dungeon to edit its map". A copy is a clone, and a save from it would land on the dungeon's own map. Leave the dungeon first.
+:::
+
 ## Permissions
 
 The map editor is checked in three places, each with its own rule.
@@ -51,7 +55,7 @@ An account with `tools.tile_editor` but no admin role can open the editor, but i
 
 ### Layers
 
-The side pane lists the map's tile layers and, under "Objects", its two object layers.
+The side pane lists the map's tile layers and, under "Objects", its four object layers.
 
 - Click a layer to select it. The tools work on the selected layer only.
 - The eye button hides or shows a layer in your own game window. It does not change the map.
@@ -68,7 +72,7 @@ Three kinds of layer are recognised by name and marked with their own icon:
 
 Every other layer is a plain tile layer.
 
-The object layers are **Graveyards** and **Warps**. Selecting one switches the game window from painting tiles to placing and editing those objects, and turns the tile tools off. Zones are drawn in the zone map window, described under Zones below.
+The object layers are **Graveyards**, **Warps** and **Chests**. Portals and summoning stones are drawn on the map but are made in the [Dungeon Tool](#/tools/dungeon-tool); the map editor keeps them as they are and moves them with the map when it grows left or up. Selecting a layer switches the game window from painting tiles to placing and editing those objects, and turns the tile tools off. Zones are drawn in the zone map window, described under Zones below.
 
 ### Toolbar
 
@@ -155,7 +159,7 @@ With a tile layer selected:
 
 ## Graveyards and warps
 
-Select **Graveyards** or **Warps** in the Objects list, then work in the game window.
+Select **Graveyards** or **Warps** in the Objects list, then work in the game window. Chests work the same way, and are described under Chests below.
 
 | Action | Result |
 | --- | --- |
@@ -181,6 +185,29 @@ If any warp is missing `map`, `x` or `y`, the save is refused with "Cannot save:
 :::
 
 Graveyards are where players return after dying. See [Combat and Spells](#/player-guide/combat-and-spells).
+
+## Chests
+
+Select **Chests** in the Objects list. Chests are placed, moved, renamed and deleted like graveyards and warps: right click on empty ground and choose "Create", drag to move, click the label to rename. A chest is a single point.
+
+They are named `Chest_1`, `Chest_2` and so on. Every chest needs a name, and the names must be different. A map can have at most 200.
+
+Their properties are pickers, filled from the server with a `MAP_OBJECT_OPTIONS` request:
+
+| Object | Property | Meaning |
+| --- | --- | --- |
+| Chest | Loot table | The [Loot Editor](#/tools/loot-editor) table the chest holds. Required. |
+| Chest | Reset (minutes, 1 to 1440) | How often the chest refills. Default 30. |
+
+A chest on an ordinary map refills on its reset timer. A chest on a dungeon's map does not refill inside a copy: each new copy has it full.
+
+:::warning A chest without a choice blocks the save
+The save is refused if a chest has no loot table or a reset outside 1 to 1440. A new chest starts with nothing chosen, so pick one right after creating it.
+:::
+
+Chests can be made in Tiled as `chest` objects (properties `loot_table` and `reset_minutes`). Portals can be read from Tiled `dungeon_portal` objects (properties `kind`, `dungeon`, `mirror`, and for a teleport `map`, `x`, `y`).
+
+
 
 ## Zones
 
@@ -247,7 +274,7 @@ These work in both the tool window and the game window.
 | `Ctrl+Z` | Undo |
 | `Ctrl+Y` | Redo |
 | `Ctrl+S` | Save the map |
-| `Delete` | Delete the selected graveyard or warp (game window) |
+| `Delete` | Delete the selected graveyard, warp or chest (game window) |
 | `Shift` + click | Line from the last placed tile (game window) |
 | `Ctrl` + wheel | Zoom the palette (tool window) |
 
@@ -262,13 +289,15 @@ Several admins can edit the same map at once.
 
 ## Saving
 
-Save sends a `SAVE_MAP` packet with the changed chunks, the map bounds, all graveyards and warps, and the zones when they changed. The game server then:
+Save sends a `SAVE_MAP` packet with the changed chunks, the map bounds, all graveyards and warps, the zones and chests when they changed, and the portals only when the map grew left or up. The game server then:
 
 1. Checks `server.admin` or `server.*`.
 2. Sends the changed chunks to the asset server (`/save-map-chunks`) and the graveyards, warps and zones (`/save-map-properties`).
 3. Reloads the map so collision and zones match the new tiles.
 4. Answers "Map saved successfully!" with the number of chunks updated.
 5. Tells the other players on the map to reload the changed chunks, and sends every player on the map the new zones (`MAP_ZONES`).
+
+The edits stay marked unsaved until the server answers that the save worked (`MAP_SAVE_RESULT`). A save that is refused or fails keeps them marked, and the next save sends them again.
 
 The map stays on screen while it is saved, for every player on it: there is no loading screen, and the editor stays open. The asset server tells every game server of each save as soon as it has written it, often before the save has finished. The game server leaves that to the save in progress, which reloads the map itself (step 3). In [cluster mode](#/engine/cluster) the saving node first tells the other nodes that a save of the map is under way, and they leave the asset server's word to the save too. Each node then takes in the save from the saving node's news and sends its players the changed chunks. A save that fails after the asset server has written it ends with the map taken in like any other change on the asset server.
 

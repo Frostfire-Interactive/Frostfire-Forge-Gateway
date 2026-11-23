@@ -1,4 +1,4 @@
-import { aboveCanvas, ambience, ambienceCool, canvas, ghostCanvas, lightCanvas, lightDodgeCanvas, sunFlare, weatherCanvas } from "./ui.js";
+import { aboveCanvas, ambience, ambienceCool, canvas, castbarCanvas, ghostCanvas, lightCanvas, lightDodgeCanvas, sunFlare, weatherCanvas } from "./ui.js";
 import { getAmbiencePaint } from "./ambience.js";
 import { setClipsAtFullLevel, tapSound } from "./audio.js";
 import { drawOverlayInto, previewPause, previewPlay, previewSeek, sceneClock } from "./cutscene.js";
@@ -238,6 +238,7 @@ function paintFrame(ctx: CanvasRenderingContext2D, w: number, h: number): void {
     ctx.globalAlpha = 1;
   }
   layer(lightCanvas, "screen");
+  layer(castbarCanvas, "source-over");
 
   ctx.globalCompositeOperation = "source-over";
   drawOverlayInto(ctx, w, h);

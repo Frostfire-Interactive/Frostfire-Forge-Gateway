@@ -2,7 +2,7 @@ import { lightCanvas, lightCtx, lightDodgeCanvas, lightDodgeCtx } from "./ui.js"
 import { getNightFactor, getAmbientLevel } from "./ambience.js";
 import Cache from "./cache.js";
 import { particleBrightness, npcFadeOf } from "./npc.js";
-import { takeGlows } from "./glowqueue.js";
+import { takeGlows, takeLights } from "./glowqueue.js";
 import { spillPixels, exactGain } from "./spilllight.js";
 
 const cache = Cache.getInstance();
@@ -237,7 +237,7 @@ const lightLayers = { spill: true, npcWash: true, particles: true };
 
 export function renderLightMap(game: HTMLCanvasElement, base: DOMMatrix, offsetX: number, offsetY: number) {
   // this frame's glowing particle draws, taken (emptied) even when the night is off so the queue never grows
-  const glows = takeGlows();
+  const glows = takeGlows(), lights = takeLights();
   if (!lightCtx) return;
 
   const night = getNightFactor();
@@ -278,6 +278,18 @@ export function renderLightMap(game: HTMLCanvasElement, base: DOMMatrix, offsetX
       lightDodgeCtx.drawImage(light, tw * s, th * s, chunk.width * tw * s, chunk.height * th * s, cx0, cy0, chunk.width * tw, chunk.height * th);
       spillDrawn++;
     }
+  }
+
+  // queued light (dungeon portals): its colours are worked out for the ambience level, so no night scaling
+  if (lightDodgeCtx && lights.length) {
+    lightDodgeCtx.globalCompositeOperation = "lighten";
+    for (const l of lights) {
+      lightDodgeCtx.setTransform(l.m);
+      lightDodgeCtx.globalAlpha = Math.min(1, l.a);
+      lightDodgeCtx.drawImage(l.img, l.x, l.y, l.w, l.h);
+    }
+    lightDodgeCtx.globalCompositeOperation = "source-over";
+    lightDodgeCtx.globalAlpha = 1;
   }
 
   lastFrame = { spillDrawn, glowsQueued: glows.length, particlesDrawn: 0 };

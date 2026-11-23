@@ -1,14 +1,14 @@
-import { sendRequest, getIsLoaded } from "./socket.js";
-import { isSelfActionLocked } from "./death.js";
+import { getIsLoaded } from "./socket.js";
 import Cache from "./cache.js";
 // (kept for the order the modules start in: see events.ts)
 import "./renderer.js";
 import { canvas } from "./ui.js";
-import { creatures, creatureAt, creatureTargetKey, getAutoAttackingId, parseCreatureTarget, setAutoAttackingId } from "./creature.js";
+import { creatures, creatureAt, creatureTargetKey, parseCreatureTarget } from "./creature.js";
 import creatureEditor from "./creatureeditor.js";
 import { lootCorpse } from "./creatureloot.js";
 import "./skeletons.js";
 import { screenToWorld } from "./worldzoom.js";
+import { inPartyOf, setPartyTarget } from "./partytarget.js";
 
 const cache = Cache.getInstance();
 
@@ -39,12 +39,7 @@ function clearPlayerTargets(): void {
   for (const p of cache.players) {
     if (p?.targeted) p.targeted = false;
   }
-}
-
-export function stopCreatureAutoAttack(): void {
-  if (getAutoAttackingId() === null) return;
-  setAutoAttackingId(null);
-  sendRequest({ type: "CREATURE_ATTACK", data: { id: null } });
+  setPartyTarget(null);
 }
 
 /** A target further than this (world px) from the local player is dropped. */
@@ -59,23 +54,15 @@ export function dropDistantTarget(self: any): void {
   const creatureId = parseCreatureTarget(cache.targetId);
   if (creatureId !== null) {
     const c = creatures.get(creatureId);
-    if (c && tooFar(c.x, c.y)) {
-      cache.targetId = null;
-      stopCreatureAutoAttack();
-    }
+    if (c && tooFar(c.x, c.y)) cache.targetId = null;
   }
 
   for (const p of cache.players) {
-    if (p?.targeted && p.id !== self.id && p.position && tooFar(p.position.x, p.position.y)) {
+    // A party member stays targeted at any distance.
+    if (p?.targeted && p.id !== self.id && p.position && !inPartyOf(self, p.username) && tooFar(p.position.x, p.position.y)) {
       p.targeted = false;
     }
   }
-}
-
-export function startCreatureAutoAttack(id: number): void {
-  if (isSelfActionLocked()) return;
-  setAutoAttackingId(id);
-  sendRequest({ type: "CREATURE_ATTACK", data: { id } });
 }
 
 const worldFromEvent = (event: MouseEvent) => worldFromClient(event.clientX, event.clientY);
@@ -93,15 +80,11 @@ document.addEventListener(
     // A living creature first, then a corpse: both can be targeted.
     const creature = creatureAt(world.x, world.y, false, CLICK_SLOP) ?? creatureAt(world.x, world.y, true, CLICK_SLOP);
     if (!creature) {
-      if (parseCreatureTarget(cache.targetId) !== null) {
-        cache.targetId = null;
-        stopCreatureAutoAttack();
-      }
+      if (parseCreatureTarget(cache.targetId) !== null) cache.targetId = null;
       return;
     }
     event.stopPropagation();
     clearPlayerTargets();
-    if (parseCreatureTarget(cache.targetId) !== creature.id) stopCreatureAutoAttack();
     cache.targetId = creatureTargetKey(creature.id);
     // A left click on a corpse with loot for this player loots it too.
     if (creature.state === "dead" && creature.lootable) lootCorpse(creature.id);
@@ -128,7 +111,6 @@ document.addEventListener(
         event.preventDefault();
         event.stopPropagation();
         clearPlayerTargets();
-        stopCreatureAutoAttack();
         cache.targetId = creatureTargetKey(corpse.id);
       }
       return;
@@ -137,7 +119,6 @@ document.addEventListener(
     event.stopPropagation();
     clearPlayerTargets();
     cache.targetId = creatureTargetKey(creature.id);
-    startCreatureAutoAttack(creature.id);
   },
   true
 );
@@ -181,13 +162,7 @@ document.addEventListener(
     const creature = creatureAt(world.x, world.y, false, TOUCH_SLOP);
     if (creature) {
       lastTouchTapAt = Date.now();
-      // Tapping the creature you already have targeted attacks it.
-      if (parseCreatureTarget(cache.targetId) === creature.id) {
-        if (getAutoAttackingId() !== creature.id) startCreatureAutoAttack(creature.id);
-        return;
-      }
       clearPlayerTargets();
-      stopCreatureAutoAttack();
       cache.targetId = creatureTargetKey(creature.id);
       return;
     }
@@ -197,7 +172,6 @@ document.addEventListener(
     if (corpse) {
       lastTouchTapAt = Date.now();
       clearPlayerTargets();
-      stopCreatureAutoAttack();
       cache.targetId = creatureTargetKey(corpse.id);
       if (corpse.lootable) lootCorpse(corpse.id);
     }

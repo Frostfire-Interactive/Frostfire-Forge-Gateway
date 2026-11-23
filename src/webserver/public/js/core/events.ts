@@ -20,9 +20,13 @@ import { getUserHasInteracted, setUserHasInteracted, setControllerConnected, get
     stopMovement,
     setIsMoving} from "./input.js";
 import { friendsListSearch } from "./friends.js";
+import { heldThroughWarp } from "./portaltransit.js";
 import { createContextMenu, createPartyContextMenu, createGuildContextMenu, createFriendContextMenu, createIgnoredContextMenu } from "./actions.js";
 import { isTrading, offerItem } from "./trade.js";
 import { isVendorOpen, sellItem } from "./vendor.js";
+import { touchStoneAt } from "./summonstones.js";
+import { setPartyTarget } from "./partytarget.js";
+import { pickablePlayer, shadowsStone, stoneAt } from "./stonelist.js";
 import { isMailOpen, attachItem, openNearestMailbox, mailboxAt } from "./mail.js";
 import { gather, gatherNearest, gatherNodeAt } from "./gathering.js";
 import { fishingClick, installFishingInput } from "./fishing.js";
@@ -191,10 +195,13 @@ window.addEventListener("gamepadjoystick", (e: CustomEventInit) => {
   setStickDirection(!stickHeld ? "" : stickAngle >= -30 && stickAngle < 30 ? "RIGHT" : stickAngle >= 30 && stickAngle < 60 ? "DOWNRIGHT"
     : stickAngle >= 60 && stickAngle < 120 ? "DOWN" : stickAngle >= 120 && stickAngle < 150 ? "DOWNLEFT" : stickAngle >= 150 || stickAngle < -150 ? "LEFT"
     : stickAngle >= -150 && stickAngle < -120 ? "UPLEFT" : stickAngle >= -120 && stickAngle < -60 ? "UP" : "UPRIGHT");
+  // A stick held through a portal walks only once let go (portaltransit.ts HeldKeys), as the keys do.
+  const stickWalks = heldThroughWarp.stickFree(stickHeld);
   if (!getIsLoaded() || !getMovementAllowed()) {
     setLastSentDirection("");
     return;
   }
+  if (!stickWalks) return;
   if (isSelfDead()) return;
   if (pauseMenu.style.display == "block") return;
 
@@ -816,7 +823,7 @@ document.addEventListener("contextmenu", (event) => {
   // the world under the cursor, at the world zoom (worldzoom.ts)
   const { x: worldX, y: worldY } = screenToWorld(screenX, screenY);
 
-  const clickedPlayer = playerAt(worldX, worldY, (player) => !player.isDead && !(player.isGhost && player.ghostTeleportPending));
+  const clickedPlayer = playerAt(worldX, worldY, pickablePlayer);
 
   if (clickedPlayer) {
     const id = clickedPlayer.id;
@@ -856,7 +863,7 @@ canvas.addEventListener("touchstart", (e) => {
 
     const { x: worldX, y: worldY } = screenToWorld(screenX, screenY);
 
-    const clickedPlayer = playerAt(worldX, worldY, (player) => !player.isDead && !(player.isGhost && player.ghostTeleportPending));
+    const clickedPlayer = playerAt(worldX, worldY, pickablePlayer);
 
     if (clickedPlayer) {
       createContextMenu({ clientX: longPressStartX, clientY: longPressStartY } as MouseEvent, clickedPlayer.id);
@@ -920,6 +927,9 @@ canvas.addEventListener("touchend", (e) => {
     const node = gatherNodeAt(worldX, worldY, TOUCH_TARGET_SLOP);
     if (node) gather(node);
     else if (mailboxAt(worldX, worldY, TOUCH_TARGET_SLOP)) sendRequest({ type: "MAIL_OPEN", data: null });
+    // a tap on a summoning stone touches it
+    // (another player standing there is the click's: the stone takes it only when no such player is hit; your own character never is)
+    else if (!playerAt(worldX, worldY, (player) => shadowsStone(player, cachedPlayerId)) && touchStoneAt(worldX, worldY, TOUCH_TARGET_SLOP)) return;
     // a tap on water casts a line there (or, with a fish on, was the reel)
     else fishingClick(worldX, worldY);
   });
@@ -1081,16 +1091,6 @@ document.addEventListener("click", (event) => {
     return;
   }
 
-  // Clear previous target
-  const prevPlayer = Array.from(cache.players).find(player => player.targeted);
-  if (prevPlayer) {
-    prevPlayer.targeted = false;
-  }
-  const prevNpc = cache.npcs.find((npc: any) => npc.id === cache.targetId);
-  if (prevNpc) {
-    cache.targetId = null;
-  }
-
   // Check if clicked on NPC
   const clickedNpc = cache.npcs.find((npc: any) => {
     // A sound NPC is only heard: there is nothing to click.
@@ -1102,6 +1102,26 @@ document.addEventListener("click", (event) => {
       worldY >= npcY - 24 - slop && worldY <= npcY + 48 + slop
     );
   });
+
+  // A click on a summoning stone touches it, keeping the target (the party member to summon); the server says when it is
+  // too far. A tap is the touch handler's (above), which touches it the same way.
+  // Another player standing at the stone is picked first: the stone takes the click only when no such player is under it.
+  // Your own character never is: you stand within 150 px of the stone to touch it, so your sprite often covers it.
+  if (!clickedNpc && !playerAt(worldX, worldY, (player) => shadowsStone(player, cachedPlayerId)) && stoneAt(worldX, worldY, slop) !== null) {
+    if (!isTouch) touchStoneAt(worldX, worldY, slop);
+    return;
+  }
+
+  // Clear previous target
+  const prevPlayer = Array.from(cache.players).find(player => player.targeted);
+  if (prevPlayer) {
+    prevPlayer.targeted = false;
+  }
+  const prevNpc = cache.npcs.find((npc: any) => npc.id === cache.targetId);
+  if (prevNpc) {
+    cache.targetId = null;
+  }
+  setPartyTarget(null);
 
   if (clickedNpc) {
     cache.targetId = clickedNpc.id;
@@ -1167,6 +1187,18 @@ friendsListSearch.addEventListener("input", () => {
       item.style.display = 'none';
     }
   });
+});
+
+// A click on a party member's frame targets them: their frame is highlighted, a summoning stone summons them, and the
+// server selects them for spells when they are on this map.
+document.addEventListener("click", (e) => {
+  if (window.matchMedia("(hover: none) and (pointer: coarse)").matches) return;
+  const partyMember = (e.target as HTMLElement)?.closest?.(".party-member") as HTMLElement | null;
+  const username = partyMember?.dataset.username;
+  if (!username) return;
+  cache.targetId = null;
+  setPartyTarget(username);
+  sendRequest({ type: "SELECTPLAYER", data: { username } });
 });
 
 // Party member click on mobile shows context menu

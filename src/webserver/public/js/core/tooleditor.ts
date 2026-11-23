@@ -124,6 +124,8 @@ export interface EditorOptions {
   kinds?: Kind[];
   /** A kind was picked in the list of kinds. The editor answers with setKind once it has left what was open. */
   onKind?(id: string): void;
+  /** Each kind asks the server on its own: the list of kinds stays open while one waits for its answer or was refused. */
+  kindsStayOpen?: boolean;
   onSearch(query: string): void;
   /** The list is held whole in this window: a search is answered at every key, not 200 ms after the last. */
   liveSearch?: boolean;
@@ -358,6 +360,7 @@ export class EditorShell {
   private usable(on: boolean): void {
     this.searchInput.disabled = !on;
     if (this.addBtn) this.addBtn.disabled = !on;
+    if (this.opts.kindsStayOpen) return;
     for (const item of this.navEl.querySelectorAll<HTMLButtonElement>(".tl-nav-item")) item.disabled = !on;
   }
 

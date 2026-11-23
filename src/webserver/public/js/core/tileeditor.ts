@@ -11,6 +11,7 @@ import { getTileSounds, loadTileSounds, onTileSounds, tilesetKey } from "./tiles
 import { getTileFootprints, onTileFootprints } from "./footprints.js";
 import type { ClientZone } from "./zonelogic.js";
 import { buildSaveZones, checkZoneEdit, fillHoles, fitZoneEdit, shiftZones, zoneBox, zoneProblems } from "./tileeditorzones.js";
+import { applyObjectMutation as applyMutationToStore, hitTestOrder, keyLoadedObjects, labelKey, recordPropertyEdit, UnsavedMarks, type ObjectKind, type ObjectMutation as MapObjectMutation } from "./tileeditorobjects.js";
 
 declare global {
   interface Window {
@@ -69,12 +70,31 @@ interface TileChangeGroup {
   changes: TileChange[];
 }
 
-type ObjectMutation = {
-  type: 'graveyard' | 'warp';
-  name: string;
-  oldState: { x?: number, y?: number, width?: number, height?: number } | null;
-  newState: { x?: number, y?: number, width?: number, height?: number } | null;
-} | {
+// The object layers: where each keeps its objects in mapData, and whether they are rectangles (warps) or points (graveyards)
+const OBJECT_LAYERS: Record<string, { key: string; kind: ObjectKind; rect: boolean; prefix: string; noun: string }> = {
+  Graveyards: { key: 'graveyards', kind: 'graveyard', rect: false, prefix: 'Graveyard', noun: 'graveyard' },
+  Warps: { key: 'warps', kind: 'warp', rect: true, prefix: 'Warp', noun: 'warp' },
+  DungeonPortals: { key: 'dungeonPortals', kind: 'portal', rect: true, prefix: 'DungeonPortal', noun: 'dungeon portal' },
+  Chests: { key: 'chests', kind: 'chest', rect: false, prefix: 'Chest', noun: 'chest' },
+};
+const layerOfKind = (kind: string): string | null => Object.keys(OBJECT_LAYERS).find((t) => OBJECT_LAYERS[t].kind === kind) ?? null;
+const isRectLayer = (type: string | null): boolean => !!type && OBJECT_LAYERS[type]?.rect === true;
+const isPointLayer = (type: string | null): boolean => !!type && OBJECT_LAYERS[type]?.rect === false;
+// Chests and dungeon portals name game content: their properties are pickers, not free text
+const PICKER_LAYERS = new Set(['Chests', 'DungeonPortals']);
+// Portals are made and edited on the Dungeon Tool's Portals tab (/portaleditor): here they are drawn, kept as loaded, and moved with the map
+const READ_ONLY_LAYERS = new Set(['DungeonPortals']);
+// The server's limits (mapobjects.ts)
+const MAP_OBJECT_LIMIT = 200, CHEST_RESET_DEFAULT_MIN = 30, CHEST_RESET_MAX_MIN = 1440;
+const CHEST_W = 18, CHEST_H = 14;
+const wholeFrom = (value: unknown, min: number, max = Infinity): number | null => {
+  const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+  return typeof n === 'number' && Number.isInteger(n) && n >= min && n <= max ? n : null;
+};
+const finiteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+type MapObjectOption = { id: number; name: string };
+
+type ObjectMutation = MapObjectMutation | {
   // A zone: the whole zone before and after the edit (null where there was none), as copies
   type: 'zone';
   name: string;
@@ -90,10 +110,13 @@ class TileEditor {
   private selectedObject: string | null = null;
   private selectedObjectName: string | null = null;
   private draggingObject: { type: string, name: string, startX: number, startY: number, offsetX: number, offsetY: number } | null = null;
-  private resizingWarp: { name: string, corner: string, startX: number, startY: number, startWarpX: number, startWarpY: number, startWidth: number, startHeight: number } | null = null;
+  private resizingWarp: { type: string, name: string, corner: string, startX: number, startY: number, startWarpX: number, startWarpY: number, startWidth: number, startHeight: number } | null = null;
+  private mapObjectOptions: { dungeons: MapObjectOption[]; lootTables: MapObjectOption[]; message: string | null } | null = null;
+  private pickerRefresh: (() => void) | null = null;
   private objectMutationStartState: { x: number, y: number, width?: number, height?: number } | null = null;
   private deleteButtonCoords: { type: string, name: string, x: number, y: number, size: number } | null = null;
-  private labelCoords: Map<string, { type: string, x: number, y: number, width: number, height: number }> = new Map();
+  // by labelKey(type, name)
+  private labelCoords: Map<string, { type: string, name: string, x: number, y: number, width: number, height: number }> = new Map();
   private editingLabel: { type: string, oldName: string } | null = null;
   private labelInput: HTMLInputElement | null = null;
   private propertiesPanel: HTMLElement | null = null;
@@ -106,7 +129,10 @@ class TileEditor {
   private objectLayerVisibility: Map<string, boolean> = new Map();
   private layerVisibility: Map<string, boolean> = new Map();
   private layerLocked: Map<string, boolean> = new Map();
-  private unsavedLayers: Set<string> = new Set();
+  private unsavedLayers = new UnsavedMarks();
+  // saves sent and not yet answered, by their id: the marks they carried
+  private pendingSaves = new Map<number, { marks: ReturnType<UnsavedMarks['snapshot']>, edits: Set<unknown> }>();
+  private nextSaveId = 1;
   private undoStack: (TileChange | TileChangeGroup | ObjectMutation)[] = [];
   private redoStack: (TileChange | TileChangeGroup | ObjectMutation)[] = [];
   private copiedTile: number | null = null;
@@ -437,7 +463,7 @@ class TileEditor {
           break;
         }
         case 'objectSelect':
-          if (msg.objectType) {
+          if (msg.objectType && !READ_ONLY_LAYERS.has(msg.objectType)) {
             this.selectObject(msg.objectType);
           } else {
             this.deselectObject();
@@ -537,7 +563,9 @@ class TileEditor {
       layerLocked: [...this.layerLocked],
       objectVisibility: {
         Graveyards: this.objectLayerVisibility.get('Graveyards') ?? true,
-        Warps: this.objectLayerVisibility.get('Warps') ?? true
+        Warps: this.objectLayerVisibility.get('Warps') ?? true,
+        DungeonPortals: this.objectLayerVisibility.get('DungeonPortals') ?? true,
+        Chests: this.objectLayerVisibility.get('Chests') ?? true
       },
       unsavedLayers: [...this.unsavedLayers]
     });
@@ -644,6 +672,36 @@ class TileEditor {
         window.mapData.warps = warpsObj;
       }
 
+    if (Array.isArray(window.mapData.chests) || !window.mapData.chests) {
+      const chestsObj: any = {};
+      const named = keyLoadedObjects(OBJECT_LAYERS.Chests.prefix, window.mapData.chests);
+      named.forEach(([name, c]) => {
+        chestsObj[name] = {
+          lootTableId: c.lootTableId ?? 0,
+          resetMinutes: c.resetMinutes ?? CHEST_RESET_DEFAULT_MIN,
+          position: c.position || { x: 0, y: 0 },
+          layer: c.layer ?? null
+        };
+      });
+      window.mapData.chests = chestsObj;
+    }
+
+    if (Array.isArray(window.mapData.dungeonPortals) || !window.mapData.dungeonPortals) {
+      const portalsObj: any = {};
+      const named = keyLoadedObjects(OBJECT_LAYERS.DungeonPortals.prefix, window.mapData.dungeonPortals);
+      // kept whole (kind, mirror, target, the dungeon link): the map editor does not change portals
+      named.forEach(([name, p]) => {
+        portalsObj[name] = {
+          ...p,
+          name,
+          position: p.position || { x: 0, y: 0 },
+          size: p.size || { width: 32, height: 32 },
+          layer: p.layer ?? null
+        };
+      });
+      window.mapData.dungeonPortals = portalsObj;
+    }
+
     if (Array.isArray(window.mapData.zones) || !window.mapData.zones) {
       const zonesObj: Record<string, ClientZone> = {};
       (window.mapData.zones || []).forEach((z: any) => {
@@ -715,7 +773,7 @@ class TileEditor {
 
   private loadObjectLayers() {
     // Zones are not here: they are drawn and edited in the zone map window only (see onZoneMapMessage)
-    const objectTypes = ['Graveyards', 'Warps'];
+    const objectTypes = Object.keys(OBJECT_LAYERS);
 
     // Initialize visibility map - all visible by default
     objectTypes.forEach(type => {
@@ -750,18 +808,18 @@ class TileEditor {
   }
 
   public setLabelCoords(name: string, type: string, x: number, y: number, width: number, height: number) {
-    this.labelCoords.set(name, { type, x, y, width, height });
+    this.labelCoords.set(labelKey(type, name), { type, name, x, y, width, height });
   }
 
   private getLabelAtPosition(clientX: number, clientY: number): { name: string, type: string } | null {
-    for (const [name, coord] of this.labelCoords.entries()) {
+    for (const coord of this.labelCoords.values()) {
       // Don't allow interaction with labels if that layer is not visible or not selected
       if (!this.isObjectLayerVisible(coord.type) || this.selectedObject !== coord.type) {
         continue;
       }
       if (clientX >= coord.x && clientX <= coord.x + coord.width &&
           clientY >= coord.y && clientY <= coord.y + coord.height) {
-        return { name, type: coord.type };
+        return { name: coord.name, type: coord.type };
       }
     }
     return null;
@@ -795,7 +853,7 @@ class TileEditor {
     this.labelInput.style.outline = 'none';
     this.labelInput.style.zIndex = '10000';
 
-    const labelCoord = this.labelCoords.get(name);
+    const labelCoord = this.labelCoords.get(labelKey(type, name));
     if (labelCoord) {
       this.labelInput.style.left = `${labelCoord.x}px`;
       this.labelInput.style.top = `${labelCoord.y}px`;
@@ -842,71 +900,32 @@ class TileEditor {
     }
 
     // Check if new name already exists
-    if (type === 'Graveyards' && window.mapData.graveyards) {
-      if ((window.mapData.graveyards as any)[newName]) {
-        alert('A graveyard with that name already exists!');
+    const store = this.objectsOf(type);
+    if (store) {
+      if (store[newName]) {
+        alert(`A ${OBJECT_LAYERS[type].noun} with that name already exists!`);
         return;
       }
-      const graveyardData = (window.mapData.graveyards as any)[oldName];
-      if (graveyardData) {
+      const objectData = store[oldName];
+      if (objectData) {
         // Rename the object
-        (window.mapData.graveyards as any)[newName] = graveyardData;
-        delete (window.mapData.graveyards as any)[oldName];
+        store[newName] = objectData;
+        delete store[oldName];
 
         // Record mutation
+        const state = this.objectState(type, objectData);
         const mutation: ObjectMutation = {
-          type: 'graveyard',
+          type: OBJECT_LAYERS[type].kind,
           name: oldName,
-          oldState: { x: graveyardData.position?.x || 0, y: graveyardData.position?.y || 0 },
-          newState: { x: graveyardData.position?.x || 0, y: graveyardData.position?.y || 0 }
+          oldState: state,
+          newState: { ...state }
         };
         // Store both old and new names in mutation for rename tracking
         (mutation as any).newName = newName;
         this.undoStack.push(mutation);
         this.redoStack = [];
 
-        // Mark Graveyards as unsaved
-        this.unsavedLayers.add('Graveyards');
-        this.updateLayerList();
-
-        // Update selection
-        this.selectedObjectName = newName;
-      }
-    } else if (type === 'Warps' && window.mapData.warps) {
-      if ((window.mapData.warps as any)[newName]) {
-        alert('A warp with that name already exists!');
-        return;
-      }
-      const warpData = (window.mapData.warps as any)[oldName];
-      if (warpData) {
-        // Rename the object
-        (window.mapData.warps as any)[newName] = warpData;
-        delete (window.mapData.warps as any)[oldName];
-
-        // Record mutation
-        const mutation: ObjectMutation = {
-          type: 'warp',
-          name: oldName,
-          oldState: {
-            x: warpData.position?.x || 0,
-            y: warpData.position?.y || 0,
-            width: warpData.size?.width || 32,
-            height: warpData.size?.height || 32
-          },
-          newState: {
-            x: warpData.position?.x || 0,
-            y: warpData.position?.y || 0,
-            width: warpData.size?.width || 32,
-            height: warpData.size?.height || 32
-          }
-        };
-        // Store both old and new names in mutation for rename tracking
-        (mutation as any).newName = newName;
-        this.undoStack.push(mutation);
-        this.redoStack = [];
-
-        // Mark Warps as unsaved
-        this.unsavedLayers.add('Warps');
+        this.unsavedLayers.add(type);
         this.updateLayerList();
 
         // Update selection
@@ -923,63 +942,44 @@ class TileEditor {
 
     const { type, name } = this.deleteButtonCoords;
 
-    if (type === 'Graveyards' && window.mapData.graveyards) {
-      const graveyardData = (window.mapData.graveyards as any)[name];
-      if (graveyardData) {
-        // Record deletion mutation
-        const oldState = {
-          x: graveyardData.position?.x || graveyardData.x || 0,
-          y: graveyardData.position?.y || graveyardData.y || 0
-        };
-        const mutation: ObjectMutation = {
-          type: 'graveyard',
-          name,
-          oldState,
-          newState: null
-        };
-        this.undoStack.push(mutation);
-        this.redoStack = [];
+    const store = this.objectsOf(type);
+    const objectData = store?.[name];
+    if (store && objectData) {
+      // Record deletion mutation with full state
+      const mutation: ObjectMutation = {
+        type: OBJECT_LAYERS[type].kind,
+        name,
+        oldState: this.objectState(type, objectData),
+        newState: null,
+        data: structuredClone(objectData)
+      };
+      this.undoStack.push(mutation);
+      this.redoStack = [];
 
-        // Mark Graveyards as unsaved
-        this.unsavedLayers.add('Graveyards');
-        this.updateLayerList();
+      this.unsavedLayers.add(type);
+      this.updateLayerList();
 
-        // Delete the object
-        delete (window.mapData.graveyards as any)[name];
-        this.labelCoords.delete(name);
-        this.selectedObjectName = null;
-        this.deleteButtonCoords = null;
-      }
-    } else if (type === 'Warps' && window.mapData.warps) {
-      const warpData = (window.mapData.warps as any)[name];
-      if (warpData) {
-        // Record deletion mutation with full state
-        const oldState = {
-          x: warpData.position?.x || warpData.x || 0,
-          y: warpData.position?.y || warpData.y || 0,
-          width: warpData.size?.width || 32,
-          height: warpData.size?.height || 32
-        };
-        const mutation: ObjectMutation = {
-          type: 'warp',
-          name,
-          oldState,
-          newState: null
-        };
-        this.undoStack.push(mutation);
-        this.redoStack = [];
-
-        // Mark Warps as unsaved
-        this.unsavedLayers.add('Warps');
-        this.updateLayerList();
-
-        // Delete the object
-        delete (window.mapData.warps as any)[name];
-        this.labelCoords.delete(name);
-        this.selectedObjectName = null;
-        this.deleteButtonCoords = null;
-      }
+      // Delete the object
+      delete store[name];
+      this.labelCoords.delete(labelKey(type, name));
+      this.selectedObjectName = null;
+      this.deleteButtonCoords = null;
     }
+  }
+
+  /** The objects of an object layer in mapData, by name (null when it has none yet). */
+  private objectsOf(type: string | null): Record<string, any> | null {
+    const key = type ? OBJECT_LAYERS[type]?.key : undefined;
+    const store = key ? window.mapData?.[key] : null;
+    return store && typeof store === 'object' ? store : null;
+  }
+
+  /** Where an object is, and for warps and dungeon portals its size: what undo and redo put back. */
+  private objectState(type: string, data: any): { x: number, y: number, width?: number, height?: number } {
+    const x = data.position?.x || data.x || 0;
+    const y = data.position?.y || data.y || 0;
+    if (!isRectLayer(type)) return { x, y };
+    return { x, y, width: data.size?.width || 32, height: data.size?.height || 32 };
   }
 
   private selectObject(objectType: string) {
@@ -1050,7 +1050,7 @@ class TileEditor {
       } else if (corner === 'left' || corner === 'right') {
         canvas.style.cursor = 'ew-resize';
       }
-      const warpData = (window.mapData.warps as any)[this.resizingWarp.name];
+      const warpData = this.objectsOf(this.resizingWarp.type)?.[this.resizingWarp.name];
       if (warpData && window.mapData) {
         const deltaX = worldX - this.resizingWarp.startX;
         const deltaY = worldY - this.resizingWarp.startY;
@@ -1126,8 +1126,8 @@ class TileEditor {
       let newX = worldX - this.draggingObject.offsetX;
       let newY = worldY - this.draggingObject.offsetY;
 
-      if (this.draggingObject.type === 'Graveyards') {
-        const graveyardData = (window.mapData.graveyards as any)[this.draggingObject.name];
+      if (isPointLayer(this.draggingObject.type)) {
+        const graveyardData = this.objectsOf(this.draggingObject.type)?.[this.draggingObject.name];
         if (graveyardData && window.mapData) {
           // Get map boundaries
           const mapMaxWidth = window.mapData.width * window.mapData.tilewidth;
@@ -1144,11 +1144,13 @@ class TileEditor {
           graveyardData.position.x = newX;
           graveyardData.position.y = newY;
           // Keep x/y in sync for backward compatibility
-          graveyardData.x = newX;
-          graveyardData.y = newY;
+          if (this.draggingObject.type === 'Graveyards') {
+            graveyardData.x = newX;
+            graveyardData.y = newY;
+          }
         }
-      } else if (this.draggingObject.type === 'Warps') {
-        const warpData = (window.mapData.warps as any)[this.draggingObject.name];
+      } else if (isRectLayer(this.draggingObject.type)) {
+        const warpData = this.objectsOf(this.draggingObject.type)?.[this.draggingObject.name];
         if (warpData && window.mapData) {
           // Get warp size
           const warpWidth = warpData.size?.width || 32;
@@ -1175,14 +1177,14 @@ class TileEditor {
     }
 
     // Check for hover over objects to change cursor
-    if (this.selectedObject === 'Graveyards' && window.mapData?.graveyards) {
-      const hoveredGraveyard = this.getGraveyardAtPosition(worldX, worldY);
+    if (isPointLayer(this.selectedObject) && this.objectsOf(this.selectedObject)) {
+      const hoveredGraveyard = this.getGraveyardAtPosition(worldX, worldY, this.selectedObject!);
       if (hoveredGraveyard) {
         canvas.style.cursor = 'grab';
         this.previewTilePos = null;
         return;
       }
-    } else if (this.selectedObject === 'Warps' && window.mapData?.warps) {
+    } else if (isRectLayer(this.selectedObject) && this.objectsOf(this.selectedObject)) {
       // Check for resize handle hover
       const cornerClick = this.getWarpCornerAtPosition(worldX, worldY);
       if (cornerClick) {
@@ -1201,7 +1203,7 @@ class TileEditor {
       }
 
       // Check for warp center hover
-      const hoveredWarp = this.getWarpAtPosition(worldX, worldY);
+      const hoveredWarp = this.getWarpAtPosition(worldX, worldY, this.selectedObject!);
       if (hoveredWarp) {
         canvas.style.cursor = 'grab';
         this.previewTilePos = null;
@@ -1286,16 +1288,17 @@ class TileEditor {
     if (this.selectedObject && e.button === 0) {
       let foundObject = false;
 
-      if (this.selectedObject === 'Graveyards') {
+      const objectType = this.selectedObject;
+      if (isPointLayer(objectType)) {
         // Only allow interaction if layer is visible
-        if (!this.isObjectLayerVisible('Graveyards')) {
+        if (!this.isObjectLayerVisible(objectType)) {
           return;
         }
-        const clickedGraveyard = this.getGraveyardAtPositionForInteraction(worldX, worldY);
+        const clickedGraveyard = this.getGraveyardAtPositionForInteraction(worldX, worldY, objectType);
         if (clickedGraveyard) {
           foundObject = true;
           this.selectedObjectName = clickedGraveyard;
-          const graveyardData = (window.mapData.graveyards as any)[clickedGraveyard];
+          const graveyardData = this.objectsOf(objectType)?.[clickedGraveyard];
           if (graveyardData) {
             // Use position.x/y if available, fall back to x/y
             const gx = graveyardData.position?.x || graveyardData.x || 0;
@@ -1305,7 +1308,7 @@ class TileEditor {
             this.objectMutationStartState = { x: gx, y: gy };
 
             this.draggingObject = {
-              type: 'Graveyards',
+              type: objectType,
               name: clickedGraveyard,
               startX: gx,
               startY: gy,
@@ -1315,14 +1318,14 @@ class TileEditor {
             e.preventDefault();
           }
         }
-      } else if (this.selectedObject === 'Warps') {
-        if (!this.isObjectLayerVisible('Warps')) {
+      } else if (isRectLayer(objectType)) {
+        if (!this.isObjectLayerVisible(objectType)) {
           return;
         }
         const cornerClick = this.getWarpCornerAtPosition(worldX, worldY);
         if (cornerClick) {
           foundObject = true;
-          const warpData = (window.mapData.warps as any)[cornerClick.name];
+          const warpData = this.objectsOf(objectType)?.[cornerClick.name];
           if (warpData) {
             const currentWidth = warpData.size?.width || 32;
             const currentHeight = warpData.size?.height || 32;
@@ -1333,6 +1336,7 @@ class TileEditor {
             this.objectMutationStartState = { x: currentX, y: currentY, width: currentWidth, height: currentHeight };
 
             this.resizingWarp = {
+              type: objectType,
               name: cornerClick.name,
               corner: cornerClick.corner,
               startX: worldX,
@@ -1346,11 +1350,11 @@ class TileEditor {
           }
         } else {
           // Otherwise try to drag the warp
-          const clickedWarp = this.getWarpAtPositionForInteraction(worldX, worldY);
+          const clickedWarp = this.getWarpAtPositionForInteraction(worldX, worldY, objectType);
           if (clickedWarp) {
             foundObject = true;
             this.selectedObjectName = clickedWarp;
-            const warpData = (window.mapData.warps as any)[clickedWarp];
+            const warpData = this.objectsOf(objectType)?.[clickedWarp];
             if (warpData) {
               // Use position.x/y if available, fall back to x/y
               const wx = warpData.position?.x || warpData.x || 0;
@@ -1362,7 +1366,7 @@ class TileEditor {
               this.objectMutationStartState = { x: wx, y: wy, width: warpWidth, height: warpHeight };
 
               this.draggingObject = {
-                type: 'Warps',
+                type: objectType,
                 name: clickedWarp,
                 startX: wx,
                 startY: wy,
@@ -1428,17 +1432,18 @@ class TileEditor {
     }
   }
 
-  private getGraveyardAtPosition(worldX: number, worldY: number): string | null {
-    if (!window.mapData?.graveyards) return null;
+  private getGraveyardAtPosition(worldX: number, worldY: number, type: string = 'Graveyards'): string | null {
+    const store = this.objectsOf(type);
+    if (!store) return null;
 
-    for (const [name, data] of Object.entries(window.mapData.graveyards)) {
+    for (const [name, data] of Object.entries(store)) {
       if (data && typeof data === 'object') {
         const gData = data as any;
         const graveyardX = gData.position?.x || gData.x || 0;
         const graveyardY = gData.position?.y || gData.y || 0;
-        // Graveyards are rendered centered, so use fixed dimensions from renderer
-        const graveyardWidth = 16;
-        const graveyardHeight = 22;
+        // Graveyards and chests are rendered centered, so use fixed dimensions from renderer
+        const graveyardWidth = type === 'Chests' ? CHEST_W : 16;
+        const graveyardHeight = type === 'Chests' ? CHEST_H : 22;
 
         // Check if click is within the centered bounds
         if (worldX >= graveyardX - graveyardWidth / 2 && worldX <= graveyardX + graveyardWidth / 2 &&
@@ -1450,18 +1455,19 @@ class TileEditor {
     return null;
   }
 
-  private getGraveyardAtPositionForInteraction(worldX: number, worldY: number): string | null {
+  private getGraveyardAtPositionForInteraction(worldX: number, worldY: number, type: string = 'Graveyards'): string | null {
     // Only allow interaction if the layer is visible and selected
-    if (!this.isObjectLayerVisible('Graveyards') || this.selectedObject !== 'Graveyards') {
+    if (!this.isObjectLayerVisible(type) || this.selectedObject !== type) {
       return null;
     }
-    return this.getGraveyardAtPosition(worldX, worldY);
+    return this.getGraveyardAtPosition(worldX, worldY, type);
   }
 
-  private getWarpAtPosition(worldX: number, worldY: number): string | null {
-    if (!window.mapData?.warps) return null;
+  private getWarpAtPosition(worldX: number, worldY: number, type: string = 'Warps'): string | null {
+    const store = this.objectsOf(type);
+    if (!store) return null;
 
-    for (const [name, data] of Object.entries(window.mapData.warps)) {
+    for (const [name, data] of Object.entries(store)) {
       if (data && typeof data === 'object') {
         const wData = data as any;
         const warpX = wData.position?.x || wData.x || 0;
@@ -1478,18 +1484,18 @@ class TileEditor {
     return null;
   }
 
-  private getWarpAtPositionForInteraction(worldX: number, worldY: number): string | null {
+  private getWarpAtPositionForInteraction(worldX: number, worldY: number, type: string = 'Warps'): string | null {
     // Only allow interaction if the layer is visible and selected
-    if (!this.isObjectLayerVisible('Warps') || this.selectedObject !== 'Warps') {
+    if (!this.isObjectLayerVisible(type) || this.selectedObject !== type) {
       return null;
     }
-    return this.getWarpAtPosition(worldX, worldY);
+    return this.getWarpAtPosition(worldX, worldY, type);
   }
 
   private getWarpCornerAtPosition(worldX: number, worldY: number): { name: string, corner: string } | null {
-    if (!window.mapData?.warps || this.selectedObjectName === null) return null;
+    if (!isRectLayer(this.selectedObject) || this.selectedObjectName === null) return null;
 
-    const data = (window.mapData.warps as any)[this.selectedObjectName];
+    const data = this.objectsOf(this.selectedObject)?.[this.selectedObjectName];
     if (!data) return null;
 
     const warpX = data.position?.x || data.x || 0;
@@ -1769,7 +1775,7 @@ class TileEditor {
 
     // Finalize warp resizing
     if (this.resizingWarp && window.mapData) {
-      const warpData = (window.mapData.warps as any)[this.resizingWarp.name];
+      const warpData = this.objectsOf(this.resizingWarp.type)?.[this.resizingWarp.name];
       if (warpData) {
         // Snap position to whole numbers
         if (warpData.position) {
@@ -1801,7 +1807,7 @@ class TileEditor {
         // Only create snapshot if something changed
         if (oldState.x !== newX || oldState.y !== newY || oldState.width !== newWidth || oldState.height !== newHeight) {
           const mutation: ObjectMutation = {
-            type: 'warp',
+            type: OBJECT_LAYERS[this.resizingWarp.type].kind,
             name: this.resizingWarp.name,
             oldState: {
               x: oldState.x,
@@ -1814,8 +1820,7 @@ class TileEditor {
           this.undoStack.push(mutation);
           this.redoStack = [];
 
-          // Mark Warps as unsaved
-          this.unsavedLayers.add('Warps');
+          this.unsavedLayers.add(this.resizingWarp.type);
           this.updateLayerList();
         }
       }
@@ -1824,8 +1829,9 @@ class TileEditor {
     }
 
     if (this.draggingObject && window.mapData) {
-      if (this.draggingObject.type === 'Warps') {
-        const warpData = (window.mapData.warps as any)[this.draggingObject.name];
+      const dragType = this.draggingObject.type;
+      if (isRectLayer(dragType)) {
+        const warpData = this.objectsOf(dragType)?.[this.draggingObject.name];
         if (warpData) {
           // Get current position
           const currentX = warpData.position?.x || warpData.x || 0;
@@ -1850,7 +1856,7 @@ class TileEditor {
 
           if (oldState.x !== snappedX || oldState.y !== snappedY) {
             const mutation: ObjectMutation = {
-              type: 'warp',
+              type: OBJECT_LAYERS[dragType].kind,
               name: this.draggingObject.name,
               oldState: {
                 x: oldState.x,
@@ -1863,13 +1869,12 @@ class TileEditor {
             this.undoStack.push(mutation);
             this.redoStack = [];
 
-            // Mark Warps as unsaved
-            this.unsavedLayers.add('Warps');
+            this.unsavedLayers.add(dragType);
             this.updateLayerList();
           }
         }
-      } else if (this.draggingObject.type === 'Graveyards') {
-        const graveyardData = (window.mapData.graveyards as any)[this.draggingObject.name];
+      } else if (isPointLayer(dragType)) {
+        const graveyardData = this.objectsOf(dragType)?.[this.draggingObject.name];
         if (graveyardData) {
           // Get current position
           const currentX = graveyardData.position?.x || graveyardData.x || 0;
@@ -1885,15 +1890,17 @@ class TileEditor {
           }
           graveyardData.position.x = snappedX;
           graveyardData.position.y = snappedY;
-          graveyardData.x = snappedX;
-          graveyardData.y = snappedY;
+          if (dragType === 'Graveyards') {
+            graveyardData.x = snappedX;
+            graveyardData.y = snappedY;
+          }
 
           // Record mutation only if position changed
           const oldState = this.objectMutationStartState || { x: snappedX, y: snappedY };
 
           if (oldState.x !== snappedX || oldState.y !== snappedY) {
             const mutation: ObjectMutation = {
-              type: 'graveyard',
+              type: OBJECT_LAYERS[dragType].kind,
               name: this.draggingObject.name,
               oldState: {
                 x: oldState.x,
@@ -1904,8 +1911,7 @@ class TileEditor {
             this.undoStack.push(mutation);
             this.redoStack = [];
 
-            // Mark Graveyards as unsaved
-            this.unsavedLayers.add('Graveyards');
+            this.unsavedLayers.add(dragType);
             this.updateLayerList();
           }
         }
@@ -2621,6 +2627,29 @@ class TileEditor {
     }
   }
 
+  /** Undo or redo of a graveyard, warp, chest or dungeon portal edit: a rename, a delete, a create, or a move or resize. */
+  private applyObjectMutation(mutation: MapObjectMutation, way: 'undo' | 'redo') {
+    const layer = layerOfKind(mutation.type);
+    const store = this.objectsOf(layer);
+    if (!layer || !store) return;
+    const outcome = applyMutationToStore(store, mutation, way, { rect: isRectLayer(layer), graveyard: layer === 'Graveyards' });
+    if (!outcome) return;
+    if (outcome.kind === 'renamed') {
+      this.selectedObjectName = outcome.name;
+    } else if (outcome.kind === 'removed') {
+      this.labelCoords.delete(labelKey(layer, mutation.name));
+      this.selectedObjectName = null;
+      this.deleteButtonCoords = null;
+    } else if (outcome.kind === 'restored') {
+      // Clear label coords so they get recalculated on next render
+      this.labelCoords.delete(labelKey(layer, mutation.name));
+      // Auto-select the restored object
+      this.selectedObject = layer;
+      this.selectedObjectName = mutation.name;
+      this.deleteButtonCoords = null;
+    }
+  }
+
   private undo() {
     const item = this.undoStack.pop();
     if (!item) return;
@@ -2633,117 +2662,9 @@ class TileEditor {
     }
 
     // Handle ObjectMutation
-    if ('type' in item && (item.type === 'graveyard' || item.type === 'warp')) {
-      const mutation = item as ObjectMutation;
-      const mutationAny = mutation as any;
-      const isRename = mutationAny.newName !== undefined;
-
-      // Check if this is a deletion (newState is null) or creation (oldState is null)
-      const isDeletion = mutation.newState === null && mutation.oldState !== null;
-      const isCreation = mutation.oldState === null && mutation.newState !== null;
-
-      if (mutation.type === 'graveyard' && window.mapData?.graveyards) {
-        if (isRename) {
-          // Undo rename: change from newName back to mutation.name
-          const newName = mutationAny.newName;
-          const graveyardData = (window.mapData.graveyards as any)[newName];
-          if (graveyardData) {
-            (window.mapData.graveyards as any)[mutation.name] = graveyardData;
-            delete (window.mapData.graveyards as any)[newName];
-            this.selectedObjectName = mutation.name;
-          }
-        } else if (isDeletion && mutation.oldState) {
-          // Restore deleted graveyard
-          (window.mapData.graveyards as any)[mutation.name] = {
-            position: { x: mutation.oldState.x, y: mutation.oldState.y },
-            x: mutation.oldState.x,
-            y: mutation.oldState.y,
-            map: 'main'
-          };
-          // Clear label coords so they get recalculated on next render
-          this.labelCoords.delete(mutation.name);
-          // Auto-select the restored graveyard
-          this.selectedObject = 'Graveyards';
-          this.selectedObjectName = mutation.name;
-          this.deleteButtonCoords = null;
-        } else if (isCreation) {
-          // Delete created graveyard
-          delete (window.mapData.graveyards as any)[mutation.name];
-          this.labelCoords.delete(mutation.name);
-          this.selectedObjectName = null;
-          this.deleteButtonCoords = null;
-        } else {
-          // Position/size change
-          const graveyardData = (window.mapData.graveyards as any)[mutation.name];
-          if (graveyardData && mutation.oldState) {
-            if (mutation.oldState.x !== undefined) {
-              if (!graveyardData.position) graveyardData.position = {};
-              graveyardData.position.x = mutation.oldState.x;
-              graveyardData.x = mutation.oldState.x;
-            }
-            if (mutation.oldState.y !== undefined) {
-              if (!graveyardData.position) graveyardData.position = {};
-              graveyardData.position.y = mutation.oldState.y;
-              graveyardData.y = mutation.oldState.y;
-            }
-          }
-        }
-      } else if (mutation.type === 'warp' && window.mapData?.warps) {
-        if (isRename) {
-          // Undo rename: change from newName back to mutation.name
-          const newName = mutationAny.newName;
-          const warpData = (window.mapData.warps as any)[newName];
-          if (warpData) {
-            (window.mapData.warps as any)[mutation.name] = warpData;
-            delete (window.mapData.warps as any)[newName];
-            this.selectedObjectName = mutation.name;
-          }
-        } else if (isDeletion) {
-          // Restore deleted warp
-          if (mutation.oldState) {
-            (window.mapData.warps as any)[mutation.name] = {
-              position: { x: mutation.oldState.x, y: mutation.oldState.y },
-              x: mutation.oldState.x,
-              y: mutation.oldState.y,
-              size: { width: mutation.oldState.width, height: mutation.oldState.height },
-              map: 'main'
-            };
-          }
-          // Clear label coords so they get recalculated on next render
-          this.labelCoords.delete(mutation.name);
-          // Auto-select the restored warp
-          this.selectedObject = 'Warps';
-          this.selectedObjectName = mutation.name;
-          this.deleteButtonCoords = null;
-        } else if (isCreation) {
-          // Delete created warp
-          delete (window.mapData.warps as any)[mutation.name];
-          this.labelCoords.delete(mutation.name);
-          this.selectedObjectName = null;
-          this.deleteButtonCoords = null;
-        } else {
-          // Position/size change
-          const warpData = (window.mapData.warps as any)[mutation.name];
-          if (warpData && mutation.oldState) {
-            if (mutation.oldState.x !== undefined) {
-              if (!warpData.position) warpData.position = {};
-              warpData.position.x = mutation.oldState.x;
-            }
-            if (mutation.oldState.y !== undefined) {
-              if (!warpData.position) warpData.position = {};
-              warpData.position.y = mutation.oldState.y;
-            }
-            if (mutation.oldState.width !== undefined) {
-              if (!warpData.size) warpData.size = {};
-              warpData.size.width = mutation.oldState.width;
-            }
-            if (mutation.oldState.height !== undefined) {
-              if (!warpData.size) warpData.size = {};
-              warpData.size.height = mutation.oldState.height;
-            }
-          }
-        }
-      }
+    if ('type' in item) {
+      const mutation = item as ObjectMutation & { type: ObjectKind };
+      this.applyObjectMutation(mutation, 'undo');
       this.redoStack.push(mutation);
       return;
     }
@@ -2827,117 +2748,9 @@ class TileEditor {
     }
 
     // Handle ObjectMutation
-    if ('type' in item && (item.type === 'graveyard' || item.type === 'warp')) {
-      const mutation = item as ObjectMutation;
-      const mutationAny = mutation as any;
-      const isRename = mutationAny.newName !== undefined;
-
-      // Check if this is a deletion (newState is null) or creation (oldState is null)
-      const isDeletion = mutation.newState === null && mutation.oldState !== null;
-      const isCreation = mutation.oldState === null && mutation.newState !== null;
-
-      if (mutation.type === 'graveyard' && window.mapData?.graveyards) {
-        if (isRename) {
-          // Redo rename: change from mutation.name to newName
-          const newName = mutationAny.newName;
-          const graveyardData = (window.mapData.graveyards as any)[mutation.name];
-          if (graveyardData) {
-            (window.mapData.graveyards as any)[newName] = graveyardData;
-            delete (window.mapData.graveyards as any)[mutation.name];
-            this.selectedObjectName = newName;
-          }
-        } else if (isDeletion) {
-          // Delete graveyard again
-          delete (window.mapData.graveyards as any)[mutation.name];
-          this.labelCoords.delete(mutation.name);
-          this.selectedObjectName = null;
-          this.deleteButtonCoords = null;
-        } else if (isCreation && mutation.newState) {
-          // Restore created graveyard
-          (window.mapData.graveyards as any)[mutation.name] = {
-            position: { x: mutation.newState.x, y: mutation.newState.y },
-            x: mutation.newState.x,
-            y: mutation.newState.y,
-            map: 'main'
-          };
-          // Clear label coords so they get recalculated on next render
-          this.labelCoords.delete(mutation.name);
-          // Auto-select the restored graveyard
-          this.selectedObject = 'Graveyards';
-          this.selectedObjectName = mutation.name;
-          this.deleteButtonCoords = null;
-        } else {
-          // Position/size change
-          const graveyardData = (window.mapData.graveyards as any)[mutation.name];
-          if (graveyardData && mutation.newState) {
-            if (mutation.newState.x !== undefined) {
-              if (!graveyardData.position) graveyardData.position = {};
-              graveyardData.position.x = mutation.newState.x;
-              graveyardData.x = mutation.newState.x;
-            }
-            if (mutation.newState.y !== undefined) {
-              if (!graveyardData.position) graveyardData.position = {};
-              graveyardData.position.y = mutation.newState.y;
-              graveyardData.y = mutation.newState.y;
-            }
-          }
-        }
-      } else if (mutation.type === 'warp' && window.mapData?.warps) {
-        if (isRename) {
-          // Redo rename: change from mutation.name to newName
-          const newName = mutationAny.newName;
-          const warpData = (window.mapData.warps as any)[mutation.name];
-          if (warpData) {
-            (window.mapData.warps as any)[newName] = warpData;
-            delete (window.mapData.warps as any)[mutation.name];
-            this.selectedObjectName = newName;
-          }
-        } else if (isDeletion) {
-          // Delete warp again
-          delete (window.mapData.warps as any)[mutation.name];
-          this.labelCoords.delete(mutation.name);
-          this.selectedObjectName = null;
-          this.deleteButtonCoords = null;
-        } else if (isCreation && mutation.newState) {
-          // Restore created warp
-          (window.mapData.warps as any)[mutation.name] = {
-            position: { x: mutation.newState.x, y: mutation.newState.y },
-            x: mutation.newState.x,
-            y: mutation.newState.y,
-            size: { width: mutation.newState.width, height: mutation.newState.height },
-            map: 'main'
-          };
-          // Clear label coords so they get recalculated on next render
-          this.labelCoords.delete(mutation.name);
-          // Auto-select the restored warp
-          this.selectedObject = 'Warps';
-          this.selectedObjectName = mutation.name;
-          this.deleteButtonCoords = null;
-        } else {
-          // Position/size change
-          const warpData = (window.mapData.warps as any)[mutation.name];
-          if (warpData && mutation.newState) {
-            if (mutation.newState.x !== undefined) {
-              if (!warpData.position) warpData.position = {};
-              warpData.position.x = mutation.newState.x;
-              warpData.x = mutation.newState.x;
-            }
-            if (mutation.newState.y !== undefined) {
-              if (!warpData.position) warpData.position = {};
-              warpData.position.y = mutation.newState.y;
-              warpData.y = mutation.newState.y;
-            }
-            if (mutation.newState.width !== undefined) {
-              if (!warpData.size) warpData.size = {};
-              warpData.size.width = mutation.newState.width;
-            }
-            if (mutation.newState.height !== undefined) {
-              if (!warpData.size) warpData.size = {};
-              warpData.size.height = mutation.newState.height;
-            }
-          }
-        }
-      }
+    if ('type' in item) {
+      const mutation = item as ObjectMutation & { type: ObjectKind };
+      this.applyObjectMutation(mutation, 'redo');
       this.undoStack.push(mutation);
       return;
     }
@@ -3013,9 +2826,7 @@ class TileEditor {
     const operation = this.propertyUndoStack.pop();
     if (!operation || !this.currentPropertyObject || !this.currentPropertyObjectType || !this.currentPropertyObjectName) return;
 
-    const objectMap = this.currentPropertyObjectType === 'Graveyards'
-      ? window.mapData?.graveyards
-      : window.mapData?.warps;
+    const objectMap = this.objectsOf(this.currentPropertyObjectType);
     if (!objectMap) return;
 
     const obj = (objectMap as any)[this.currentPropertyObjectName];
@@ -3054,9 +2865,7 @@ class TileEditor {
     const operation = this.propertyRedoStack.pop();
     if (!operation || !this.currentPropertyObject || !this.currentPropertyObjectType || !this.currentPropertyObjectName) return;
 
-    const objectMap = this.currentPropertyObjectType === 'Graveyards'
-      ? window.mapData?.graveyards
-      : window.mapData?.warps;
+    const objectMap = this.objectsOf(this.currentPropertyObjectType);
     if (!objectMap) return;
 
     const obj = (objectMap as any)[this.currentPropertyObjectName];
@@ -3093,6 +2902,10 @@ class TileEditor {
 
   private refreshPropertiesPanel() {
     if (!this.propertiesPanel || !this.currentPropertyObjectName) return;
+    if (this.currentPropertyObjectType && PICKER_LAYERS.has(this.currentPropertyObjectType)) {
+      this.pickerRefresh?.();
+      return;
+    }
 
     // Find and clear the content area
     const content = this.propertiesPanel.querySelector('.te-panel-content');
@@ -3278,6 +3091,30 @@ class TileEditor {
     };
   }
 
+  /** Chests or dungeon portals checked as the server checks them (cleanChests, cleanPortals): what it would refuse, or null. */
+  private mapObjectProblem(type: 'Chests' | 'DungeonPortals'): string | null {
+    const entries = Object.entries(this.objectsOf(type) ?? {});
+    const what = type === 'Chests' ? 'chests' : 'dungeon portals';
+    if (entries.length > MAP_OBJECT_LIMIT) return `at most ${MAP_OBJECT_LIMIT} ${what}`;
+    const seen = new Set<string>();
+    for (const [rawName, data] of entries) {
+      const name = rawName.trim();
+      if (!name) return 'every object needs a name';
+      if (seen.has(name)) return `the name "${name}" is used twice`;
+      seen.add(name);
+      if (type === 'Chests') {
+        if (wholeFrom(data?.lootTableId, 1) === null) return `"${name}" needs a loot table`;
+        if (wholeFrom(data?.resetMinutes, 1, CHEST_RESET_MAX_MIN) === null) return `"${name}" needs a reset of 1 to ${CHEST_RESET_MAX_MIN} minutes`;
+      } else {
+        if (data?.kind === 'teleport' ? !data?.target?.map : data?.dungeonId != null && wholeFrom(data.dungeonId, 1) === null) return `"${name}" needs a dungeon or a place`;
+        const size = data?.size;
+        if (!finiteNumber(size?.width) || !finiteNumber(size?.height) || size.width < 1 || size.height < 1) return `"${name}" needs a size of 1 or more`;
+      }
+      if (!finiteNumber(data?.position?.x) || !finiteNumber(data?.position?.y)) return `${name} has no position`;
+    }
+    return null;
+  }
+
   private showNotification(message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info', duration: number = 3000) {
     const container = document.getElementById('tile-editor-notification-container');
     if (!container) return;
@@ -3318,7 +3155,6 @@ class TileEditor {
     if (now - this.lastSaveTime < this.saveCooldownMs) {
       return;
     }
-    this.lastSaveTime = now;
 
     const hasChunkChanges = this.undoStack.length > 0;
     const hasGraveyardChanges = window.mapData?.graveyards !== undefined;
@@ -3396,6 +3232,18 @@ class TileEditor {
       infinite: window.mapData.infinite === true,
     };
 
+    // Chests only when they changed or move with the map: left out, the server keeps those it has. Portals are never
+    // sent: the server moves them with the map itself, so a Portals tab change made since this editor loaded stays
+    const sendsObjects = (type: string) => this.unsavedLayers.has(type) || (didShift && Object.keys(this.objectsOf(type) ?? {}).length > 0);
+    const sendChests = sendsObjects('Chests');
+    const chestProblem = sendChests ? this.mapObjectProblem('Chests') : null;
+    if (chestProblem) {
+      const message = `Cannot save chests: ${chestProblem}`;
+      console.error(message);
+      this.showNotification(message, 'error', 5000);
+      return;
+    }
+
     if (didShift) {
       const dpx = shiftTilesX * window.mapData.tilewidth;
       const dpy = shiftTilesY * window.mapData.tileheight;
@@ -3404,6 +3252,9 @@ class TileEditor {
       }
       for (const g of Object.values(window.mapData.graveyards || {}) as any[]) {
         if (g?.position) { g.position.x += dpx; g.position.y += dpy; }
+      }
+      for (const o of [...Object.values(this.objectsOf('Chests') ?? {}), ...Object.values(this.objectsOf('DungeonPortals') ?? {})] as any[]) {
+        if (o?.position) { o.position.x += dpx; o.position.y += dpy; }
       }
       // Zones are in tiles, and the server keeps the ones it has when none are sent: moved ones are sent
       if (editorZones && Object.keys(editorZones).length > 0) {
@@ -3428,9 +3279,12 @@ class TileEditor {
           }))
         : [];
 
+    const saveId = this.nextSaveId++;
     const savePayload: any = {
       type: 'SAVE_MAP',
       data: {
+        // the server answers MAP_SAVE_RESULT with it
+        saveId,
         mapName: window.mapData.name,
         chunks: chunks,
         bounds: saveBounds,
@@ -3441,7 +3295,20 @@ class TileEditor {
     // The zones only when they changed: left out, the server keeps those it has
     const zonesToSave = buildSaveZones(editorZones, this.unsavedLayers.has('Zones'));
     if (zonesToSave) savePayload.data.zones = zonesToSave;
+    if (sendChests) {
+      savePayload.data.chests = Object.entries(this.objectsOf('Chests') ?? {}).map(([name, c]: [string, any]) => ({
+        name,
+        lootTableId: Number(c.lootTableId),
+        resetMinutes: Number(c.resetMinutes),
+        position: { x: c.position.x, y: c.position.y },
+        layer: typeof c.layer === 'string' ? c.layer : null
+      }));
+    }
 
+    // The cooldown starts with a save that is sent: one refused above can be sent again at once
+    this.lastSaveTime = now;
+    // The edits and the unsaved marks stay until the server says the save worked (mapSaveResult)
+    this.pendingSaves.set(saveId, { marks: this.unsavedLayers.snapshot(), edits: new Set(this.undoStack) });
     sendRequest(savePayload);
 
     this.layerDataSnapshot = null;
@@ -3449,12 +3316,22 @@ class TileEditor {
     Promise.all(chunks.map(chunk =>
       clearChunkFromCache(window.mapData.name, chunk.chunkX, chunk.chunkY)
     )).catch(() => {});
+    this.notifyZoneMap();
+  }
 
-    this.undoStack = [];
-    this.redoStack = [];
-
-    // Clear unsaved layers tracking
-    this.unsavedLayers.clear();
+  /**
+   * The server's answer to SAVE_MAP (MAP_SAVE_RESULT { saveId, ok }). A save that worked takes its edits off the undo
+   * stack and clears the marks of the layers it carried, unless they were changed again since; one that failed keeps
+   * them, so the next save sends them again. The server tells the reason in its own notice.
+   */
+  public mapSaveResult(data: any) {
+    const saveId = Number(data?.saveId);
+    const sent = this.pendingSaves.get(saveId);
+    if (!sent) return;
+    this.pendingSaves.delete(saveId);
+    if (data?.ok !== true) return;
+    this.undoStack = this.undoStack.filter((item) => !sent.edits.has(item));
+    this.unsavedLayers.settle(sent.marks);
     this.updateLayerList();
     this.notifyZoneMap();
   }
@@ -3609,76 +3486,48 @@ class TileEditor {
     const ul = document.createElement("ul");
     ul.className = "ui";
 
-    // Check what was clicked
-    const clickedGraveyard = this.getGraveyardAtPosition(worldX, worldY);
-    const clickedWarp = this.getWarpAtPosition(worldX, worldY);
-
-    // Auto-select the object when right-clicking on it
-    if (clickedGraveyard) {
-      this.selectObject('Graveyards');
-      this.selectedObjectName = clickedGraveyard;
-    } else if (clickedWarp) {
-      this.selectObject('Warps');
-      this.selectedObjectName = clickedWarp;
+    // Check what was clicked: the selected layer's objects first, then the other visible layers
+    const order = hitTestOrder(Object.entries(OBJECT_LAYERS).filter(([type]) => !READ_ONLY_LAYERS.has(type)).map(([type, l]) => ({ type, rect: l.rect })), this.selectedObject, (type) => this.isObjectLayerVisible(type));
+    let clicked: { type: string, name: string } | null = null;
+    for (const type of order) {
+      const name = isRectLayer(type) ? this.getWarpAtPosition(worldX, worldY, type) : this.getGraveyardAtPosition(worldX, worldY, type);
+      if (name) {
+        clicked = { type, name };
+        break;
+      }
     }
 
-    if (clickedGraveyard && this.selectedObject === 'Graveyards') {
-      // Show properties option for graveyard (only if Graveyards layer is selected)
+    // Auto-select the object when right-clicking on it
+    if (clicked) {
+      this.selectObject(clicked.type);
+      this.selectedObjectName = clicked.name;
+    }
+
+    if (clicked && this.selectedObject === clicked.type) {
+      const { type, name } = clicked;
+      // Show properties option (only if the object's layer is selected)
       const propertiesItem = document.createElement("li");
       propertiesItem.className = "ui";
       propertiesItem.innerText = "Properties";
       propertiesItem.onclick = (e) => {
         e.stopPropagation();
         // Object was already selected on right-click
-        this.openPropertiesPanel('Graveyards', clickedGraveyard);
+        this.openPropertiesPanel(type, name);
         contextMenu.remove();
       };
       ul.appendChild(propertiesItem);
 
-      // Show delete option for graveyard
+      // Show delete option
       const deleteItem = document.createElement("li");
       deleteItem.className = "ui";
       deleteItem.innerText = "Delete";
       deleteItem.onclick = (e) => {
         e.stopPropagation();
         // Object was already selected on right-click
-        const graveyardData = (window.mapData.graveyards as any)[clickedGraveyard];
-        if (graveyardData) {
+        if (this.objectsOf(type)?.[name]) {
           this.deleteButtonCoords = {
-            type: 'Graveyards',
-            name: clickedGraveyard,
-            x: 0,
-            y: 0,
-            size: 16
-          };
-        }
-        this.deleteSelectedObject();
-        contextMenu.remove();
-      };
-      ul.appendChild(deleteItem);
-    } else if (clickedWarp && this.selectedObject === 'Warps') {
-      // Show properties option for warp (only if Warps layer is selected)
-      const propertiesItem = document.createElement("li");
-      propertiesItem.innerText = "Properties";
-      propertiesItem.onclick = (e) => {
-        e.stopPropagation();
-        // Object was already selected on right-click
-        this.openPropertiesPanel('Warps', clickedWarp);
-        contextMenu.remove();
-      };
-      ul.appendChild(propertiesItem);
-
-      // Show delete option for warp
-      const deleteItem = document.createElement("li");
-      deleteItem.innerText = "Delete";
-      deleteItem.onclick = (e) => {
-        e.stopPropagation();
-        // Object was already selected on right-click
-        const warpData = (window.mapData.warps as any)[clickedWarp];
-        if (warpData) {
-          this.deleteButtonCoords = {
-            type: 'Warps',
-            name: clickedWarp,
+            type,
+            name,
             x: 0,
             y: 0,
             size: 16
@@ -3697,6 +3546,8 @@ class TileEditor {
           this.createGraveyardAtPosition(worldX, worldY);
         } else if (this.selectedObject === 'Warps') {
           this.createWarpAtPosition(worldX, worldY);
+        } else if (this.selectedObject === 'Chests') {
+          this.createChestAtPosition(worldX, worldY);
         }
         contextMenu.remove();
       };
@@ -3817,6 +3668,153 @@ class TileEditor {
     this.openPropertiesPanel('Warps', newName);
   }
 
+  /** A new chest or dungeon portal at the point clicked, under a name not yet used: its properties panel opens to pick what it is. */
+  private createPickerObjectAt(type: 'Chests', x: number, y: number) {
+    if (!window.mapData) return;
+    const { key, kind, prefix, noun } = OBJECT_LAYERS[type];
+    if (!this.objectsOf(type)) window.mapData[key] = {};
+    const store = this.objectsOf(type)!;
+    if (Object.keys(store).length >= MAP_OBJECT_LIMIT) {
+      this.showNotification(`A map can have at most ${MAP_OBJECT_LIMIT} ${noun}s`, 'error', 5000);
+      return;
+    }
+
+    let counter = 1;
+    let newName = `${prefix}_${counter}`;
+    while (store[newName]) {
+      counter++;
+      newName = `${prefix}_${counter}`;
+    }
+
+    const roundedX = Math.round(x);
+    const roundedY = Math.round(y);
+    const objectData = type === 'Chests'
+      ? { lootTableId: 0, resetMinutes: CHEST_RESET_DEFAULT_MIN, position: { x: roundedX, y: roundedY }, layer: null }
+      : { dungeonId: 0, position: { x: roundedX, y: roundedY }, size: { width: 32, height: 32 }, layer: null };
+    store[newName] = objectData;
+
+    const mutation: ObjectMutation = {
+      type: kind,
+      name: newName,
+      oldState: null,
+      newState: this.objectState(type, objectData),
+      data: structuredClone(objectData)
+    };
+    this.undoStack.push(mutation);
+    this.redoStack = [];
+
+    this.unsavedLayers.add(type);
+    this.updateLayerList();
+
+    this.selectedObjectName = newName;
+    this.openPropertiesPanel(type, newName);
+  }
+
+  private createChestAtPosition(x: number, y: number) {
+    this.createPickerObjectAt('Chests', x, y);
+  }
+
+  /** The server's answer to MAP_OBJECT_OPTIONS: the dungeons and loot tables the pickers offer. */
+  public mapObjectOptionsData(data: any) {
+    const list = (rows: any): MapObjectOption[] => (Array.isArray(rows) ? rows : [])
+      .filter((r: any) => Number.isInteger(Number(r?.id)) && Number(r.id) >= 1)
+      .map((r: any) => ({ id: Number(r.id), name: String(r.name ?? r.id) }));
+    this.mapObjectOptions = { dungeons: list(data?.dungeons), lootTables: list(data?.lootTables), message: typeof data?.message === 'string' ? data.message : null };
+    this.pickerRefresh?.();
+  }
+
+  /** The properties of a chest or dungeon portal: a picker of what it is (and a chest's reset time), filled from MAP_OBJECT_OPTIONS. */
+  private renderPickerProperties(propertyList: HTMLElement, objectType: string, objectData: any) {
+    const isChest = objectType === 'Chests';
+    const key = isChest ? 'lootTableId' : 'dungeonId';
+    const options = this.mapObjectOptions ? (isChest ? this.mapObjectOptions.lootTables : this.mapObjectOptions.dungeons) : null;
+
+    const fieldStyle = (input: HTMLInputElement | HTMLSelectElement, ok: boolean) => {
+      input.style.flex = '1';
+      input.style.width = '100%';
+      input.style.padding = '5px';
+      input.style.background = 'rgba(0, 0, 0, 0.3)';
+      input.style.color = 'rgba(255, 255, 255, 0.9)';
+      input.style.border = ok ? '1px solid rgba(46, 204, 113, 0.3)' : '1px solid rgba(255, 100, 100, 0.6)';
+      input.style.borderRadius = '3px';
+      input.style.boxSizing = 'border-box';
+      input.style.colorScheme = 'dark';
+    };
+
+    // the undo entry of the value being typed: each keystroke goes into it, and leaving the field ends it
+    let typing: any = null;
+    const record = (field: string, newValue: number, typed = false) => {
+      const oldValue = objectData[field];
+      if (Object.is(oldValue, newValue)) return;
+      objectData[field] = newValue;
+      typing = recordPropertyEdit(this.propertyUndoStack, typed ? typing : null, field, oldValue, newValue);
+      if (!typed) typing = null;
+      this.propertyRedoStack = [];
+      this.unsavedLayers.add(objectType);
+      this.updateLayerList();
+    };
+
+    const row = (labelText: string, input: HTMLElement) => {
+      const propertyDiv = document.createElement("div");
+      propertyDiv.style.borderBottom = '1px solid rgba(46, 204, 113, 0.2)';
+      propertyDiv.style.paddingBottom = '10px';
+      const label = document.createElement("div");
+      label.style.color = 'rgba(46, 204, 113, 0.8)';
+      label.style.fontSize = '0.9em';
+      label.style.fontWeight = 'bold';
+      label.innerText = labelText;
+      const inputContainer = document.createElement("div");
+      inputContainer.style.display = 'flex';
+      inputContainer.style.marginTop = '5px';
+      inputContainer.appendChild(input);
+      propertyDiv.append(label, inputContainer);
+      propertyList.appendChild(propertyDiv);
+    };
+
+    const current = wholeFrom(objectData[key], 1);
+    const select = document.createElement("select");
+    fieldStyle(select, current !== null);
+    const placeholder = document.createElement("option");
+    placeholder.value = '0';
+    placeholder.innerText = options ? (this.mapObjectOptions?.message ?? (isChest ? 'Choose a loot table' : 'Choose a dungeon')) : 'Loading...';
+    select.appendChild(placeholder);
+    for (const option of options ?? []) {
+      const choice = document.createElement("option");
+      choice.value = String(option.id);
+      choice.innerText = option.name;
+      select.appendChild(choice);
+    }
+    if (current !== null && !(options ?? []).some((o) => o.id === current)) {
+      const missing = document.createElement("option");
+      missing.value = String(current);
+      missing.innerText = options ? `#${current} (not found)` : `#${current}`;
+      select.appendChild(missing);
+    }
+    select.value = String(current ?? 0);
+    select.addEventListener('change', () => {
+      record(key, Number(select.value));
+      fieldStyle(select, wholeFrom(objectData[key], 1) !== null);
+    });
+    row(isChest ? 'Loot table' : 'Dungeon', select);
+
+    if (isChest) {
+      const reset = document.createElement("input");
+      reset.type = 'number';
+      reset.min = '1';
+      reset.max = String(CHEST_RESET_MAX_MIN);
+      reset.step = '1';
+      reset.value = String(objectData.resetMinutes ?? '');
+      fieldStyle(reset, wholeFrom(objectData.resetMinutes, 1, CHEST_RESET_MAX_MIN) !== null);
+      const onReset = (typed: boolean) => {
+        record('resetMinutes', reset.value.trim() === '' ? NaN : Number(reset.value), typed);
+        fieldStyle(reset, wholeFrom(objectData.resetMinutes, 1, CHEST_RESET_MAX_MIN) !== null);
+      };
+      reset.addEventListener('input', () => onReset(true));
+      reset.addEventListener('change', () => { onReset(true); typing = null; });
+      row(`Reset (minutes, 1 to ${CHEST_RESET_MAX_MIN})`, reset);
+    }
+  }
+
   private openPropertiesPanel(objectType: string, objectName: string) {
     if (!window.mapData) return;
 
@@ -3831,13 +3829,10 @@ class TileEditor {
       this.propertiesPanel.remove();
     }
 
+    this.pickerRefresh = null;
+
     // Get the object data
-    let objectData: any = null;
-    if (objectType === 'Graveyards' && window.mapData.graveyards) {
-      objectData = (window.mapData.graveyards as any)[objectName];
-    } else if (objectType === 'Warps' && window.mapData.warps) {
-      objectData = (window.mapData.warps as any)[objectName];
-    }
+    const objectData: any = this.objectsOf(objectType)?.[objectName] ?? null;
 
     if (!objectData) return;
 
@@ -3901,6 +3896,7 @@ class TileEditor {
         this.currentPropertyObject = null;
         this.currentPropertyObjectType = null;
         this.currentPropertyObjectName = null;
+        this.pickerRefresh = null;
         this.propertiesPanel.remove();
         this.propertiesPanel = null;
       }
@@ -4121,7 +4117,19 @@ class TileEditor {
       propertyList.appendChild(addPropDiv);
     };
 
-    renderProperties();
+    if (PICKER_LAYERS.has(objectType)) {
+      const renderPickers = () => {
+        propertyList.replaceChildren(namePropertyDiv);
+        this.renderPickerProperties(propertyList, objectType, objectData);
+      };
+      this.pickerRefresh = () => {
+        if (this.propertiesPanel?.parentNode && this.currentPropertyObject === objectData) renderPickers();
+      };
+      renderPickers();
+      sendRequest({ type: 'MAP_OBJECT_OPTIONS', data: null });
+    } else {
+      renderProperties();
+    }
 
     content.appendChild(propertyList);
     this.propertiesPanel.appendChild(content);

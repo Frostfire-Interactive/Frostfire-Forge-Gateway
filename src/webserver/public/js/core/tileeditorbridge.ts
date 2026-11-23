@@ -12,10 +12,12 @@ const TOOLS: Array<{ id: Tool; label: string; key: string; glyph: IconName; does
   { id: "paste", label: "Paste", key: "V", glyph: "paste", does: "Put the picked tiles down as they were copied" },
 ];
 
-const OBJECTS: Array<{ type: string; glyph: IconName }> = [
+const OBJECTS: Array<{ type: string; glyph: IconName; label?: string }> = [
   { type: "Graveyards", glyph: "headstone" },
   { type: "Warps", glyph: "portal" },
+  { type: "Chests", glyph: "box" },
 ];
+const objectLabel = (type: string): string => OBJECTS.find((o) => o.type === type)?.label ?? type;
 
 /** How large the tiles of the palette can be shown: whole multiples, so every pixel stays a square. */
 const ZOOMS = [1, 2, 3, 4];
@@ -671,6 +673,8 @@ class TileEditorBridge {
     this.objectLayerVisibility.clear();
     this.objectLayerVisibility.set('Graveyards', msg.objectVisibility?.Graveyards ?? true);
     this.objectLayerVisibility.set('Warps', msg.objectVisibility?.Warps ?? true);
+    this.objectLayerVisibility.set('DungeonPortals', msg.objectVisibility?.DungeonPortals ?? true);
+    this.objectLayerVisibility.set('Chests', msg.objectVisibility?.Chests ?? true);
 
     this.unsavedLayers.clear();
     if (msg.unsavedLayers) {
@@ -952,7 +956,7 @@ class TileEditorBridge {
     } else {
       const locked = this.selectedLayer ? (this.layerLocked.get(this.selectedLayer) ?? false) : false;
       let layer: HTMLElement;
-      if (this.selectedObject) layer = this.statusPill(this.selectedObject, "info", OBJECTS.find((o) => o.type === this.selectedObject)?.glyph ?? "layers", "The object layer selected in the game window");
+      if (this.selectedObject) layer = this.statusPill(objectLabel(this.selectedObject), "info", OBJECTS.find((o) => o.type === this.selectedObject)?.glyph ?? "layers", "The object layer selected in the game window");
       else if (this.selectedLayer) layer = this.statusPill(locked ? `${this.selectedLayer} · locked` : this.selectedLayer, locked ? "warning" : "", locked ? "lock" : "layers", locked ? "The selected layer is locked: unlock it to paint on it" : "The layer the tools work on");
       else layer = this.statusPill("No layer selected", "", "layers", "Select a layer on the left to paint on it");
       layer.classList.add("me-pill-layer");
@@ -1124,7 +1128,7 @@ class TileEditorBridge {
       open.type = "button";
       const kindMark = el("span", "me-kind me-kind-object");
       kindMark.appendChild(icon(glyph, 15));
-      open.append(kindMark, el("span", "tl-list-name", type));
+      open.append(kindMark, el("span", "tl-list-name", objectLabel(type)));
       open.addEventListener('click', () => this.send({ type: 'objectSelect', objectType: type }));
 
       const eye = iconButton("eye", "", () => {
@@ -1166,7 +1170,7 @@ class TileEditorBridge {
     const open = row.querySelector<HTMLElement>(".tl-list-open")!;
     if (isActive) open.setAttribute("aria-current", "true");
     else open.removeAttribute("aria-current");
-    open.title = `${type}: select to place, move and remove them in the game window${isUnsaved ? " (unsaved edits)" : ""}`;
+    open.title = `${objectLabel(type)}: select to place, move and remove them in the game window${isUnsaved ? " (unsaved edits)" : ""}`;
     open.querySelector(".me-unsaved")?.remove();
     if (isUnsaved) {
       const dot = el("span", "me-unsaved");
@@ -1178,7 +1182,7 @@ class TileEditorBridge {
     setIcon(eye, isVisible ? "eye" : "eyeOff", 15);
     eye.classList.toggle("is-unseen", !isVisible);
     eye.setAttribute("aria-pressed", String(!isVisible));
-    eye.setAttribute("aria-label", isVisible ? `Hide ${type}` : `Show ${type}`);
+    eye.setAttribute("aria-label", isVisible ? `Hide ${objectLabel(type)}` : `Show ${objectLabel(type)}`);
     tooltip(eye, isVisible ? "Hide in my game window" : "Hidden in my game window. Click to show.");
   }
 

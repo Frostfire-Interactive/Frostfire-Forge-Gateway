@@ -207,6 +207,9 @@ export default async function loadMap(metadata: any): Promise<boolean> {
       spawnY: spawnY,
       warps: metadata?.warps || null,
       graveyards: metadata?.graveyards || null,
+      chests: metadata?.chests || null,
+      dungeonPortals: metadata?.dungeonPortals || null,
+      summoningStones: metadata?.summoningStones || null,
       shadowLayerNames: metadata?.shadowLayerNames || null,
       sections: Array.isArray(metadata?.sections) ? metadata.sections : null,
       // the map's desert zones, when it has them (outlines in tiles): a sandstorm is only drawn inside them (sandstorm.ts)
@@ -419,7 +422,7 @@ export async function preloadChunks(data: any): Promise<void> {
   }
 }
 
-async function loadTilesets(tilesets: any[]): Promise<HTMLImageElement[]> {
+export async function loadTilesets(tilesets: any[]): Promise<HTMLImageElement[]> {
   if (!tilesets?.length) throw new Error("No tilesets found");
 
   const base64ToUint8Array = (base64: string) => {

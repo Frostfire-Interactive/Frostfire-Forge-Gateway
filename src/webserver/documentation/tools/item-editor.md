@@ -1,6 +1,6 @@
 ---
 title: Item Editor
-description: Create and edit items: name, type, quality, icon, equipment slot, weapon damage, bag size and stats.
+description: Create and edit items: name, type, quality, icon, equipment slot, bag size and stats.
 order: 100
 ---
 
@@ -113,17 +113,7 @@ Eight slots are drawn on the character, each from its own folder of sprite sheet
 
 The other slots are not drawn, so they have no sprite sheet. With none picked, the item is drawn with the sheet whose name is the item's name in lower case, as before the field existed. Players already wearing the item see a new sheet the next time they equip it or log in.
 
-Two slots add a card of their own.
-
-### Weapon
-
-| Field | Notes |
-| --- | --- |
-| Minimum damage per swing | At least 1. Leave both damage fields empty to use the Damage stat instead. |
-| Maximum damage per swing | At least 1, and not below the minimum |
-| Swing speed | Milliseconds between swings. Lower is faster. At least 500. |
-
-These three drive melee auto attacks. They only apply to items in the weapon slot: the server refuses them on anything else.
+The bag slot adds a card of its own.
 
 ### Bag
 
@@ -169,7 +159,6 @@ Loot tables, quest rewards, quest collect objectives and player inventories all 
 ## Tips
 
 - Use Duplicate to build a set: make the helmet, duplicate it for each slot, then change name, slot, icon and stats.
-- Give every weapon a damage range and a swing speed. A weapon without a range falls back to its flat Damage stat.
 - Use the Quest type for items that exist only for a Collect objective, so players can tell them apart.
 - Bags are equipment in the bag slot. Set Equipable on, Slot to bag, then Bag slots.
 - After creating an item, try it with "Give item" in the [Control Panel](#/tools/control-panel) or the Inventory tab of the [Player Editor](#/tools/player-editor).

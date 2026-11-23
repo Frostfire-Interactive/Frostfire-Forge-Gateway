@@ -1,6 +1,7 @@
 import Cache from "./cache.js";
 import { coinHtml, sellPriceOf } from "./coins.js";
 import { useText } from "./consumables.js";
+import { toZoomedPx, zoomOf } from "./uiscale.js";
 
 export function formatDuration(totalSeconds: number): string {
   const sec = Math.max(0, Math.floor(totalSeconds));
@@ -20,7 +21,7 @@ let currentTooltipElement: HTMLElement | null = null;
 let currentItemData: any = null;
 let currentMouseX: number = 0;
 let currentMouseY: number = 0;
-let currentTooltipKind: "item" | "spell" | null = null;
+let currentTooltipKind: "item" | "spell" | "text" | null = null;
 
 function showItemTooltip(element: HTMLElement, itemData: any, mouseX: number, mouseY: number, compareMode: boolean = false, force: boolean = false) {
   if (!force && window.matchMedia('(hover: none) and (pointer: coarse)').matches) return;
@@ -205,8 +206,10 @@ function positionTooltip(mouseX: number, mouseY: number) {
     y = padding;
   }
 
-  tooltip.style.left = `${x}px`;
-  tooltip.style.top = `${y}px`;
+  // Measured on the screen, written in the UI's zoom (uiscale.ts).
+  const zoom = zoomOf(tooltip);
+  tooltip.style.left = `${toZoomedPx(x, zoom)}px`;
+  tooltip.style.top = `${toZoomedPx(y, zoom)}px`;
 }
 
 function hideItemTooltip() {
@@ -584,8 +587,9 @@ function positionTooltipBottomRight() {
   const rect = tooltip.getBoundingClientRect();
   const x = window.innerWidth - rect.width - padding;
   const y = window.innerHeight - rect.height - padding;
-  tooltip.style.left = `${Math.max(padding, x)}px`;
-  tooltip.style.top = `${Math.max(padding, y)}px`;
+  const zoom = zoomOf(tooltip);
+  tooltip.style.left = `${toZoomedPx(Math.max(padding, x), zoom)}px`;
+  tooltip.style.top = `${toZoomedPx(Math.max(padding, y), zoom)}px`;
 }
 
 function setupSpellTooltip(element: HTMLElement, getSpellData: () => any, options?: { anchor?: "cursor" | "bottom-right" }) {
@@ -635,4 +639,46 @@ document.addEventListener("keyup", (e: KeyboardEvent) => {
   }
 });
 
-export { setupItemTooltip, removeItemTooltip, showItemTooltip, hideItemTooltip, updateTooltipPosition, setupSpellTooltip, showSpellTooltip };
+/** A plain tooltip in the same box: a name, and a line under it (a button's chat command, say). */
+export type TextTooltip = { name: string; type?: string };
+
+function showTextTooltip(element: HTMLElement, text: TextTooltip, mouseX: number, mouseY: number) {
+  // Never show tooltips on mobile devices
+  if (window.matchMedia('(hover: none) and (pointer: coarse)').matches) return;
+  if (!tooltip || !text?.name) return;
+
+  currentTooltipElement = element;
+  currentItemData = text;
+  currentMouseX = mouseX;
+  currentMouseY = mouseY;
+  currentTooltipKind = "text";
+
+  tooltipName.className = "ui";
+  tooltipName.classList.add("common");
+  tooltipName.innerText = text.name;
+  tooltipType.innerText = text.type ?? "";
+  tooltipStats.innerHTML = "";
+  tooltipStats.style.display = "none";
+  tooltipDescription.innerText = "";
+  tooltipDescription.style.display = "none";
+  if (tooltipSell) tooltipSell.style.display = "none";
+  if (tooltipUse) tooltipUse.style.display = "none";
+
+  tooltip.style.display = "block";
+  positionTooltip(mouseX, mouseY);
+}
+
+/** Shows `getText()` in the game's tooltip while the pointer is over `element`, following it; a press hides it. */
+function setupTextTooltip(element: HTMLElement, getText: () => TextTooltip) {
+  element.addEventListener("mouseenter", (e: MouseEvent) => showTextTooltip(element, getText(), e.clientX, e.clientY));
+  element.addEventListener("mousemove", (e: MouseEvent) => {
+    if (currentTooltipElement === element) updateTooltipPosition(e.clientX, e.clientY);
+  });
+  const hide = () => {
+    if (currentTooltipElement === element) hideItemTooltip();
+  };
+  element.addEventListener("mouseleave", hide);
+  element.addEventListener("mousedown", hide);
+}
+
+export { setupItemTooltip, removeItemTooltip, showItemTooltip, hideItemTooltip, updateTooltipPosition, setupSpellTooltip, showSpellTooltip, setupTextTooltip };

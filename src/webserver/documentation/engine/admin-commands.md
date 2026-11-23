@@ -54,7 +54,7 @@ Most commands take `<username | id>`. A value that is not a number is matched ag
 | `/kill [username \| id]` | none | `admin.kill` or `admin.*` | Kills an online player through the normal death flow |
 | `/revive [username \| id]` | none | `admin.revive` or `admin.*` | Revives a dead or ghost player in place |
 | `/respawn [username \| id]` | none | `admin.respawn` or `admin.*` | Sends a player to the default map's spawn at full health |
-| `/cooldowns [username \| id]` | `/resetcooldowns` | `admin.cooldowns` or `admin.*` | Ends every cooldown an online player is waiting on |
+| `/cooldowns [username \| id]` | `/resetcooldowns` | `admin.cooldowns` or `admin.*` | Ends every cooldown an online player is waiting on, and gives back their dungeon entries |
 | `/speed <multiplier \| reset>` | none | `admin.speed` or `admin.*` | Sets your own total walk speed |
 | `/summon <username \| id>` | none | `admin.summon` or `admin.*` | Brings an online player to you |
 | `/goto <username \| id>` | `/teleport` | `admin.summon` or `admin.*` | Takes you to an online player |
@@ -81,6 +81,8 @@ Most commands take `<username | id>`. A value that is not a number is matched ag
 | `/spelleditor` | `/se` | admin role, `tools.spell_editor`, `tools.*`, `server.admin` or `server.*` | Opens the spell editor |
 | `/weathereditor` | `/we` | admin role, `tools.weather_editor`, `tools.*`, `server.admin` or `server.*` | Opens the weather editor |
 | `/classeditor` | `/cle` | admin role, `tools.class_editor`, `tools.*`, `server.admin` or `server.*` | Opens the class editor |
+| `/dungeoneditor` | `/de` | admin role, `tools.dungeon_editor`, `tools.*`, `server.admin` or `server.*` | Opens the Dungeon Tool |
+| `/portaleditor` | `/poe` | admin role, `tools.dungeon_editor`, `tools.*`, `server.admin` or `server.*` | Opens the Dungeon Tool |
 | `/mailbox` | | admin role, `tools.mailbox_editor`, `tools.*`, `server.admin` or `server.*` | Opens the mailbox editor |
 | `/gathering` | | admin role, `tools.gathering`, `tools.*`, `server.admin` or `server.*` | Opens the gathering editor |
 | `/achievements` | | admin role, `tools.achievement_editor`, `tools.*`, `server.admin` or `server.*` | Opens the achievement editor |
@@ -230,6 +232,7 @@ Ends every cooldown a player is waiting on, at once. It acts on yourself when no
 | The spell lockout after an interrupt | In memory |
 | The 30 seconds all consumables share | In memory |
 | The home item's hour | `player_home.used_at` in the database |
+| The dungeon entries used in the last hour | `dungeon_characters` (`window_start`, `used`) in the database. The player has all 10 entries again. |
 
 The player's home is left as it is, and so are their buffs and debuffs. Their game is sent `COOLDOWNS_RESET`, which takes the clocks off their hotbar, spell book and bags.
 
@@ -237,7 +240,7 @@ The player's home is left as it is, and so are their buffs and debuffs. Their ga
 |--------|------|
 | `Reset the cooldowns of <Name>` | It was done |
 | `Player must be online to reset their cooldowns` | No online player has that name or id |
-| `The home cooldown of <Name> could not be reset. The others were.` | The database write failed. The other three are reset regardless. |
+| `The home cooldown of <Name> could not be reset. The others were.` | A database write failed (the home cooldown or the dungeon entries). The cooldowns kept in memory are reset regardless, and the message always names the home. |
 
 ```text title="Example"
 /cooldowns
@@ -417,7 +420,7 @@ Reads the map again, with its particle and placed NPCs, and every player on it o
 /weather <weather_name | clear | random | weather_api | tornado>
 ```
 
-Sets the weather of the world you are standing in and sends `CHANGE_WEATHER` to everyone on that map. A name must exist in the weather data unless it is one of the four keywords. See [Weather](#/engine/weather) for what each keyword means.
+Sets the weather of the world you are standing in and sends `CHANGE_WEATHER` to everyone on that map. Inside a dungeon copy it sets the world of the dungeon's map, and everyone on that map and in its copies is sent it. A name must exist in the weather data unless it is one of the four keywords. See [Weather](#/engine/weather) for what each keyword means.
 
 ```text title="Example"
 /weather rainy
@@ -497,6 +500,8 @@ These commands only tell the client to open a window. Each editor checks permiss
 | `/spelleditor` | `/se` | Admin role, `tools.spell_editor`, `tools.*`, `server.admin` or `server.*` | [Spell editor](#/tools/spell-editor) |
 | `/weathereditor` | `/we` | Admin role, `tools.weather_editor`, `tools.*`, `server.admin` or `server.*` | [Weather editor](#/tools/weather-editor) |
 | `/classeditor` | `/cle` | Admin role, `tools.class_editor`, `tools.*`, `server.admin` or `server.*` | [Class editor](#/tools/class-editor) |
+| `/dungeoneditor` | `/de` | Admin role, `tools.dungeon_editor`, `tools.*`, `server.admin` or `server.*` | [Dungeon Tool](#/tools/dungeon-tool) |
+| `/portaleditor` | `/poe` | Admin role, `tools.dungeon_editor`, `tools.*`, `server.admin` or `server.*` | [Dungeon Tool](#/tools/dungeon-tool) (the same window as `/dungeoneditor`) |
 | `/mailbox` | | Admin role, `tools.mailbox_editor`, `tools.*`, `server.admin` or `server.*` | [Mailbox editor](#/tools/mailbox-editor) |
 | `/gathering` | | Admin role, `tools.gathering`, `tools.*`, `server.admin` or `server.*` | [Gathering editor](#/tools/gathering-editor) |
 | `/achievements` | | Admin role, `tools.achievement_editor`, `tools.*`, `server.admin` or `server.*` | [Achievement editor](#/tools/achievement-editor) |

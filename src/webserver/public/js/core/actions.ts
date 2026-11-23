@@ -5,6 +5,10 @@ import { overlay } from './ui.js';
 import playerEditor from './playereditor.js';
 import { openReportDialog } from './report.js';
 import { isTrading } from './trade.js';
+import { toZoomedPx, zoomOf } from './uiscale.js';
+
+/** Most members of any party; the server refuses invitations from a party this size. */
+const PARTY_CAP = 20;
 
 const partyContextActions: Record<string, { only_self: boolean, allowed_self: boolean, label: string, handler: (username: string) => void }> = {
   'kick-player': {
@@ -186,14 +190,16 @@ const contextActions: Record<string, { allowed_self: boolean, admin_only?: boole
 function placeMenu(menu: HTMLElement, x: number, y: number): void {
   const width = window.visualViewport?.width || window.innerWidth, height = window.visualViewport?.height || window.innerHeight;
   const margin = 8;
+  // Measured on the screen, written in the UI's zoom (uiscale.ts).
+  const zoom = zoomOf(menu);
   // (more entries than a small screen is tall: the menu scrolls)
-  menu.style.maxHeight = `${Math.max(0, height - margin * 2)}px`;
+  menu.style.maxHeight = `${toZoomedPx(Math.max(0, height - margin * 2), zoom)}px`;
   menu.style.overflowY = "auto";
   const box = menu.getBoundingClientRect();
   const left = x + box.width + margin > width ? x - box.width : x;
   const top = y + box.height + margin > height ? y - box.height : y;
-  menu.style.left = `${Math.round(Math.max(margin, Math.min(left, width - box.width - margin)))}px`;
-  menu.style.top = `${Math.round(Math.max(margin, Math.min(top, height - box.height - margin)))}px`;
+  menu.style.left = `${toZoomedPx(Math.round(Math.max(margin, Math.min(left, width - box.width - margin))), zoom)}px`;
+  menu.style.top = `${toZoomedPx(Math.round(Math.max(margin, Math.min(top, height - box.height - margin))), zoom)}px`;
 }
 
 function createPartyContextMenu(event: MouseEvent, username: string) {
@@ -296,6 +302,8 @@ function createContextMenu(event: MouseEvent, id: string) {
     if (admin_only && !currentPlayer?.isAdmin) return;
 
     if (action === 'invite-to-party' && isInParty) return;
+    // A full party (the server's PARTY_CAP) cannot invite anyone.
+    if (action === 'invite-to-party' && (currentPlayer?.party?.length ?? 0) >= PARTY_CAP) return;
 
     if (action === 'invite-to-guild' && isInGuild) return;
 

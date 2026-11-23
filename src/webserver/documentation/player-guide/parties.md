@@ -28,7 +28,7 @@ Rules for invitations:
 - If you are not in a party yet, the first player who accepts forms a new party with you, and you become the leader.
 - Once a party exists, only the leader can invite more players.
 - You cannot invite a player who is already in a party.
-- A player cannot join a party that is full.
+- A party holds 5 players. When a sixth accepts, the leader is asked to convert the party into a raid group (see [Raid groups](#/player-guide/parties/raid-groups)). A raid group holds up to 20 players, and a player cannot join one that is full: "The party is full".
 
 ## Accepting or declining
 
@@ -48,7 +48,7 @@ While you are in a party, a frame for every member is shown on your screen. Each
 **Right-click** your own party frame and choose **Leave Party**. On a touch screen, tap your frame.
 
 - When a member leaves, the others see a message and the party carries on.
-- When the **leader** leaves, the party is disbanded for everyone.
+- When the **leader** leaves, the next member in the list becomes the leader and the party carries on.
 - A party needs at least two players. If only one would be left, the party is disbanded.
 
 ## Leader actions
@@ -59,9 +59,43 @@ The leader is the player who started the party.
 |--------|-----|
 | Invite more players | Use the player menu or `/invite` |
 | Remove a member | **Right-click** the member's party frame and choose **Kick**. On a touch screen, tap the frame. |
-| End the party | Leave it. This disbands the party for everyone. |
+| Pass the lead | Leave the party. The next member becomes the leader. |
 
 A kicked player is told they were removed, and the rest of the party is told who was kicked.
+
+## Raid groups
+
+A party holds 5 players. When a sixth player accepts an invitation, the leader gets a **Party full** window asking whether to convert the party into a raid group. It has two buttons:
+
+| Button | Result |
+|--------|--------|
+| Convert | The party becomes a raid group and the sixth player joins it |
+| Cancel | Nothing changes, and the player is told "The party is full" |
+
+The window closes after 60 seconds. If the leader does not answer in that time, the player is told "The party is full". Only the leader can convert. A raid group holds up to 20 players.
+
+A raid group is what a [raid](#/player-guide/dungeons) needs to go beyond 5 players. Everything else in this page applies to a raid group as it does to a party.
+
+## Summoning stones
+
+A summoning stone is a carved stone with glowing runes, found outside dungeons. Two members of a party at the stone can summon a third member of their party to it, even from another map.
+
+1. **The first member targets who to summon and touches the stone.** Target a party member by clicking their frame in the party list, or by clicking them in the world. Then stand still and click or tap the stone within 150 pixels of its foot; touching it keeps your target. Touching it while walking tells you "You must stand still to use that." From farther away you are told "Move closer to the summoning stone." You must be in a party. With nobody targeted you are told "Target a party member to summon."; a target already at the stone, or not in your party, is refused.
+2. **The summoner casts for 30 seconds while a second member touches the stone.** A **Summoning** cast bar runs for the summoner, who is shown casting. Moving or pressing Esc cancels it, and the summoner is told "The summon was cancelled." The second member must be in the summoner's party, and not the one being summoned. If nobody touches it in time, the summoner is told "Nobody else touched the summoning stone in time."
+3. **Both cast for 5 seconds.** The two who touched the stone are shown casting, with a cast bar. It is cancelled, and both are told "The summon was cancelled.", if either of them moves or presses Esc, dies, disconnects or leaves the party, or if the player being summoned leaves the party.
+4. **The summoned player is asked.** A **Summon** window asks whether to come, and they have 60 seconds to answer. If they accept, they are moved to the stone and stand just in front of it, facing down. If they decline or do not answer, nobody is moved; the summoner is told when they decline or do not answer.
+
+Some players cannot be summoned. The summoner is told why:
+
+| Player | Message |
+|--------|---------|
+| Dead, or a spirit | "*Name* is dead." |
+| Inside a dungeon | "*Name* is inside a dungeon." |
+| Offline | "*Name* is not online." |
+| Already being summoned at another stone | "*Name* is already being summoned." |
+| In a cutscene when they accept | "*Name* is in a cutscene." |
+
+A stone runs one summon at a time. While it is in use, anyone else who touches it is told "This summoning stone is already in use."
 
 ## Party chat
 

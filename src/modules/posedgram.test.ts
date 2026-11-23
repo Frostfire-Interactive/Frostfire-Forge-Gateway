@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { POSE_DATAGRAM_HEADER, applyPoseDatagram, applyPoseUpdate, decodePoseDatagram, poseMark, reapplyPose, sheetPoseState } from "../webserver/public/js/core/posepacket";
+import { POSE_DATAGRAM_HEADER, applyPoseDatagram, applyPoseUpdate, decodePoseDatagram, faceArrival, poseMark, reapplyPose, sheetPoseState } from "../webserver/public/js/core/posepacket";
 
 const encoder = new TextEncoder();
 
@@ -349,5 +349,32 @@ describe("reordering is safe", () => {
     expect((w.players[0] as any)._poseState).toBe("idle_up");
     expect(finished).toBe(false);
     void done;
+  });
+});
+
+describe("facing an arrival", () => {
+  const change = async (animation: any, name: string) => { animation.currentAnimationName = name; };
+
+  test("a warp's direction faces the player that way, standing, before any pose packet", async () => {
+    const p: any = { lastDirection: "up", layeredAnimation: { currentAnimationName: "walk_up" } };
+    await faceArrival(p, "DOWN", change);
+    expect(p.lastDirection).toBe("down");
+    expect(p.layeredAnimation.currentAnimationName).toBe("idle_down");
+  });
+
+  test("no direction, or one that is not one of the eight, changes nothing; nor does a pose that is not a walk or a stand", async () => {
+    const p: any = { lastDirection: "up", layeredAnimation: { currentAnimationName: "idle_up" } };
+    await faceArrival(p, undefined, change);
+    await faceArrival(p, "north", change);
+    expect(p.lastDirection).toBe("up");
+    expect(p.layeredAnimation.currentAnimationName).toBe("idle_up");
+    const caster: any = { layeredAnimation: { currentAnimationName: "cast_idle_up" } };
+    await faceArrival(caster, "down", change);
+    expect(caster.lastDirection).toBe("down");
+    expect(caster.layeredAnimation.currentAnimationName).toBe("cast_idle_up");
+    // no animation yet: the direction is kept for the one built
+    const bare: any = {};
+    await faceArrival(bare, "down", change);
+    expect(bare.lastDirection).toBe("down");
   });
 });
