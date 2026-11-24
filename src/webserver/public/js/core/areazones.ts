@@ -3,9 +3,10 @@ import { cutsceneActive } from "./cutscene.js";
 import { cachedPlayerId } from "./socket.js";
 import Cache from "./cache.ts";
 import { bannerStep, musicAt, zoneAt, zonesList, type BannerState } from "./zonelogic.js";
+import { clearBanner, showBanner as putBanner } from "./bannerview.js";
 
 const LOOK_MS = 250, BANNER_SHOW_MS = 4000;
-const banner: BannerState = { current: null, leftAt: new Map() };
+const banner: BannerState = { current: null };
 let fresh = true, started = false, hideTimer: ReturnType<typeof setTimeout> | null = null;
 
 function bannerElement(): HTMLElement {
@@ -21,8 +22,7 @@ function bannerElement(): HTMLElement {
 
 function showBanner(text: string): void {
   const el = bannerElement();
-  el.textContent = text;
-  el.classList.add("shown");
+  putBanner(el, text);
   if (hideTimer) clearTimeout(hideTimer);
   hideTimer = setTimeout(() => el.classList.remove("shown"), BANNER_SHOW_MS);
 }
@@ -52,7 +52,13 @@ function look(): void {
 }
 
 export function zonesLoaded(opts: { fresh: boolean }): void {
-  if (opts.fresh) fresh = true;
+  if (opts.fresh) {
+    fresh = true;
+    // the old map's text goes with it
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = null;
+    clearBanner(bannerElement());
+  }
   startAreaZones();
   look();
 }

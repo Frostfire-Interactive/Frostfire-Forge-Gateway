@@ -61,7 +61,7 @@ You cannot use a warp:
 
 - While you are in combat. Wait about 5 seconds after the last hit.
 - While you are dead or a ghost.
-- For 3 seconds after a warp or a dungeon portal took you to another map. A warp walked into sooner says "You can warp again in" followed by the seconds left. A warp to another spot on the same map has no wait.
+- For 1 second after a warp or a dungeon portal took you to another map. A warp walked into sooner says "You can warp again in" followed by the seconds left. A warp to another spot on the same map has no wait.
 
 Riding a mount gets you between warps faster. See [Mounts](#/player-guide/mounts).
 

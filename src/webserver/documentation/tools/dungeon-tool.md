@@ -118,7 +118,11 @@ The tab lists the portals of your current map, and lists the new map's portals w
 | X, Y | The portal's top-left corner on this map. Players step in at its bottom edge. |
 | Width, Height | 8 to 512 pixels. A new portal is 32 × 32. |
 
-**Place at my position** centres the portal on where you stand when it is saved, kept inside the map. A new portal starts there.
+**Place at my position** centres the portal on where you stand when you click it, kept inside the map. A new portal starts where you stand when you click **New portal**. It stays there wherever you save from, so you can walk to the destination to set its place.
+
+For a teleport, **Place at my position** under **Destination** sets the map and place to where you stand when you click it. Players arrive there. It stays there wherever you save from.
+
+An open portal stays open when you walk to another map, with the changes not saved, and is saved on its own map. The list shows the portals of the map you are on. **Place at my position** under **Placement** works only on the portal's own map.
 
 The server checks every field again on save. Changing a linked dungeon portal into a teleport unlinks it from its dungeon.
 
@@ -204,7 +208,7 @@ Every packet from the window checks the permission first.
 | `DUNGEON_EDITOR_UPDATED` | To client | The dungeon list changed |
 | `PORTAL_EDITOR_LIST` | To server | Ask for the map's portals |
 | `PORTAL_EDITOR_DATA` | To client | `{ map, portals, dungeons, maps, here, nameMax, sizeMin, sizeMax }` |
-| `PORTAL_EDITOR_SAVE` | To server | `{ original, name, mirror, destination, target, position, size, atMe }` |
+| `PORTAL_EDITOR_SAVE` | To server | `{ original, map, name, mirror, destination, target, position, size, atMe }` (`map`: the map the portal stands on; the editor's own map when left out) |
 | `PORTAL_EDITOR_DELETE` | To server | `{ name }` |
 | `PORTAL_EDITOR_RESULT` | To client | `{ ok, errors, fields, name, notes, action, data }` |
 | `MAP_PORTALS` | To client | A map's portals after a save: `{ mapName, portals }`, sent to the players on it |

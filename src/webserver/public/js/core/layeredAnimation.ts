@@ -7,6 +7,7 @@ import {
   validateSpriteSheetTemplate
 } from './spritesheetParser.js';
 import { nameLayerSheets } from './layersheets.ts';
+import { switchLayers } from './layerswitch.ts';
 
 const spriteSheetCache: SpriteSheetCache = {};
 
@@ -443,6 +444,37 @@ async function getOrBuildAnimationFrames(
   return buildPromise;
 }
 
+// A layer's frames for a pose: given as they are when built already (to switch at once: layerswitch.ts), else built.
+function layerFramesFor(layer: AnimationLayer, newAnimationName: string, isMounted: boolean): AnimationFrame[] | null | Promise<AnimationFrame[] | null> {
+  const cacheKey = (layer as any)._cacheKey;
+  const cached = spriteSheetCache[cacheKey];
+  let actualAnimationName = newAnimationName;
+  const isArmorLayer = layer.type.startsWith('armor_');
+  if (isMounted && (layer.type === 'body' || layer.type === 'head' || isArmorLayer)) {
+    if (newAnimationName.startsWith('idle_')) {
+      actualAnimationName = newAnimationName.replace('idle_', 'mount_idle_');
+    } else if (newAnimationName.startsWith('walk_')) {
+      actualAnimationName = newAnimationName.replace('walk_', 'mount_walk_');
+    }
+  }
+  // Check if animation exists
+  let animationExists = false;
+  if (cached.template.animations[actualAnimationName]) {
+    animationExists = true;
+  } else if (actualAnimationName.includes('_')) {
+    const lastUnderscoreIndex = actualAnimationName.lastIndexOf('_');
+    const baseName = actualAnimationName.substring(0, lastUnderscoreIndex);
+    const direction = actualAnimationName.substring(lastUnderscoreIndex + 1);
+    if (cached.template.animations[baseName]?.directions?.[direction]) {
+      animationExists = true;
+    }
+  }
+  if (!animationExists) return null;
+  const built = animationFrameCache.get(`${layer.type}:${cacheKey}:${actualAnimationName}`);
+  if (built) return built;
+  return getOrBuildAnimationFrames(`${layer.type}:${cacheKey}`, actualAnimationName, cached.template, cached.extractedFramesMap);
+}
+
 export async function changeLayeredAnimation(
   layeredAnim: LayeredAnimation,
   newAnimationName: string
@@ -456,74 +488,33 @@ export async function changeLayeredAnimation(
 
   const isMounted = layeredAnim.layers.mount !== null;
 
-  // Group layers by template to batch updates - reduces from 10+ individual operations to 2-3 template groups
-  const layersByTemplate = new Map<string, AnimationLayer[]>();
+  // Every layer's frames first, then all layers switch together from the same start: switched one at a time, the
+  // layers drew different poses, or the same pose out of step, until each caught up.
+  const layers = Object.values(layeredAnim.layers).filter(
+    (layer): layer is AnimationLayer => !!layer && !!layer.spriteSheet && !!spriteSheetCache[(layer as any)._cacheKey]
+  );
+  const framesFor = (layer: AnimationLayer) => layerFramesFor(layer, newAnimationName, isMounted);
 
+  switchLayers(
+    layers,
+    framesFor,
+    () => (layeredAnim as any)._animChangeToken === changeToken,
+    () => performance.now()
+  ).catch(err => console.error('Error updating animation layers:', err));
+}
+
+/** Builds a character's frames for `names` ahead of time, so a change to one of them switches at once (the walk out
+ *  of a portal, built while its walk in goes on, is not drawn with the walk in's frames while built). */
+export function warmPoses(layeredAnim: LayeredAnimation | null | undefined, names: string[]): void {
+  if (!layeredAnim) return;
+  const isMounted = layeredAnim.layers.mount !== null;
   for (const layer of Object.values(layeredAnim.layers)) {
-    if (!layer || !layer.spriteSheet) continue;
-
-    const cacheKey = (layer as any)._cacheKey;
-    if (!layersByTemplate.has(cacheKey)) {
-      layersByTemplate.set(cacheKey, []);
+    if (!layer || !layer.spriteSheet || !spriteSheetCache[(layer as any)._cacheKey]) continue;
+    for (const name of names) {
+      const frames = layerFramesFor(layer as AnimationLayer, name, isMounted);
+      if (frames instanceof Promise) frames.catch(() => {});
     }
-    layersByTemplate.get(cacheKey)!.push(layer);
   }
-
-  // Update layers grouped by template
-  const templateUpdates = Array.from(layersByTemplate.entries()).map(async ([cacheKey, layersWithSameTemplate]) => {
-    const cached = spriteSheetCache[cacheKey];
-    if (!cached) return;
-
-    // All layers in this group share the same template, so check once
-    for (const layer of layersWithSameTemplate) {
-      let actualAnimationName = newAnimationName;
-
-      const isArmorLayer = layer.type.startsWith('armor_');
-
-      if (isMounted && (layer.type === 'body' || layer.type === 'head' || isArmorLayer)) {
-        if (newAnimationName.startsWith('idle_')) {
-          actualAnimationName = newAnimationName.replace('idle_', 'mount_idle_');
-        } else if (newAnimationName.startsWith('walk_')) {
-          actualAnimationName = newAnimationName.replace('walk_', 'mount_walk_');
-        }
-      } else if (layer.type === 'mount') {
-        actualAnimationName = newAnimationName;
-      }
-
-      // Check if animation exists
-      let animationExists = false;
-      if (cached.template.animations[actualAnimationName]) {
-        animationExists = true;
-      } else if (actualAnimationName.includes('_')) {
-        const lastUnderscoreIndex = actualAnimationName.lastIndexOf('_');
-        const baseName = actualAnimationName.substring(0, lastUnderscoreIndex);
-        const direction = actualAnimationName.substring(lastUnderscoreIndex + 1);
-        if (cached.template.animations[baseName]?.directions?.[direction]) {
-          animationExists = true;
-        }
-      }
-
-      if (!animationExists) continue;
-
-      const frameCacheKey = `${layer.type}:${cacheKey}`;
-      const frames = await getOrBuildAnimationFrames(
-        frameCacheKey,
-        actualAnimationName,
-        cached.template,
-        cached.extractedFramesMap
-      );
-
-      if ((layeredAnim as any)._animChangeToken !== changeToken) return;
-
-      layer.frames = frames;
-
-      // Reset this layer's animation state
-      layer.currentFrame = 0;
-      layer.lastFrameTime = performance.now();
-    }
-  });
-
-  Promise.all(templateUpdates).catch(err => console.error('Error updating animation layers:', err));
 }
 
 export function getLayerStillFrame(

@@ -90,8 +90,11 @@ export function mapCenterOffsetX(): number {
   return mapWidth > 0 && mapWidth < view ? (view - mapWidth) / 2 : 0;
 }
 
-/** A world position put on a whole screen pixel, so the world does not shimmer as the camera moves. */
+/** A world position put on a whole screen pixel, so the world does not shimmer as the camera moves. Not while the
+ *  player's zoom eases: a map's edge the camera keeps in place (above the hotbar) would flick between two rows of
+ *  pixels each frame. */
 export function snapWorld(v: number): number {
+  if (cinematic === null && !editing() && shown !== target) return v;
   const z = userZoom();
   return Math.round(v * z) / z;
 }
@@ -103,18 +106,24 @@ export function worldOffset(camX: number, camY: number): { x: number; y: number 
   };
 }
 
-export function applyWorldTransform(ctx: CanvasRenderingContext2D, now = performance.now()): void {
+/** Eases the shown zoom towards the one asked for, once a frame: done before the camera is placed (renderer.ts), so the
+ *  camera is placed for the zoom the frame is drawn at. Again at the same time it changes nothing. */
+export function stepWorldZoom(now = performance.now()): void {
   // (a recording's frame has a density of its own, which is no new screen: the player's zoom is theirs to come back to)
   if (!frameSize() && canvasDpr() !== levelsFor) {
     levelsFor = canvasDpr();
     target = nearestLevel(target);
   }
   if (shown !== target) {
-    const dt = lastStep ? Math.min(0.1, (now - lastStep) / 1000) : 0;
+    const dt = lastStep ? Math.min(0.1, Math.max(0, now - lastStep) / 1000) : 0;
     shown += (target - shown) * (1 - Math.exp(-dt / EASE));
     if (Math.abs(target - shown) < 0.002) shown = target;
   }
   lastStep = now;
+}
+
+export function applyWorldTransform(ctx: CanvasRenderingContext2D, now = performance.now()): void {
+  stepWorldZoom(now);
   const dpr = canvasDpr();
   const z = worldZoom();
   const { w, h } = screenSize();

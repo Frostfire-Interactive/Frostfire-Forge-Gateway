@@ -17,6 +17,8 @@ import { renderFishing } from "./fishing.js";
 import { renderFootprints } from "./footprints.js";
 import { drawStoneShadows, standingStones } from "./summonstones.js";
 import { drawStanding, renderDungeonPortalGround, setPortalWalkers, standingDungeonPortals, type PortalWalker } from "./portalfx.js";
+import { stopAfterMapLoad } from "./mapstop.js";
+import { hotbarCover } from "./hotbarcover.js";
 import { heldThroughWarp, portalRects, steerWaitPose, steerWalkInPose, steerWalkOutPose, transit, type PortalRect } from "./portaltransit.js";
 import { renderCorpseLootHint, updateCreatureLootProximity } from "./creatureloot.js";
 let weatherType = null as string | null;
@@ -40,14 +42,14 @@ import { renderLoot, renderLootInteractionHint } from './loot.js';
 import { renderSkeletons } from './skeletons.js';
 import { isSelfDead, isReleaseHidden, tickDeathOffer, tickReleaseCinematic, tickCorpseMarker, tickDeathWisps, tickGraveyardOffer } from './death.js';
 import { renderLightMap } from './lightmap.js';
-import { applyWorldTransform, worldOffset, viewWidth, viewHeight, userZoom, worldToScreen, worldZoom } from './worldzoom.js';
+import { applyWorldTransform, stepWorldZoom, worldOffset, viewWidth, viewHeight, userZoom, worldToScreen, worldZoom } from './worldzoom.js';
 import { updateTileSounds } from './tilesounds.js';
 import { tickCutscene, cutsceneCamera, cutsceneHidesPlayer, cutsceneHidesCreatures, cutsceneHidesHud, drawCutsceneLayer } from './cutscene.js';
 import { captureFrame, setFrameDrawer } from './cutscenecapture.js';
 import { chatInput } from "./chat.js";
 import { friendsListSearch } from "./friends.js";
 import { animationManager } from "./animationStateManager.js";
-import { updateLayeredAnimation, changeLayeredAnimation } from "./layeredAnimation.js";
+import { updateLayeredAnimation, changeLayeredAnimation, warmPoses } from "./layeredAnimation.js";
 import { gapPose } from "./gappose.js";
 import { renderTime, pushSample, pushPredicted, getLateness, positionAt, needsPositionSample, type MoveSample } from "./movementsmoothing.js";
 const times = [] as number[];
@@ -188,12 +190,7 @@ function coveredBottom(): number {
   if (of === bottomCoverOf && now - bottomCoverAt < 1000) return bottomCover;
   bottomCoverOf = of;
   bottomCoverAt = now;
-  bottomCover = 0;
-  if (window.matchMedia("(hover: none) and (pointer: coarse)").matches) {
-    const bar = document.getElementById("hotbar")?.getBoundingClientRect();
-    // (a hotbar that is not shown has no size; never more than half the screen, whatever is measured)
-    if (bar && bar.height > 0 && bar.top < window.innerHeight) bottomCover = Math.max(0, Math.min(window.innerHeight / 2, window.innerHeight - bar.top));
-  }
+  bottomCover = hotbarCover(document.getElementById("hotbar")?.getBoundingClientRect(), window.innerHeight);
   return bottomCover;
 }
 
@@ -1393,6 +1390,8 @@ function animationLoop() {
   prepareLanding(transitNow);
 
   tickCutscene(now);
+  // (the zoom this frame is drawn at: the camera keeps a map's edges in place while the zoom eases)
+  stepWorldZoom(now);
   updateCamera(currentPlayer, deltaTime * 60, currentPlayer?.renderPosition ? transit.cameraAt(transitNow, currentPlayer.renderPosition) : undefined);
 
   (window as any).cameraX = cameraX;
@@ -1407,6 +1406,14 @@ function animationLoop() {
   const walkKeys = heldThroughWarp.free(pressedKeys);
 
   if (!getMovementAllowed()) lastDirection = "";
+
+  // Arriving on a new map stops a walk still going, unless a movement key or the stick is held (mapstop.ts).
+  const moveKeyHeld = ["KeyW", "KeyA", "KeyS", "KeyD"].some((k) => pressedKeys.has(k));
+  if (stopAfterMapLoad.due(getMovementAllowed(), moveKeyHeld, !!getStickDirection())) {
+    sendRequest({ type: "MOVEXY", data: "ABORT" });
+    setIsMoving(false);
+    lastDirection = "";
+  }
 
   if (getMovementAllowed() && getIsMoving() && getIsKeyPressed() && !isSelfDead()) {
     if (document.activeElement === chatInput || document.activeElement === friendsListSearch) {
@@ -1428,6 +1435,7 @@ function animationLoop() {
     if (dir && dir !== lastDirection) {
       sendRequest({ type: "MOVEXY", data: dir });
       lastDirection = dir;
+      stopAfterMapLoad.walked();
     }
   } else if (getIsMoving() && !getIsKeyPressed()) {
     if (lastDirection !== "") sendRequest({ type: "MOVEXY", data: "ABORT" });
@@ -1700,6 +1708,8 @@ function animationLoop() {
       const p = gone.ref;
       if (!p?.show || !isInView(gone.x, gone.y)) continue;
       steerWalkInPose(p, gone.walk, changeLayeredAnimation);
+      // The walk out's poses are built while the walk in goes on, to be drawn from its first step (layerswitch.ts).
+      warmPoses(p.layeredAnimation, ["walk_down", "idle_down"]);
       if (p.layeredAnimation && !playersArray.includes(p)) updateLayeredAnimation(p.layeredAnimation, deltaTime);
       if (gone.y + PLAYER_FEET < gone.foot) {
         through.push({ portal: gone.portal, anim: p.layeredAnimation, x: gone.x, y: gone.y });
@@ -1717,7 +1727,7 @@ function animationLoop() {
     const waiting = transit.waitingAt(transitNow);
     if (waiting?.ref?.show && isInView(waiting.x, waiting.y)) {
       const p = waiting.ref;
-      steerWaitPose(p, waiting.key, changeLayeredAnimation);
+      steerWaitPose(p, waiting.key, waiting.pose, changeLayeredAnimation);
       if (p.layeredAnimation && !playersArray.includes(p)) updateLayeredAnimation(p.layeredAnimation, deltaTime);
       const ghost = p.isGhost && ghostCtx ? ghostCtx : null;
       standing.push({

@@ -23,8 +23,6 @@ interface Portal {
 interface Draft extends Portal {
   destination: "none" | "teleport";
   target: { map: string; x: number | null; y: number | null };
-  /** Placed on the editor's own position when saved (the server's, as it is then). */
-  atMe: boolean;
 }
 interface Data {
   map: string; portals: Portal[]; dungeons: Record<string, string>; maps: MapOption[];
@@ -48,6 +46,12 @@ export class PortalPart extends ToolPartBase<EditorShell> implements ToolPart {
   /** Name of the portal being edited, or null for a new one. */
   private original: string | null = null;
   protected draft: Draft | null = null;
+  /** A draft just placed where the editor stands: the next list (asked for on placing) has where that is now. */
+  private placing: Draft | null = null;
+  /** A teleport just pointed at where the editor stands: the next list (asked for then) has where that is now. */
+  private arriving: Draft | null = null;
+  /** The map the open portal stands on: it stays open when the editor walks to another map. */
+  private home = "";
   private dirty = false;
   private summaryEl: HTMLElement | null = null;
 
@@ -91,17 +95,23 @@ export class PortalPart extends ToolPartBase<EditorShell> implements ToolPart {
     if (!data || typeof data !== "object") return;
     const mapBefore = this.data.map;
     this.data = { ...this.data, ...data };
+    // placed where the editor stood when placing it, never moved by a later list
+    const placing = this.placing;
+    this.placing = null;
+    if (placing && placing === this.draft && !this.away) this.placeAt(placing);
+    // players arrive where the editor stood when pointing it there, never moved by a later list
+    const arriving = this.arriving;
+    this.arriving = null;
+    if (arriving && arriving === this.draft) this.arriveAt(arriving);
     if (!Array.isArray(this.data.portals)) this.data.portals = [];
     if (!Array.isArray(this.data.maps)) this.data.maps = [];
     if (!this.data.dungeons || typeof this.data.dungeons !== "object") this.data.dungeons = {};
     this.landed();
-    // on another map: what was open was on the last one
-    if (mapBefore && mapBefore !== this.data.map && this.draft) {
-      if (this.active) toast(`You are on ${this.data.map} now, so its portals are listed.${this.dirty ? " The changes not saved were dropped." : ""}`);
-      this.close();
-      return;
+    // on another map: what is open stays open, and is still saved on its own map
+    if (mapBefore && mapBefore !== this.data.map && this.draft && this.data.map !== this.home) {
+      if (this.active) toast(`You are on ${this.data.map} now, so its portals are listed. ${this.draft.name || "The new portal"} stays open on ${this.home}.`);
     }
-    if (!follow || this.original === null || this.dirty || this.pending) return;
+    if (!follow || this.original === null || this.dirty || this.pending || this.away) return;
     const now = this.find(this.original);
     if (now) this.draft = this.toDraft(now);
     else {
@@ -110,8 +120,14 @@ export class PortalPart extends ToolPartBase<EditorShell> implements ToolPart {
     }
   }
 
+  /** What is open stands on another map than the editor. */
+  private get away(): boolean {
+    return !!this.draft && this.home !== this.data.map;
+  }
+
   private close(): void {
     this.draft = null;
+    this.home = "";
     this.original = null;
     this.dirty = false;
     this.refused = false;
@@ -166,7 +182,6 @@ export class PortalPart extends ToolPartBase<EditorShell> implements ToolPart {
       ...c,
       destination: c.kind === "teleport" ? "teleport" : "none",
       target: c.target ? { map: c.target.map, x: c.target.x, y: c.target.y } : { map: "", x: 0, y: 0 },
-      atMe: false,
     };
   }
 
@@ -179,7 +194,7 @@ export class PortalPart extends ToolPartBase<EditorShell> implements ToolPart {
     const name = String(d.name ?? "").trim();
     if (!name) errors.name = "Name is required.";
     else if (name.length > nameMax) errors.name = `Name must be ${nameMax} characters or fewer.`;
-    else if (this.data.portals.some((p) => p.name !== this.original && lower(p.name) === lower(name))) errors.name = "This map already has a portal with that name.";
+    else if (!this.away && this.data.portals.some((p) => p.name !== this.original && lower(p.name) === lower(name))) errors.name = "This map already has a portal with that name.";
     if (d.destination === "teleport") {
       const to = this.mapOf(d.target.map);
       if (!to) errors["target.map"] = "Pick the map it leads to.";
@@ -197,13 +212,11 @@ export class PortalPart extends ToolPartBase<EditorShell> implements ToolPart {
       const v = d.size[key];
       if (!whole(v) || v < sizeMin || v > sizeMax) errors[`size.${key}`] = `The ${key} must be whole pixels from ${sizeMin} to ${sizeMax}.`;
     }
-    const here = this.mapOf(this.data.map);
-    if (!d.atMe) {
-      for (const [key, span, limit] of [["x", d.size.width, here?.widthPx], ["y", d.size.height, here?.heightPx]] as const) {
-        const v = d.position[key];
-        if (!whole(v)) errors[`position.${key}`] = "The position must be whole pixels.";
-        else if (v < 0 || (limit !== undefined && whole(span) && v + span > limit)) errors[`position.${key}`] = "The portal must be inside the map.";
-      }
+    const here = this.mapOf(this.home);
+    for (const [key, span, limit] of [["x", d.size.width, here?.widthPx], ["y", d.size.height, here?.heightPx]] as const) {
+      const v = d.position[key];
+      if (!whole(v)) errors[`position.${key}`] = "The position must be whole pixels.";
+      else if (v < 0 || (limit !== undefined && whole(span) && v + span > limit)) errors[`position.${key}`] = "The portal must be inside the map.";
     }
     return errors;
   }
@@ -211,20 +224,40 @@ export class PortalPart extends ToolPartBase<EditorShell> implements ToolPart {
   private blank(): Draft {
     const d: Draft = {
       name: "New portal", kind: "dungeon", dungeonId: null, mirror: true, destination: "none",
-      target: { map: "", x: 0, y: 0 }, position: { x: 0, y: 0 }, size: { width: 32, height: 32 }, layer: null, atMe: false,
+      target: { map: "", x: 0, y: 0 }, position: { x: 0, y: 0 }, size: { width: 32, height: 32 }, layer: null,
     };
     this.placeAtMe(d);
     return d;
   }
 
-  /** Centred on the editor, inside the map: as the server places it. */
+  /**
+   * Centred where the editor stands now, inside the map. The list's position may be old, so it is asked for again and
+   * the portal placed by the answer; after that it stays put, wherever the editor saves from.
+   */
   private placeAtMe(d: Draft): void {
+    this.placeAt(d);
+    this.placing = d;
+    this.askForList();
+  }
+
+  private arriveAtMe(d: Draft): void {
+    this.arriveAt(d);
+    this.arriving = d;
+    this.askForList();
+  }
+
+  private arriveAt(d: Draft): void {
+    const at = this.data.here;
+    if (!at) return;
+    d.target = { map: this.data.map, x: Math.round(at.x), y: Math.round(at.y) };
+  }
+
+  private placeAt(d: Draft): void {
     const at = this.data.here;
     if (!at) return;
     const w = d.size.width ?? 32, h = d.size.height ?? 32, here = this.mapOf(this.data.map);
     const fit = (v: number, span: number, limit?: number) => Math.max(0, limit !== undefined ? Math.min(v, limit - span) : v);
     d.position = { x: fit(Math.floor(at.x - w / 2), w, here?.widthPx), y: fit(Math.floor(at.y - h / 2), h, here?.heightPx) };
-    d.atMe = true;
   }
 
   private openRow(): Portal | null {
@@ -271,9 +304,7 @@ export class PortalPart extends ToolPartBase<EditorShell> implements ToolPart {
     lines.push(d.mirror
       ? "Its opening shows the far side, with the players there moving live."
       : "Its opening shows the swirl only, not the far side.");
-    lines.push(d.atMe
-      ? "It is placed where you stand when it is saved."
-      : `It stands at ${d.position.x ?? "?"}, ${d.position.y ?? "?"} on ${this.data.map}, ${d.size.width ?? "?"} × ${d.size.height ?? "?"} pixels.`);
+    lines.push(`It stands at ${d.position.x ?? "?"}, ${d.position.y ?? "?"} on ${this.home}, ${d.size.width ?? "?"} × ${d.size.height ?? "?"} pixels.`);
     return lines;
   }
 
@@ -370,7 +401,7 @@ export class PortalPart extends ToolPartBase<EditorShell> implements ToolPart {
         : card(main, "Return portal", `Leads back to ${d.returnOf!.name} on ${d.returnOf!.map}`);
       about.append(
         el("p", "", follows),
-        el("p", "", `It stands at ${d.position.x ?? "?"}, ${d.position.y ?? "?"} on ${this.data.map}, ${d.size.width ?? "?"} × ${d.size.height ?? "?"} pixels, and takes players to ${d.target.map} at ${d.target.x ?? "?"}, ${d.target.y ?? "?"}.`),
+        el("p", "", `It stands at ${d.position.x ?? "?"}, ${d.position.y ?? "?"} on ${this.home}, ${d.size.width ?? "?"} × ${d.size.height ?? "?"} pixels, and takes players to ${d.target.map} at ${d.target.x ?? "?"}, ${d.target.y ?? "?"}.`),
       );
       const { body } = card(aside, "In plain words", "What this portal is in the game");
       this.summaryEl = el("div", "tl-summary");
@@ -396,9 +427,19 @@ export class PortalPart extends ToolPartBase<EditorShell> implements ToolPart {
       where.appendChild(this.field({ key: "map", label: "Map", type: "asset", noIcons: true, fallback: "map", wide: true, rerender: true, assets: () => this.mapOptions(), hint: to ? `${to.widthPx} × ${to.heightPx} pixels.` : "The map it leads to." }, "target.map", d.target));
       where.appendChild(this.field({ key: "x", label: "X", type: "number", min: 0, max: to ? to.widthPx - 1 : undefined, step: 1, unit: "px", hint: "Where players arrive, from the left." }, "target.x", d.target));
       where.appendChild(this.field({ key: "y", label: "Y", type: "number", min: 0, max: to ? to.heightPx - 1 : undefined, step: 1, unit: "px", hint: "Where players arrive, from the top. Its return portal stands just above." }, "target.y", d.target));
+      const arrive = el("div", "tl-field tl-field-wide");
+      const toMe = button("Place at my position", () => {
+        this.arriveAtMe(d);
+        this.dirty = true;
+        for (const k of ["target.map", "target.x", "target.y"]) delete this.fieldErrors[k];
+        this.renderForm();
+      }, { icon: "pin", tip: "Players arrive where you stand now" });
+      toMe.disabled = !this.data.here;
+      arrive.appendChild(toMe);
+      where.appendChild(arrive);
     }
 
-    const place = this.section(main, "Placement", `Where it stands on ${this.data.map}, in pixels`);
+    const place = this.section(main, "Placement", `Where it stands on ${this.home}, in pixels`);
     place.appendChild(this.field({ key: "x", label: "X", type: "number", min: 0, step: 1, unit: "px", hint: "Its left edge." }, "position.x", d.position));
     place.appendChild(this.field({ key: "y", label: "Y", type: "number", min: 0, step: 1, unit: "px", hint: "Its top edge. Players step in at its bottom edge." }, "position.y", d.position));
     place.appendChild(this.field({ key: "width", label: "Width", type: "number", min: sizeMin, max: sizeMax, step: 1, unit: "px", hint: `From ${sizeMin} to ${sizeMax}.` }, "size.width", d.size));
@@ -409,8 +450,8 @@ export class PortalPart extends ToolPartBase<EditorShell> implements ToolPart {
       this.dirty = true;
       for (const k of ["position.x", "position.y"]) delete this.fieldErrors[k];
       this.renderForm();
-    }, { icon: "pin", tip: "Centred where you stand, when it is saved" });
-    atMe.disabled = !this.data.here;
+    }, { icon: "pin", tip: "Centred where you stand now" });
+    atMe.disabled = !this.data.here || this.away;
     here.appendChild(atMe);
     place.appendChild(here);
 
@@ -449,7 +490,8 @@ export class PortalPart extends ToolPartBase<EditorShell> implements ToolPart {
       setFieldError(wrap, null);
     }
     // a position typed in is kept, not the editor's
-    if (path.startsWith("position.")) this.draft!.atMe = false;
+    if (path.startsWith("position.")) this.placing = null;
+    if (path.startsWith("target.")) this.arriving = null;
     this.shell.setProblems(this.problemLines(), false);
     this.chrome();
     this.paintLive();
@@ -465,6 +507,7 @@ export class PortalPart extends ToolPartBase<EditorShell> implements ToolPart {
   private open(draft: Draft, original: string | null, dirty: boolean): void {
     this.original = original;
     this.draft = draft;
+    this.home = this.data.map;
     this.dirty = dirty;
     this.refused = false;
     this.clearProblems();
@@ -499,6 +542,9 @@ export class PortalPart extends ToolPartBase<EditorShell> implements ToolPart {
 
   save(): void {
     if (!this.draft || this.pending) return;
+    // saved where it stands now
+    this.placing = null;
+    this.arriving = null;
     const follows = returnNote(this.draft);
     if (follows) {
       toast(follows, "error");
@@ -512,9 +558,9 @@ export class PortalPart extends ToolPartBase<EditorShell> implements ToolPart {
     }
     const d = this.draft;
     this.beginRequest("save", "PORTAL_EDITOR_SAVE", {
-      original: this.original, name: String(d.name ?? "").trim(), mirror: d.mirror, destination: d.destination,
+      original: this.original, map: this.home, name: String(d.name ?? "").trim(), mirror: d.mirror, destination: d.destination,
       target: d.destination === "teleport" ? { ...d.target } : null,
-      position: { ...d.position }, size: { ...d.size }, atMe: d.atMe,
+      position: { ...d.position }, size: { ...d.size },
     }, String(d.name ?? ""));
   }
 

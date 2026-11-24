@@ -491,7 +491,7 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `MAP_PORTALS` | To client | Portal editor | `{ mapName, portals }`: a map's portals after a save on the Dungeon Tool's Portals tab or a dungeon link. Sent to the players on that map |
 | `PORTAL_EDITOR_LIST` | To server | Portal editor | Ask for the portals of the player's map |
 | `PORTAL_EDITOR_DATA` | To client | Portal editor | `{ map, portals, dungeons, maps, here, nameMax, sizeMin, sizeMax }` |
-| `PORTAL_EDITOR_SAVE` | To server | Portal editor | Create or change a portal: `{ original, name, mirror, destination, target, position, size, atMe }` |
+| `PORTAL_EDITOR_SAVE` | To server | Portal editor | Create or change a portal: `{ original, map, name, mirror, destination, target, position, size, atMe }` (`map`: the map it stands on, else the editor's) |
 | `PORTAL_EDITOR_DELETE` | To server | Portal editor | Delete a portal: `{ name }` |
 | `PORTAL_EDITOR_RESULT` | To client | Portal editor | `{ ok, errors, fields, name, notes, action, data }` |
 | `SUMMON_STONE_EDITOR_LIST` | To server | Summoning stone editor | Ask for the summoning stones of the player's map |

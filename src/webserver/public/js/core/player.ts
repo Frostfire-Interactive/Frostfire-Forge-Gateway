@@ -13,6 +13,7 @@ import { queueGlow } from "./glowqueue.js";
 import { unzoomAbout } from "./worldzoom.js";
 import { initializeLayeredAnimation } from "./layeredAnimation.js";
 import { getVisibleLayersSorted } from "./layeredAnimation.js";
+import { frameCanvas } from "./layercanvas.js";
 import { formatDuration } from "./tooltip.js";
 import { NUMBER_FONT, TEXT_FONT } from "./fonts.js";
 
@@ -70,7 +71,6 @@ async function createPlayer(data: any) {
     username: data.username,
     userid: data.userid,
     layeredAnimation: null as null | LayeredAnimation,
-    _layerCanvases: {} as Record<string, HTMLCanvasElement>,
     lastDirection: "down" as string,
     friends: data.friends || [],
     spriteData: data.spriteData || null,
@@ -550,10 +550,6 @@ async function createPlayer(data: any) {
       const layers = getVisibleLayersSorted(this.layeredAnimation);
       if (layers.length === 0) return;
 
-      if (!this._layerCanvases) {
-        this._layerCanvases = {};
-      }
-
       context.save();
 
       context.imageSmoothingEnabled = false;
@@ -578,9 +574,7 @@ async function createPlayer(data: any) {
         const frame = layer.frames[layer.currentFrame];
         if (!frame || !frame.imageElement?.complete) continue;
 
-        const isMounted: boolean = this.layeredAnimation.layers.mount !== null;
-        const layerKey = `${layer.type}_${(layer as any)._cacheKey ?? ""}_${this.layeredAnimation.currentAnimationName}_${layer.currentFrame}_${isMounted}_${ghostTint ? "ghost" : "live"}`;
-        if (!this._layerCanvases[layerKey]) {
+        const layerCanvas = frameCanvas(frame, ghostTint, () => {
           const layerCanvas = document.createElement('canvas');
           layerCanvas.width = frame.width;
           layerCanvas.height = frame.height;
@@ -599,11 +593,8 @@ async function createPlayer(data: any) {
               layerCtx.restore();
             }
           }
-
-          this._layerCanvases[layerKey] = layerCanvas;
-        }
-
-        const layerCanvas = this._layerCanvases[layerKey];
+          return layerCanvas;
+        });
         const offsetX = frame.offset?.x || 0;
         const offsetY = frame.offset?.y || 0;
 

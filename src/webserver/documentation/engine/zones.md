@@ -88,7 +88,7 @@ The map's zones are part of the `LOAD_MAP` metadata (`zones`, or `null`). The cl
 Four times a second the client works out the player's position in tiles and:
 
 1. Finds the zone the player is in. When the player is in a zone inside another one, the smallest one wins, so a town drawn inside a forest is the town. The size of a zone in more than one place is that of all its places.
-2. Shows that zone's text (or its name) when the player has just walked into it. Going back into a zone the player left less than 10 seconds ago shows nothing, so walking along an edge does not flash the banner. On a new map the zone the player stands in is always shown.
+2. Shows that zone's text (or its name) when the player has just walked into it. It is shown every time, with no wait. The old text is taken down first, and a new map takes the old map's text down at once. On a new map the zone the player stands in is always shown.
 3. Plays the music of the smallest zone that has music. A town without its own music keeps the forest's.
 
 A change of music crossfades over 5 seconds: the old track fades out to silence while the new one fades in from silence, from the start of its file. A track loops over its whole file: its last sample runs straight into its first, so music made to loop keeps its beat. Both fades are slow at the quiet end, so the music comes in and goes out gently. Walking back into a zone while its music is still fading out brings that music back up from where it is. The level follows the Music slider and the Muted box of the pause menu, and the music is silent during a cutscene. Leaving every zone with music fades the music out.

@@ -424,20 +424,20 @@ export class TransitTracker<T> {
     return ids;
   }
 
-  /** Where the local player stands between their walk in and their walk out, drawn standing (steerWaitPose, keyed by
-   *  `key`): where the walk in ended while the far ground loads, then where the walk out starts until the map is shown;
-   *  null when they are not waiting, or are drawn on a walk. */
-  waitingAt(now: number): { ref: T; x: number; y: number; key: object } | null {
+  /** Where the local player stands between their walk in and their walk out, drawn standing as `pose` (steerWaitPose,
+   *  keyed by `key`): where the walk in ended, facing up, while the far ground loads, then where the walk out starts,
+   *  facing down the way they walk out, until the map is shown; null when they are not waiting, or are drawn on a walk. */
+  waitingAt(now: number): { ref: T; x: number; y: number; key: object; pose: "idle_up" | "idle_down" } | null {
     const id = this.localId;
     if (!id) return null;
     if (this.gone) {
       if (this.walksIn.some((w) => w.id === id && walkInAt(w.walk, now) !== null)) return null;
-      return { ref: this.gone.ref, x: this.gone.spot.x, y: this.gone.spot.y, key: this.gone };
+      return { ref: this.gone.ref, x: this.gone.spot.x, y: this.gone.spot.y, key: this.gone, pose: "idle_up" };
     }
     const me = this.held ? this.seen.get(id) : undefined;
     if (!me || !this.held) return null;
     const at = this.cameraAt(now, { x: me.dx, y: me.dy });
-    return { ref: me.ref, x: at.x, y: at.y, key: this.held };
+    return { ref: me.ref, x: at.x, y: at.y, key: this.held, pose: "idle_down" };
   }
 
   /** The server says a portal has just put this player where they are: one who appears there walks out of it. */
@@ -545,8 +545,9 @@ export function steerWalkInPose(p: any, walk: WalkIn, change: (anim: any, name: 
   steerPose(p, walk, "walk_up", "up", change);
 }
 
-/** Poses the local player waiting between their walk in and their walk out (TransitTracker.waitingAt): standing
- *  facing up, as their walk in left them. A pose someone else gives them meanwhile wins, as on a walk. */
-export function steerWaitPose(p: any, key: object, change: (anim: any, name: string) => unknown): void {
-  steerPose(p, key, "idle_up", "up", change);
+/** Poses the local player waiting between their walk in and their walk out (TransitTracker.waitingAt): standing as
+ *  `pose` (facing up in the portal they went into, down in the one they come out of). A pose someone else gives them
+ *  meanwhile wins, as on a walk. */
+export function steerWaitPose(p: any, key: object, pose: "idle_up" | "idle_down", change: (anim: any, name: string) => unknown): void {
+  steerPose(p, key, pose, pose.slice(5), change);
 }

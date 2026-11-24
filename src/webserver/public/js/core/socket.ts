@@ -164,6 +164,8 @@ import { layerSheetsChanged } from "./layersheets.ts";
 import { applyClusterDebug, pauseClusterRefresh, requestClusterRefresh, setClusterDebugRequester } from "./clusternodes.ts";
 import { MAX_PREDICT_MS, GapLog, MAX_GAP_UPDATES, GAP_DONE_WAIT_MS, atMountSpeed, startEase, planHandoffDone, madeUpPoint, planPaceArm, planStopPace, hasAnchor, HandoffSettle, HandoffPace, KeptWalkDating, clearHeld, heldDirection, gapDirection, advanceSelf, beginPoint } from "./handoffwalk.ts";
 import { doneFacing, doneSend, doneWalk, walkAtSwitch } from "./resumesend.ts";
+import { stopAfterMapLoad } from "./mapstop.ts";
+import { leaveHold, type Leave } from "./leavehold.ts";
 import { getIsKeyPressed, getIsMoving, getStickDirection, pressedKeys, setLastSentDirection } from "./input.js";
 import parseAPNG from "../libs/apng_parser.js";
 import { getCookie } from "./cookies.ts";
@@ -1900,7 +1902,6 @@ async function resetDeathAnimation(target: any): Promise<void> {
     target.mount_type = null;
     target.castingSpell = null;
     target.castingInterrupted = false;
-    target._layerCanvases = {};
     if (target.layeredAnimation) {
       target.layeredAnimation.layers.mount = null;
       const { changeLayeredAnimation } = await import("./layeredAnimation.js");
@@ -3261,7 +3262,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       const player = Array.from(cache.players).find(
         (player) => player.id === data.id
       );
-      if (player) {
+      if (player && !(await heldLeave({ player }))) {
         cache.players.delete(player);
       }
 
@@ -3273,7 +3274,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       const player = Array.from(cache.players).find(
         (player) => player.id === data.id
       );
-      if (player) {
+      if (player && !(await heldLeave({ player }))) {
         cache.players.delete(player);
       }
 
@@ -3283,16 +3284,16 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
       if (!Array.isArray(data)) return;
 
-      data.forEach((despawnData: { id: string; reason: string }) => {
-        if (!despawnData.id) return;
+      for (const despawnData of data as { id: string; reason: string }[]) {
+        if (!despawnData?.id) continue;
 
         const player = Array.from(cache.players).find(
           (p) => p.id === despawnData.id
         );
-        if (player) {
+        if (player && !(await heldLeave({ player }))) {
           cache.players.delete(player);
         }
-      });
+      }
       break;
     }
     case "CREATURE_SPAWN": {
@@ -3866,7 +3867,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     // NPCs whose map chunks left the player's range (server systems/npcStreaming.ts)
     case "UNLOAD_NPCS": {
       const ids: any[] = Array.isArray(data?.ids) ? data.ids : [];
-      if (ids.length && cache?.npcs) {
+      if (ids.length && cache?.npcs && !(await heldLeave({ npcs: ids }))) {
         const drop = new Set(ids);
         cache.npcs = cache.npcs.filter((n: any) => !drop.has(n.id));
       }
@@ -3900,6 +3901,8 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         // walk is seen to its end, into the portal's opening, before the last map goes.
         const { transit } = await import("./portaltransit.js");
         transit.mapLoading(performance.now());
+        // what leaves the map being left is kept until that map goes, under the fade (leavehold.ts)
+        if (loaded) leaveHold.mapChanging();
         const walkingIn = loaded ? transit.walkInLeft(performance.now()) : 0;
         if (walkingIn > 0) {
           movementAllowed = false;
@@ -3927,6 +3930,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         // a different map: the world map view (worldmap.ts) closes and loads the new map's image next time
         import("./worldmap.js").then((m) => m.closeWorldMap());
         const isTransition = loaded;
+        if (isTransition) stopAfterMapLoad.mapLoaded();
 
         loaded = false;
         movementAllowed = false;
@@ -4032,6 +4036,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
           if (teWasActive) await te!.toggle();
         }
+        applyLeaves(leaveHold.release());
 
         import("./skeletons.js").then((m) => m.clearSkeletons());
         hideReviveOfferPopup();
@@ -6080,6 +6085,27 @@ function getIsLoaded() {
 
 function getMovementAllowed() {
   return movementAllowed && !cutsceneHoldsInput();
+}
+
+/** A despawn or NPC unload kept back while the local player walks on into a portal, and then until the map being
+ *  left goes (leavehold.ts): true when kept. */
+async function heldLeave(leave: Leave): Promise<boolean> {
+  const { transit } = await import("./portaltransit.js");
+  const left = transit.walkInLeft(performance.now());
+  if (!leaveHold.hold(leave, left)) return false;
+  if (left > 0) setTimeout(() => applyLeaves(leaveHold.walkEnded()), left);
+  return true;
+}
+
+/** What was kept back leaves: the player objects as they were held (one spawned again since is a new object, kept). */
+function applyLeaves(leaves: Leave[]) {
+  for (const leave of leaves) {
+    if ("player" in leave) cache.players.delete(leave.player as any);
+    else if (cache?.npcs) {
+      const drop = new Set(leave.npcs);
+      cache.npcs = cache.npcs.filter((n: any) => !drop.has(n.id));
+    }
+  }
 }
 
 async function isLoaded() {

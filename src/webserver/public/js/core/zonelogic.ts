@@ -38,9 +38,6 @@ export function fadePoints(from: number, to: number, seconds: number, steps = 16
   return points;
 }
 
-/** A zone's text is not shown again when the player goes back in within this long of leaving it. */
-export const BANNER_RESHOW_MS = 10000;
-
 function ringArea(ring: number[][]): number {
   let sum = 0;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
@@ -114,17 +111,13 @@ export function musicAt(zones: ClientZone[] | null | undefined, x: number, y: nu
 
 export interface BannerState {
   current: string | null;
-  leftAt: Map<string, number>;
 }
 
-export function bannerStep(state: BannerState, zone: ClientZone | null, nowMs: number, opts?: { fresh?: boolean }): string | null {
+export function bannerStep(state: BannerState, zone: ClientZone | null, _nowMs: number, opts?: { fresh?: boolean }): string | null {
   const name = zone?.name ?? null;
   if (name === state.current && !opts?.fresh) return null;
-  if (state.current !== null && name !== state.current) state.leftAt.set(state.current, nowMs);
   state.current = name;
   if (!zone) return null;
-  const left = state.leftAt.get(zone.name);
-  if (!opts?.fresh && left !== undefined && nowMs - left < BANNER_RESHOW_MS) return null;
   return zone.text || zone.name;
 }
 

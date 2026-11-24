@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { BANNER_RESHOW_MS, bannerStep, fadePoints, musicAt, musicLevel, zoneArea, zoneAt, zoneLabelPoint, zonesList, zonesOfKind, zoneMusicAction, ZONE_MUSIC_FADE, type BannerState, type ClientZone } from "../webserver/public/js/core/zonelogic";
+import { bannerStep, fadePoints, musicAt, musicLevel, zoneArea, zoneAt, zoneLabelPoint, zonesList, zonesOfKind, zoneMusicAction, ZONE_MUSIC_FADE, type BannerState, type ClientZone } from "../webserver/public/js/core/zonelogic";
 
 const square = (x: number, y: number, size: number) => [[x, y], [x + size, y], [x + size, y + size], [x, y + size]];
 const zone = (name: string, x: number, size: number, extra: Partial<ClientZone> = {}): ClientZone => ({
@@ -7,7 +7,7 @@ const zone = (name: string, x: number, size: number, extra: Partial<ClientZone> 
 });
 const forest = zone("Forest", 0, 100, { music: "forest theme" });
 const town = zone("Town", 40, 20, { text: "Welcome to Town" });
-const state = (): BannerState => ({ current: null, leftAt: new Map() });
+const state = (): BannerState => ({ current: null });
 
 test("the area of a zone is that of all its pieces", () => {
   expect(zoneArea(forest)).toBe(10000);
@@ -39,25 +39,13 @@ test("the music is that of the smallest zone with music, so a town without its o
   expect(musicAt([forest], 150, 150)).toBeNull();
 });
 
-test("the banner shows on first entry, not on going back in soon, and again after a while", () => {
+test("the banner shows on every entry to a zone, with no wait to show it again", () => {
   const s = state();
   expect(bannerStep(s, town, 0)).toBe("Welcome to Town");
   expect(bannerStep(s, town, 250)).toBeNull();
   expect(bannerStep(s, forest, 1000)).toBe("Forest");
-  expect(bannerStep(s, town, 4000)).toBeNull();
-  expect(bannerStep(s, forest, 5000)).toBeNull();
-  expect(bannerStep(s, town, 5000 + BANNER_RESHOW_MS)).toBe("Welcome to Town");
-  expect(BANNER_RESHOW_MS).toBe(10000);
-});
-
-test("walking along a zone's edge shows each zone once", () => {
-  const s = state();
-  const shown: string[] = [];
-  for (let t = 0; t <= 2000; t += 250) {
-    const text = bannerStep(s, (t / 250) % 2 === 0 ? forest : town, t);
-    if (text) shown.push(text);
-  }
-  expect(shown).toEqual(["Forest", "Welcome to Town"]);
+  expect(bannerStep(s, town, 1250)).toBe("Welcome to Town");
+  expect(bannerStep(s, forest, 1500)).toBe("Forest");
 });
 
 test("leaving every zone shows nothing, and a fresh map shows its zone even when it is the same", () => {

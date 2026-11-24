@@ -302,9 +302,9 @@ describe("TransitTracker", () => {
     expect(t.cameraAt(now + 20, { x: 116, y: 142 })).toEqual({ x: 116, y: 142 });
     expect(t.cameraAt(now + 20 + IN / 2, { x: 116, y: 142 }).y).toBeCloseTo((142 + PLANE) / 2, 5);
     expect(t.cameraAt(now + 20 + IN + 1, { x: 116, y: 142 })).toEqual({ x: 116, y: PLANE });
-    // drawn by the walk in until it ends, then standing where it ended, never gone
+    // drawn by the walk in until it ends, then standing where it ended (facing up, into it), never gone
     expect(t.waitingAt(now + 20 + IN / 2)).toBeNull();
-    expect(t.waitingAt(now + 20 + IN + 1)).toMatchObject({ ref: "me", x: 116, y: PLANE });
+    expect(t.waitingAt(now + 20 + IN + 1)).toMatchObject({ ref: "me", x: 116, y: PLANE, pose: "idle_up" });
     // a second LOAD_MAP for the same trip is the same trip
     t.mapLoading(now + 30);
     expect(t.warps).toBe(1);
@@ -315,8 +315,8 @@ describe("TransitTracker", () => {
     expect(t.drawnAt("me", now + 500, gateFront)).toBeNull();
     // the camera is where the walk out will start: as deep in the far portal as the walk in ended in the near one
     expect(t.cameraAt(now + 500, gateFront)).toEqual({ x: 116, y: PLANE });
-    // and drawn standing there, on the far plane, until the map is shown
-    expect(t.waitingAt(now + 500)).toMatchObject({ ref: "me", x: 116, y: PLANE });
+    // and drawn standing there, on the far plane, facing down the way they walk out, until the map is shown
+    expect(t.waitingAt(now + 500)).toMatchObject({ ref: "me", x: 116, y: PLANE, pose: "idle_down" });
     t.reveal(now + 700);
     frame(t, now + 716, [there], "town");
     expect(t.drawnAt("me", now + 699, gateFront)).toBeNull();

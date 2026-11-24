@@ -16,7 +16,7 @@ When you enter, the game remembers the portal you used. Leaving the dungeon puts
 
 Walk up to a portal and its opening shows the other side. A dungeon portal shows the dungeon's entrance, with the players of your own or your party's copy moving there; with no copy open it is a still picture, and other groups' copies are never shown. The exit inside a dungeon shows the spot outside you return to. Some portals are **teleports**: they take you one way to another place, without a copy, and show that place and the players there. Some portals show only their swirl.
 
-After you go through a portal, in or out, you wait **3 seconds** before you can use a portal or a warp to another map again. A portal walked into sooner says "You can warp again in" followed by the seconds left. Step out of it and in again once the time is up.
+After you go through a portal, in or out, you wait **1 second** before you can use a portal or a warp to another map again. A portal walked into sooner says "You can warp again in" followed by the seconds left. Step out of it and in again once the time is up.
 
 ## Solo, party and raid
 
