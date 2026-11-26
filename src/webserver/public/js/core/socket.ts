@@ -174,6 +174,7 @@ import { encodeFrame, FrameDecoder, decodeCloseReason } from "./wtframing.ts";
 import { setTileSounds } from "./tilesounds.ts";
 import { zonesLoaded } from "./areazones.js";
 import { zonesOfKind } from "./zonelogic.js";
+import { widestView } from "./worldzoom.js";
 
 let socket: WebTransport;
 let streamWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
@@ -350,6 +351,18 @@ function rebuildInventoryGrid() {
 function sendRequest(data: any) {
   sentRequests++;
   sendRawFrame(packet.encode(JSON.stringify(data)));
+}
+
+/** The view's size, so the server sends creatures from past its edges and they come and go off screen. */
+let viewSizeTimer: ReturnType<typeof setTimeout> | null = null;
+function sendViewSize() {
+  if (viewSizeTimer) { clearTimeout(viewSizeTimer); viewSizeTimer = null; }
+  sendRequest({ type: "VIEW_SIZE", data: widestView() });
+}
+/** After a resize settles. */
+function sendViewSizeSoon() {
+  if (viewSizeTimer) clearTimeout(viewSizeTimer);
+  viewSizeTimer = setTimeout(sendViewSize, 250);
 }
 
 async function leaveForCharacterList(): Promise<void> {
@@ -976,6 +989,7 @@ function sendLogin() {
     : null;
   sendRequest({ type: "LOGIN", data: null });
   sendRequest({ type: "AUTH", data: sessionToken, language, ...(gap ? { gap } : {}) });
+  sendViewSize();
   gapSeq = 0;
   if (gap && gapUpdates) gapSentHeld = gap.held;
 }
@@ -6215,7 +6229,7 @@ window.addEventListener('beforeunload', () => {
   flushInventorySlots();
 });
 
-export { sendRequest, leaveForCharacterList, cachedPlayerId, getIsLoaded, getMovementAllowed, getHandoffGap, getWalkAtSwitch, getGapReports, gapWalkStarted, noteGapFrame, finishGapWalk, gapFrameMs, handoffPace, itemsByName, showNotification };
+export { sendRequest, sendViewSizeSoon, leaveForCharacterList, cachedPlayerId, getIsLoaded, getMovementAllowed, getHandoffGap, getWalkAtSwitch, getGapReports, gapWalkStarted, noteGapFrame, finishGapWalk, gapFrameMs, handoffPace, itemsByName, showNotification };
 (window as any).itemsByName = itemsByName;
 
 

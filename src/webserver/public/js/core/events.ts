@@ -1,4 +1,4 @@
-import { sendRequest, leaveForCharacterList, getIsLoaded, getMovementAllowed, cachedPlayerId, itemsByName, showNotification } from "./socket.js";
+import { sendRequest, sendViewSizeSoon, leaveForCharacterList, getIsLoaded, getMovementAllowed, cachedPlayerId, itemsByName, showNotification } from "./socket.js";
 import { teleportsHome } from "./consumables.js";
 import { isSelfDead, isSelfActionLocked } from "./death.js";
 import Cache from "./cache.js";
@@ -562,6 +562,7 @@ function resizeGameCanvas() {
 function handleViewportResize() {
   updateViewportMetrics();
   resizeGameCanvas();
+  sendViewSizeSoon();
 }
 
 window.addEventListener("resize", handleViewportResize);

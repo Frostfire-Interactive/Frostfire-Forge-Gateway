@@ -75,6 +75,13 @@ function screenSize(): { w: number; h: number } {
   };
 }
 
+/** The most of the world the screen can show, in world pixels: at the widest zoom (1, times the touch screens' 0.85).
+ *  The server sends creatures out past it (VIEW_SIZE). */
+export function widestView(): { w: number; h: number } {
+  const z = isTouch() ? 0.85 : 1;
+  return { w: Math.ceil(window.innerWidth / z), h: Math.ceil(window.innerHeight / z) };
+}
+
 export function viewWidth(): number {
   return window.innerWidth / userZoom();
 }
