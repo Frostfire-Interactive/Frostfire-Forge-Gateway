@@ -1000,8 +1000,6 @@ body > #cutscene-skip {
   background: #c3997c;
   border: 0;
   border-bottom: 1px solid rgba(147, 111, 85, 0.7);
-  -webkit-box-shadow: inset 3px 0 0 #ffab25;
-  box-shadow: inset 3px 0 0 #ffab25;
 }
 
 #guild-rank-name {
@@ -3074,22 +3072,6 @@ body.timelapse-active .ui-hidden-in-timelapse {
 .te-notification.hiding {
   opacity: 0;
   transform: translateX(100px);
-}
-
-.te-notification.success {
-  border-left: 3px solid #22c55e;
-}
-
-.te-notification.error {
-  border-left: 3px solid #ef4444;
-}
-
-.te-notification.warning {
-  border-left: 3px solid #f59e0b;
-}
-
-.te-notification.info {
-  border-left: 3px solid #3b82f6;
 }
 
 .warning {

@@ -652,7 +652,6 @@ kbd {
 .article blockquote {
     margin: 0 0 18px;
     padding: 2px 0 2px 18px;
-    border-left: 3px solid var(--border-strong);
     color: var(--text-muted);
 }
 
@@ -874,9 +873,7 @@ kbd {
     margin: 0 0 22px;
     padding: 14px 18px;
     border: 1px solid color-mix(in srgb, var(--callout) 30%, transparent);
-    border-left-width: 3px;
-    border-left-color: var(--callout);
-    border-radius: var(--radius-small) var(--radius) var(--radius) var(--radius-small);
+    border-radius: var(--radius);
     background: var(--callout-soft);
 }
 

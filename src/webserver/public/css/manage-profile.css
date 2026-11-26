@@ -258,8 +258,7 @@
     margin-bottom: 20px;
     padding: 14px 18px;
     border: 1px solid color-mix(in srgb, var(--ember) 30%, transparent);
-    border-left: 3px solid var(--ember);
-    border-radius: var(--radius-small) var(--radius) var(--radius) var(--radius-small);
+    border-radius: var(--radius);
     background: var(--ember-soft);
     color: var(--text-soft);
     font-size: 14.5px;

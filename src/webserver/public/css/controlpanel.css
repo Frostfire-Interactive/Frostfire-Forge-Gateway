@@ -231,7 +231,7 @@ button.cp-bar-row:hover .cp-bar-fill { filter: brightness(1.2); }
 .cp-report-when { margin-left: auto; color: var(--text-faint); font-size: var(--t-sm); white-space: nowrap; }
 .cp-report.is-open { padding-bottom: var(--s-3); }
 .cp-report-body { display: grid; gap: var(--s-4); padding: var(--s-2) var(--s-2) var(--s-2) 30px; }
-.cp-report-details { margin: 0; padding: var(--s-2) var(--s-3); border-left: 2px solid var(--border-strong); color: var(--text-strong); overflow-wrap: anywhere; white-space: pre-wrap; }
+.cp-report-details { margin: 0; padding: var(--s-2) var(--s-3); color: var(--text-strong); overflow-wrap: anywhere; white-space: pre-wrap; }
 .cp-report-lines { display: grid; gap: 2px; max-height: 240px; margin: 0; padding: var(--s-2) 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); list-style: none; overflow-y: auto; }
 .cp-report-line { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: var(--s-2); align-items: baseline; padding: 3px 0; }
 .cp-report-line-at { color: var(--text-faint); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }

@@ -53,5 +53,5 @@
 .ne-summary > p { overflow-wrap: anywhere; }
 .ne-summary .tl-preview-head { margin-bottom: var(--s-1); }
 .ne-summary .tl-preview-name { font-size: var(--t-lg); }
-.ne-quote { max-height: 132px; padding: var(--s-2) var(--s-3); border-left: 2px solid var(--border-strong); border-radius: 0 var(--r-md) var(--r-md) 0; background: rgba(148, 163, 184, 0.06); color: #f1d9a0; overflow-wrap: anywhere; overflow-y: auto; white-space: pre-wrap; }
+.ne-quote { max-height: 132px; padding: var(--s-2) var(--s-3); border-radius: var(--r-md); background: rgba(148, 163, 184, 0.06); color: #f1d9a0; overflow-wrap: anywhere; overflow-y: auto; white-space: pre-wrap; }
 .ne-layers { display: flex; flex-wrap: wrap; gap: 6px; }

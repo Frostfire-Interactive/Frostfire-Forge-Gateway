@@ -47,7 +47,6 @@
 .ce-table .tl-affix { width: 132px; }
 .ce-table .tl-input { height: 30px; }
 .ce-table tr.has-error td { background: rgba(248, 113, 113, 0.07); }
-.ce-table tr.has-error td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 .ce-table-wrap { overflow-x: auto; }
 
 /* -------------------------------------------------------------- at a glance */

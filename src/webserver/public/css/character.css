@@ -224,16 +224,6 @@ body.character-page::before {
     background: #6e4220;
 }
 
-.cc-class.selected::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: 3px;
-    background: var(--cc-gold);
-}
-
 .cc-class:focus-visible {
     outline: 2px solid var(--cc-gold);
     outline-offset: -2px;
@@ -522,7 +512,7 @@ body.character-page::before {
     padding: 10px 14px 10px 16px;
     background: #3a1411;
     border: 1px solid var(--cc-edge);
-    box-shadow: inset 3px 0 0 var(--cc-danger), 0 6px 18px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
     font-size: 0.9rem;
     color: #ffd9d4;
     overflow-wrap: anywhere;
@@ -541,7 +531,7 @@ body.character-page::before {
     padding: 10px 12px 10px 16px;
     background: var(--cc-panel);
     border: 1px solid var(--cc-edge);
-    box-shadow: inset 3px 0 0 #e0703a, 0 6px 18px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
 }
 
 .cc-warning[hidden],
