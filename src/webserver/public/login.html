@@ -85,7 +85,8 @@
 
             loginLink.href = session.loginUrl || '/';
             switchLink.href = session.loginUrl || '/';
-            accountName.textContent = session.username || '';
+            const name = session.username || '';
+            accountName.textContent = name.charAt(0).toUpperCase() + name.slice(1);
 
             show(accountRow, signedIn);
             show(openButton, allowed);

@@ -180,7 +180,7 @@ async function loadProfile() {
     if (loadingEl) loadingEl.classList.add('hidden');
     if (contentEl) contentEl.classList.remove('hidden');
 
-    document.getElementById('profile-username')!.textContent = profile.username;
+    document.getElementById('profile-username')!.textContent = profile.username.charAt(0).toUpperCase() + profile.username.slice(1);
     profileEmailMasked = profile.email_masked || '********';
     document.getElementById('profile-email')!.textContent = profileEmailMasked;
     document.getElementById('profile-lastlogin')!.textContent = profile.last_login ? new Date(profile.last_login).toLocaleString() : 'Never';

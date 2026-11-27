@@ -1,3 +1,5 @@
+import { stormPresence } from "./zonelogic.ts";
+
 const isMobileDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 
 // (from still air up: a breeze of a few mph is a faint drift, 15 a light storm, 35 a heavy one)
@@ -155,6 +157,8 @@ export function makeZoneStorm(look: ZoneStormLook): (ctx: CanvasRenderingContext
   let sprites: HTMLCanvasElement[] | null = null;
   let tint: HTMLDivElement | null = null;
   let presence = 0, harshness = 0, inside = false, lookedAt = 0, lastDraw = 0;
+  /** No look at the zones yet since it was last drawn; and whether the weather called for it last frame. */
+  let fresh = true, wasWanted = false;
   let gust = 0;
   const billows = (isMobileDevice
     ? [{ size: 160, scale: 4, parallax: 0.9, alpha: 0.45, speed: 0.6 }]
@@ -238,18 +242,21 @@ export function makeZoneStorm(look: ZoneStormLook): (ctx: CanvasRenderingContext
       presence = 0;
       lastCameraX = NaN;
       lookedAt = 0;
+      fresh = true;
     }
     lastDraw = now;
     const seconds = Math.min(0.1, f.deltaMs / 1000);
 
+    let arriving = false;
     if (f.wanted && now - lookedAt >= LOOK_EVERY) {
       lookedAt = now;
       const map = (window as any).mapData;
       inside = inZone(map?.[look.zones], f.focusX / (map?.tilewidth || 16), f.focusY / (map?.tileheight || 16));
+      arriving = fresh;
+      fresh = false;
     }
-    const target = f.wanted && inside ? 1 : 0;
-    const step = seconds / FADE_SECONDS;
-    presence = target > presence ? Math.min(target, presence + step) : Math.max(target, presence - step);
+    presence = stormPresence({ presence, inside, wanted: f.wanted, wasWanted, fresh: arriving, step: seconds / FADE_SECONDS });
+    wasWanted = f.wanted;
 
     const harsh = Math.min(1, Math.max(LEAST, (f.baseWind - HARSH_FROM) / (HARSH_FULL - HARSH_FROM)));
     harshness += (harsh - harshness) * Math.min(1, seconds / FADE_SECONDS * 2);

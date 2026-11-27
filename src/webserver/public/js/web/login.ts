@@ -122,7 +122,7 @@ const showLoginForm = () => {
 };
 
 const showSession = (name: string) => {
-    sessionUsername.textContent = name;
+    sessionUsername.textContent = name.charAt(0).toUpperCase() + name.slice(1);
     loginForm.classList.add('hidden');
     sessionPanel.classList.remove('hidden');
     sessionPlay.focus();

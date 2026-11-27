@@ -128,6 +128,27 @@ export function rainUnderBlizzard(rain: number, blizzard: number): number {
   return rain * (1 - shown);
 }
 
+export interface StormPresenceStep {
+  /** How much of the storm shows now, 0 to 1. */
+  presence: number;
+  /** Whether the player is in one of the storm's zones. */
+  inside: boolean;
+  /** Whether the weather calls for the storm, now and the frame before. */
+  wanted: boolean;
+  wasWanted: boolean;
+  /** The first look at the zones since the storm was last drawn (login, a map change, out of a house). */
+  fresh: boolean;
+  /** How far it fades this frame, 0 to 1. */
+  step: number;
+}
+
+/** How much of a zone storm shows after this frame: it fades as the player walks in or out, or as the weather leaves it; arriving, or the weather turning to it, shows it as it is at once. */
+export function stormPresence(s: StormPresenceStep): number {
+  const target = s.wanted && s.inside ? 1 : 0;
+  if (s.wanted && (s.fresh || !s.wasWanted)) return target;
+  return target > s.presence ? Math.min(target, s.presence + s.step) : Math.max(target, s.presence - s.step);
+}
+
 export function musicLevel(slider: number, muted: boolean, cutscene: boolean): number {
   if (muted || cutscene) return 0;
   const s = Math.max(0, Math.min(100, Number(slider) || 0)) / 100;
