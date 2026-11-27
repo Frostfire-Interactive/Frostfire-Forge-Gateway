@@ -162,7 +162,7 @@ import { POSE_DATAGRAM_HEADER, applyPoseDatagram, applyPoseUpdate, faceArrival, 
 import { planSelfSpawn } from "./selfspawn.ts";
 import { layerSheetsChanged } from "./layersheets.ts";
 import { applyClusterDebug, pauseClusterRefresh, requestClusterRefresh, setClusterDebugRequester } from "./clusternodes.ts";
-import { MAX_PREDICT_MS, GapLog, MAX_GAP_UPDATES, GAP_DONE_WAIT_MS, atMountSpeed, startEase, planHandoffDone, madeUpPoint, planPaceArm, planStopPace, hasAnchor, HandoffSettle, HandoffPace, KeptWalkDating, clearHeld, heldDirection, gapDirection, advanceSelf, beginPoint } from "./handoffwalk.ts";
+import { MAX_PREDICT_MS, GapLog, MAX_GAP_UPDATES, GAP_DONE_WAIT_MS, speedMultiplierOf, setClientSpeeds, startEase, planHandoffDone, madeUpPoint, planPaceArm, planStopPace, hasAnchor, HandoffSettle, HandoffPace, KeptWalkDating, clearHeld, heldDirection, gapDirection, advanceSelf, beginPoint } from "./handoffwalk.ts";
 import { doneFacing, doneSend, doneWalk, walkAtSwitch } from "./resumesend.ts";
 import { stopAfterMapLoad } from "./mapstop.ts";
 import { leaveHold, type Leave } from "./leavehold.ts";
@@ -1426,7 +1426,7 @@ function beginHandoffGap(data: any) {
   cancelKeptWalk();
   startHandoffGap(true, data?.report === true, data?.gapUpdates === true);
   const own: any = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
-  const point = own?.moveSamples ? beginPoint(own.moveSamples[own.moveSamples.length - 1], data, atMountSpeed(own)) : null;
+  const point = own?.moveSamples ? beginPoint(own.moveSamples[own.moveSamples.length - 1], data, speedMultiplierOf(own)) : null;
   if (point && pushEcho(own.moveSamples, point.x, point.y, point.t)) {
     own.serverPosition.x = point.x;
     own.serverPosition.y = point.y;
@@ -1490,7 +1490,7 @@ function settleHandoff(data: any) {
   if (self && Number.isFinite(x) && Number.isFinite(y)) {
     const moving = getIsKeyPressed() || !!getStickDirection();
     // Weighed against where the node's first echo will be: it makes up the steps it stood through the gap (madeUpPoint).
-    const target = madeUpPoint({ x, y }, doneWalk(data?.walk), data?.catchUpMs, atMountSpeed(self));
+    const target = madeUpPoint({ x, y }, doneWalk(data?.walk), data?.catchUpMs, speedMultiplierOf(self));
     const keep = planHandoffDone(predicting, moving, self, target, hasAnchor(self.moveSamples)) === "keep";
     self.serverPosition.x = x;
     self.serverPosition.y = y;
@@ -3389,6 +3389,22 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       import("./mounteditor.js").then((m) => m.default.onUpdated(data));
       break;
     }
+    case "TOGGLE_GAME_SETTINGS_EDITOR": {
+      import("./gamesettings.js").then((m) => m.default.toggle());
+      break;
+    }
+    case "GAME_SETTINGS_EDITOR_DATA": {
+      import("./gamesettings.js").then((m) => m.default.onData(data));
+      break;
+    }
+    case "GAME_SETTINGS_EDITOR_RESULT": {
+      import("./gamesettings.js").then((m) => m.default.onResult(data));
+      break;
+    }
+    case "GAME_SETTINGS_EDITOR_UPDATED": {
+      import("./gamesettings.js").then((m) => m.default.onUpdated(data));
+      break;
+    }
     case "TOGGLE_CUTSCENE_EDITOR": {
       import("./cutsceneeditor.js").then((m) => m.default.toggle());
       break;
@@ -3735,7 +3751,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         if (playerId == cachedPlayerId && handoffBegun) break;
         if (playerId == cachedPlayerId && (gapDoneWait || (sentAt !== null && sentAt < ownEchoesFrom))) break;
         const echoAt = playerId == cachedPlayerId
-          ? keptWalkDating.date(player.moveSamples ??= [], sx, sy, sampleTime(sentAt), performance.now(), { renderAt: lastRenderTime(), headroom: renderHeadroom(), offset: getClockOffset() }, player.lastDirection, atMountSpeed(player))
+          ? keptWalkDating.date(player.moveSamples ??= [], sx, sy, sampleTime(sentAt), performance.now(), { renderAt: lastRenderTime(), headroom: renderHeadroom(), offset: getClockOffset() }, player.lastDirection, speedMultiplierOf(player))
           : sampleTime(sentAt);
         // (the point is the drawn spot while the draw is past a kept walk's first echoes: it waits there, never steps back)
         const drawnPoint = playerId == cachedPlayerId ? keptWalkDating.point(sx, sy) : { x: sx, y: sy, held: false, until: 0 };
@@ -4146,6 +4162,8 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         const chatDecryptionKey = envelope?.["chatDecryptionKey"];
         // The server's movement tick rate, which movement smoothing is timed by (30 Hz if it does not say).
         setServerTickRate(envelope?.["tickRate"]);
+        // The live game settings (walk, mount and ghost speed); the defaults stay if the server does not say.
+        setClientSpeeds(envelope?.["settings"] ?? {});
         sessionStorage.setItem("connectionId", connectionId);
         const cachedPlayerIdBefore = cachedPlayerId;
         cachedPlayerId = connectionId;
@@ -5230,6 +5248,11 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           data.total_max_stamina
         );
       }
+      break;
+    }
+    case "GAME_SETTINGS": {
+      // Only the stored speeds change: a walk already running reads them at its next step.
+      setClientSpeeds(data ?? {});
       break;
     }
     case "CLIENTCONFIG": {

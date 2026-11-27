@@ -66,6 +66,8 @@ Every successful step sets the `token` cookie. While a challenge is open, the ac
 `POST /login` and `POST /guest-login` answer a full success with status `301` and no `Location` header. The page scripts treat that status as the signal to move on to realm selection. A custom client should do the same.
 :::
 
+A browser that already holds a finished login does not log in again. When the page has a `token` cookie it calls `GET /login`. The server answers `200` with the username only when the token is valid and unexpired, no challenge is open (`twofa_pending = 0`) and the email is verified (guests have no email to verify). The page then shows "Logged in as" the username with **Play**, which goes to `/realm-selection`, and **Logout**, which calls `DELETE /login` and shows the form again. Any other answer shows the form as usual. Logging out clears the account's token, so every browser signed in to that account has to log in again.
+
 After login the player picks a realm and the client asks for a connection token. That part is described in [Game Servers](#/gateway/game-servers). For a realm that runs as a cluster, the token names one node. It is the node that owns the account's saved position when the gateway knows it, and the least-loaded online node otherwise.
 
 ## Session token
@@ -202,6 +204,8 @@ Any other path redirects to `/` with a `301`.
 | GET | `/status` | None | Health check. Answers `{"status":"ok"}`. |
 | POST | `/register` | None | Create an account and email a verification code |
 | POST | `/login` | None | Check the password and start a session |
+| GET | `/login` | Token | The finished login the browser holds: `{"loggedIn": true, "username", "guest"}`, or `401` |
+| DELETE | `/login` | Token | Log out: clears the account's token and the `token` cookie |
 | POST | `/verify` | Token cookie | Check an emailed code. `username` and `code` go in the query string. |
 | POST | `/guest-login` | None | Create and log in a guest account. Needs guest mode. |
 | POST | `/guest-bulk` | Game server secret | Create many guest accounts for load tests |

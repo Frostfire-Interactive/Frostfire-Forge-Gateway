@@ -10,7 +10,7 @@
 // It is all drawing: where the server has a player is never moved.
 
 import { PLAYER_FEET } from "./depthorder.js";
-import { MOUNT_SPEED_MULTIPLIER, WALK_SPEED_PX_S } from "./handoffwalk.js";
+import { mountSpeedMultiplier, walkSpeedPxS } from "./handoffwalk.js";
 import { ARCH_DEPTH, BACK_DEPTH, OPENING_HALF_WIDTH } from "./portalarch.js";
 
 /** How long a portal's trim flash lasts, and how quickly it rises to full before falling back. */
@@ -119,9 +119,9 @@ export function cameOutOf(rects: readonly PortalRect[], p: Point, reach: number)
   return best;
 }
 
-/** How fast a player walks, in px a millisecond: mounted (or a ghost) at the mount's pace. */
-export function walkSpeed(fast: boolean): number {
-  return (WALK_SPEED_PX_S * (fast ? MOUNT_SPEED_MULTIPLIER : 1)) / 1000;
+/** How fast a player walks, in px a millisecond: a multiplier as given (the player's own), true for the mount's pace. */
+export function walkSpeed(fast: boolean | number): number {
+  return (walkSpeedPxS() * (typeof fast === "number" ? fast : fast ? mountSpeedMultiplier() : 1)) / 1000;
 }
 
 /** A walk on into a portal (named `portal`, its plane at `foot`): from where the player was drawn to `depth` past its
@@ -204,7 +204,7 @@ export function flashLevel(at: number | undefined, now: number): number {
 
 /** A player as one frame sees them: where they are (x, y) and where they are drawn (dx, dy); ref is what draws them;
  *  fast when they walk at the mount's pace. */
-export interface SeenPlayer<T> { id: string; x: number; y: number; dx: number; dy: number; ref: T; fast?: boolean }
+export interface SeenPlayer<T> { id: string; x: number; y: number; dx: number; dy: number; ref: T; fast?: boolean | number }
 
 /** Who is walking into or out of a portal and which portals are flashing, from the players seen frame by frame. */
 export class TransitTracker<T> {
@@ -238,7 +238,7 @@ export class TransitTracker<T> {
   // `prev` (last seen there) walks on into `r`, from where they were drawn; the portal flashes as they pass its plane.
   // The local player's walk ends on the plane: the cut to the far side falls there.
   private goIn(prev: SeenPlayer<T>, r: PortalRect, now: number): WalkIn {
-    const walk = walkInto(r, { x: prev.dx, y: prev.dy }, now, walkSpeed(!!prev.fast), prev.id === this.localId ? 0 : THROUGH_DEPTH);
+    const walk = walkInto(r, { x: prev.dx, y: prev.dy }, now, walkSpeed(prev.fast ?? false), prev.id === this.localId ? 0 : THROUGH_DEPTH);
     if (walk.ms > 0) this.walksIn.push({ id: prev.id, ref: prev.ref, walk });
     this.flash(r, now + walk.plane);
     return walk;
@@ -248,7 +248,7 @@ export class TransitTracker<T> {
   // The local player's walk starts on the plane, `side` px from the arch's middle as their walk in ended.
   private comeOut(p: SeenPlayer<T>, r: PortalRect, now: number, side: number | null = null): void {
     const local = p.id === this.localId;
-    const walk = walkOutOf(r, p, now, walkSpeed(!!p.fast), local ? 0 : THROUGH_DEPTH, local ? side : null);
+    const walk = walkOutOf(r, p, now, walkSpeed(p.fast ?? false), local ? 0 : THROUGH_DEPTH, local ? side : null);
     if (walk) this.walksOut.set(p.id, walk);
     else this.walksOut.delete(p.id);
     this.flash(r, now);

@@ -16,6 +16,7 @@ export interface StaffTool {
 export const STAFF_TOOLS: readonly StaffTool[] = [
   { id: "control_panel", name: "Control Panel", icon: "dashboard", command: "/cp", group: "admin" },
   { id: "player_editor", name: "Player Editor", icon: "user", command: "/player edit", group: "admin" },
+  { id: "game_settings", name: "Game Settings", icon: "gauge", command: "/gs", group: "admin" },
   { id: "tile_editor", name: "Map Editor", icon: "map", command: "/te", group: "world" },
   { id: "dungeon_editor", name: "Dungeon Tool", icon: "layers", command: "/de", group: "world" },
   { id: "weather_editor", name: "Weather Editor", icon: "cloud", command: "/we", group: "world" },

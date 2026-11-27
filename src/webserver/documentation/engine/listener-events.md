@@ -121,8 +121,8 @@ Every gameplay hook the engine emits. The `Area` column is there for the filter 
 | Combat | `onPlayerRevived` | `{ player }` | A player came back to life: `/revive`, an accepted revive offer, or a graveyard revive |
 | Combat | `onPlayerRespawn` | `{ player, mapName, x, y }` | An admin used `/respawn` on a player |
 | Combat | `onPlayerLevelUp` | `{ player, level }` | A player gained a level from quest XP, kill XP or the player editor. `level` is the new level |
-| Combat | `onPlayerEnteredPVP` | `{ player }` | A player's combat flag turned on |
-| Combat | `onPlayerLeftPVP` | `{ player }` | A player's combat flag turned off, a short while after their last attack |
+| Combat | `onPlayerEnteredCombat` | `{ player }` | A player's combat flag turned on |
+| Combat | `onPlayerLeftCombat` | `{ player }` | A player's combat flag turned off, a short while after their last attack |
 | Combat | `onPlayerEnterAOE` | `{ player, zoneId, spellName }` | A player walked into a ground zone. Not emitted for players already inside when the zone appears |
 | Combat | `onPlayerLeftAOE` | `{ player, zoneId, spellName }` | A player left a ground zone, or the zone ended while they were inside |
 | Spells | `onSpellCast` | `{ player, spellName, target, isEntityTarget }` | A spell landed. For a creature target `target` is `null` and the payload also has `creatureId` |

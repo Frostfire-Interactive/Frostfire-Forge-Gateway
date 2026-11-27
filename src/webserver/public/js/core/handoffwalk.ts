@@ -3,9 +3,29 @@ import { archBlocksStep, archesOnMap } from "./portalarch.ts";
 import { stoneBlocksStep, stonesAt } from "./stoneblock.ts";
 import { stonesOnMap } from "./stonelist.ts";
 
-/** px a second at 30 Hz: 6 px a tick, as the engine's MOVEXY handler steps. */
-export const WALK_SPEED_PX_S = 180;
-export const MOUNT_SPEED_MULTIPLIER = 1.35;
+/** px a second at 30 Hz (180 is 6 px a tick, as the engine's MOVEXY handler steps), and the mount and ghost multipliers: the server's game settings, sent at login and when they change. */
+let walkSpeed = 180;
+let mountMultiplier = 1.35;
+let ghostMultiplier = 1.35;
+export const walkSpeedPxS = (): number => walkSpeed;
+export const mountSpeedMultiplier = (): number => mountMultiplier;
+export const ghostSpeedMultiplier = (): number => ghostMultiplier;
+
+/** Takes the speeds the server sends. A value that is not a finite number above 0 leaves the current one. A walk already running reads them at its next step. */
+export function setClientSpeeds(s: { walkSpeed?: unknown; mountSpeedMultiplier?: unknown; ghostSpeedMultiplier?: unknown } | null | undefined): void {
+  const taken = (value: unknown, current: number): number => (typeof value === "number" && Number.isFinite(value) && value > 0 ? value : current);
+  walkSpeed = taken(s?.walkSpeed, walkSpeed);
+  mountMultiplier = taken(s?.mountSpeedMultiplier, mountMultiplier);
+  ghostMultiplier = taken(s?.ghostSpeedMultiplier, ghostMultiplier);
+}
+
+/** The multiplier a walk is stepped by: a number as it is, true for a mount's, false for none. */
+const factor = (fast: boolean | number): number => (typeof fast === "number" ? fast : fast ? mountMultiplier : 1);
+
+/** The multiplier the engine steps the player by: the mount's if mounted, else the ghost's if a ghost, else none. */
+export function speedMultiplierOf(player: { mounted?: boolean; isGhost?: boolean } | null | undefined): number {
+  return player?.mounted === true ? mountMultiplier : player?.isGhost === true ? ghostMultiplier : 1;
+}
 /** A predicted position off by more than this from the new node's is not eased but taken (the smoothing's own teleport size). */
 export const HANDOFF_SNAP_PX = TELEPORT_PX;
 /** How fast the error eases out: it falls to a third in this long. */
@@ -80,12 +100,12 @@ export function walkStep(
   from: { x: number; y: number },
   direction: string,
   dtMs: number,
-  mounted: boolean,
+  mounted: boolean | number,
   blocked: (x: number, y: number, from: { x: number; y: number }) => boolean,
 ): { x: number; y: number } {
   const unit = UNITS[direction];
   if (!unit || !(dtMs > 0)) return { x: from.x, y: from.y };
-  const distance = (WALK_SPEED_PX_S * (mounted ? MOUNT_SPEED_MULTIPLIER : 1) * dtMs) / 1000;
+  const distance = (walkSpeed * factor(mounted) * dtMs) / 1000;
   // The engine steps 6 px on each axis of a diagonal (the same px, not a unit vector).
   const nx = from.x + unit[0] * distance;
   const ny = from.y + unit[1] * distance;
@@ -122,7 +142,7 @@ export function advanceSelf(player: WalkPlayer, direction: string, dtMs: number,
   const from = carried && Math.abs(carried.x - player.position.x) <= 1 && Math.abs(carried.y - player.position.y) <= 1
     ? carried
     : { x: player.position.x, y: player.position.y };
-  const to = walkStep(from, direction, dtMs, atMountSpeed(player), (x, y, at) => blockedAt(map, x, y, at));
+  const to = walkStep(from, direction, dtMs, speedMultiplierOf(player), (x, y, at) => blockedAt(map, x, y, at));
   player.handoffWalk = to;
   const x = Math.round(to.x);
   const y = Math.round(to.y);
@@ -261,11 +281,11 @@ export class GapLog {
   }
 }
 
-export function stepWalkMs(from: { x: number; y: number }, x: number, y: number, mounted: boolean): number {
-  return Math.max(Math.abs(x - from.x), Math.abs(y - from.y)) / ((WALK_SPEED_PX_S * (mounted ? MOUNT_SPEED_MULTIPLIER : 1)) / 1000);
+export function stepWalkMs(from: { x: number; y: number }, x: number, y: number, mounted: boolean | number): number {
+  return Math.max(Math.abs(x - from.x), Math.abs(y - from.y)) / ((walkSpeed * factor(mounted)) / 1000);
 }
 
-export function beginPoint(newest: { x: number; y: number; t: number; predicted?: boolean } | undefined, at: any, mounted: boolean): { x: number; y: number; t: number } | null {
+export function beginPoint(newest: { x: number; y: number; t: number; predicted?: boolean } | undefined, at: any, mounted: boolean | number): { x: number; y: number; t: number } | null {
   const x = Math.round(Number(at?.x));
   const y = Math.round(Number(at?.y));
   if (!newest || newest.predicted || !Number.isFinite(x) || !Number.isFinite(y)) return null;
@@ -299,7 +319,7 @@ export function planHandoffDone(
   if (!predicting || !moving || !anchored || !head || !Number.isFinite(head.x) || !Number.isFinite(head.y)) return "reseed";
   if (Math.hypot(head.x - server.x, head.y - server.y) > keepPx()) return "reseed";
   const unit = UNITS[player?.lastDirection ?? ""];
-  const walk = (WALK_SPEED_PX_S * (atMountSpeed(player) ? MOUNT_SPEED_MULTIPLIER : 1)) / 1000;
+  const walk = (walkSpeed * speedMultiplierOf(player)) / 1000;
   // No direction: ahead or behind is not known, so the distance is taken as the lead (one axis's walking time).
   if (!unit) return Math.hypot(server.x - head.x, server.y - head.y) / walk > HANDOFF_KEEP_LEAD_MS ? "reseed" : "keep";
   const lead = (server.x - head.x) * unit[0] + (server.y - head.y) * unit[1];
@@ -314,13 +334,13 @@ export function madeUpPoint(
   server: { x: number; y: number },
   walk: string | null | undefined,
   catchUpMs: unknown,
-  mounted: boolean,
+  mounted: boolean | number,
 ): { x: number; y: number } {
   const unit = UNITS[walk ?? ""];
   const ms = Math.min(HANDOFF_CATCH_UP_MAX_MS, Number(catchUpMs));
   if (!unit || !(ms > 0)) return server;
   // A diagonal steps the same px on both axes as a straight walk on one.
-  const px = ((WALK_SPEED_PX_S * (mounted ? MOUNT_SPEED_MULTIPLIER : 1)) / 1000) * ms;
+  const px = ((walkSpeed * factor(mounted)) / 1000) * ms;
   return { x: server.x + unit[0] * px, y: server.y + unit[1] * px };
 }
 
@@ -342,11 +362,11 @@ type WalkSample = { t: number; x: number; y: number; predicted?: boolean; held?:
 
 export const HOLD_MAX_MS = 100;
 
-export function releaseHeld(samples: WalkSample[], x: number, y: number, at: number, mounted: boolean): void {
+export function releaseHeld(samples: WalkSample[], x: number, y: number, at: number, mounted: boolean | number): void {
   const last = samples[samples.length - 1];
   if (!last) return;
   clearHeld(samples);
-  const walk = (WALK_SPEED_PX_S * (mounted ? MOUNT_SPEED_MULTIPLIER : 1)) / 1000;
+  const walk = (walkSpeed * factor(mounted)) / 1000;
   if (Math.hypot(x - last.x, y - last.y) > HANDOFF_KEEP_PX) {
     pushSample(samples, x, y, last.t + 0.01);
     return;
@@ -368,7 +388,7 @@ export function clearHeld(samples: WalkSample[] | undefined | null): void {
   }
 }
 
-function walkReach(samples: ReadonlyArray<WalkSample>, x: number, y: number, direction: string | undefined, mounted: boolean) {
+function walkReach(samples: ReadonlyArray<WalkSample>, x: number, y: number, direction: string | undefined, mounted: boolean | number) {
   const unit = UNITS[direction ?? ""];
   if (!unit) return null;
   let first = samples.length;
@@ -379,7 +399,7 @@ function walkReach(samples: ReadonlyArray<WalkSample>, x: number, y: number, dir
   const target = along({ x, y });
   if (target <= along(samples[first - 1])) return null;
   const last = samples[samples.length - 1];
-  const speed = (WALK_SPEED_PX_S * (mounted ? MOUNT_SPEED_MULTIPLIER : 1) * (Math.abs(unit[0]) + Math.abs(unit[1]))) / 1000;
+  const speed = (walkSpeed * factor(mounted) * (Math.abs(unit[0]) + Math.abs(unit[1]))) / 1000;
   let at: number | null = null;
   for (let k = first; k < samples.length; k++) {
     const a = samples[k - 1];
@@ -401,7 +421,7 @@ export function keptWalkShift(
   renderAt: number | null,
   headroom: number,
   direction: string | undefined,
-  mounted: boolean,
+  mounted: boolean | number,
 ): number {
   const reach = walkReach(samples, x, y, direction, mounted);
   if (!reach) return 0;
@@ -420,7 +440,7 @@ export function keptWalkCover(
   renderAt: number | null,
   headroom: number,
   direction: string | undefined,
-  mounted: boolean,
+  mounted: boolean | number,
   out?: { hold: { x: number; y: number; t: number } | null },
 ): number {
   const reach = walkReach(samples, x, y, direction, mounted);
@@ -502,7 +522,7 @@ export class KeptWalkDating {
     now: number,
     clock: EchoClock,
     direction: string | undefined,
-    mounted: boolean,
+    mounted: boolean | number,
   ): number {
     // The renderer let go of the held spot (releaseHeld, its time was up): the hold is over, this echo is dated as any other.
     if (this.hold && !samples.some((sample) => sample.held)) this.hold = null;
@@ -549,7 +569,7 @@ export class KeptWalkDating {
         this.lastT = t;
         return this.hold.t;
       }
-      const walk = (WALK_SPEED_PX_S * (mounted ? MOUNT_SPEED_MULTIPLIER : 1) * (Math.abs(u[0]) + Math.abs(u[1]))) / 1000;
+      const walk = (walkSpeed * factor(mounted) * (Math.abs(u[0]) + Math.abs(u[1]))) / 1000;
       const start = Math.max(this.lastDated ?? this.hold.t, dated - ((x - this.hold.x) * u[0] + (y - this.hold.y) * u[1]) / walk, clock.renderAt ?? -Infinity);
       if (start > this.hold.t + 0.01 && start < dated) samples.push({ t: start, x: this.hold.x, y: this.hold.y, predicted: true });
       // The chord from the spot is held to the walking time below, from where it leaves.
@@ -566,7 +586,7 @@ export class KeptWalkDating {
       const unit = UNITS[direction ?? ""];
       const progress = unit ? (x - this.prev.x) * unit[0] + (y - this.prev.y) * unit[1] : 0;
       if (unit && progress > 0 && Math.hypot(x - this.prev.x, y - this.prev.y) < HANDOFF_SNAP_PX) {
-        const speed = (WALK_SPEED_PX_S * (mounted ? MOUNT_SPEED_MULTIPLIER : 1) * (Math.abs(unit[0]) + Math.abs(unit[1]))) / 1000;
+        const speed = (walkSpeed * factor(mounted) * (Math.abs(unit[0]) + Math.abs(unit[1]))) / 1000;
         const walkMs = progress / speed;
         const dating = dated;
         let from = this.prev.dated;
@@ -598,7 +618,7 @@ export class KeptWalkDating {
       samples.pop();
       const newest = samples[samples.length - 1];
       if (newest && at > newest.t) samples.push({ t: at, x: here.x, y: here.y, predicted: true });
-      const walkMs = Math.max(Math.abs(x - here.x), Math.abs(y - here.y)) / ((WALK_SPEED_PX_S * (mounted ? MOUNT_SPEED_MULTIPLIER : 1)) / 1000);
+      const walkMs = Math.max(Math.abs(x - here.x), Math.abs(y - here.y)) / ((walkSpeed * factor(mounted)) / 1000);
       if (dated < at + walkMs) {
         dated = at + walkMs;
         this.adjust = dated - t;
@@ -731,12 +751,12 @@ export class HandoffPace {
   }
 
   /** step() with the inputs the renderer has: the movement keys and the stick (gapDirection). */
-  stepFor(target: { x: number; y: number }, now: number, keys: { has(code: string): boolean }, stick: string, mounted: boolean, blocked?: (x: number, y: number) => boolean): { x: number; y: number } {
+  stepFor(target: { x: number; y: number }, now: number, keys: { has(code: string): boolean }, stick: string, mounted: boolean | number, blocked?: (x: number, y: number) => boolean): { x: number; y: number } {
     return this.step(target, now, gapDirection(keys, stick), mounted, blocked);
   }
 
   /** The position to draw for `target` (the smoothed node position plus any ease) in the frame at `now`. Call every frame: it notes the frame time. */
-  step(target: { x: number; y: number }, now: number, direction: string, mounted: boolean, blocked?: (x: number, y: number) => boolean): { x: number; y: number } {
+  step(target: { x: number; y: number }, now: number, direction: string, mounted: boolean | number, blocked?: (x: number, y: number) => boolean): { x: number; y: number } {
     const out = this.out;
     const dt = now - this.last;
     this.last = now;
@@ -748,7 +768,7 @@ export class HandoffPace {
       this.out = null;
       return target;
     }
-    const speed = (WALK_SPEED_PX_S * (mounted ? MOUNT_SPEED_MULTIPLIER : 1)) / 1000;
+    const speed = (walkSpeed * factor(mounted)) / 1000;
     const moved = this.previous ? { x: target.x - this.previous.x, y: target.y - this.previous.y } : { x: 0, y: 0 };
     this.stalled = this.previous && Math.hypot(moved.x, moved.y) < 0.02 ? this.stalled + dt : 0;
     this.previous = { x: target.x, y: target.y };

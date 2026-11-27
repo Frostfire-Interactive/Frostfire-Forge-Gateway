@@ -131,7 +131,7 @@ The gameplay events (`onPlayerDeath`, `onSpellCast` and the rest) are listed on 
 | Event | Built in work |
 |-------|---------------|
 | `onFixedUpdate` (100 ms) | Creature AI, movement and combat. Gathering node spawns. Tornadoes forming, dying and hurting players. Release of connections whose packet rate limit has expired. |
-| `onServerTick` (1 s) | Removes players whose connection is gone. Regenerates stamina and, outside PvP, health, each by a share of the maximum, and sends the new values to the player and everyone who sees them. Drops the PvP flag a short while after a player's last attack. Reports the connection count to the gateway client. Refreshes creature spells and navigation grids. Checks "reach this point" quest objectives. Ends trades whose players may no longer trade. On a longer timer, reads the list of account names again. |
+| `onServerTick` (1 s) | Removes players whose connection is gone. Regenerates stamina and, outside combat, health, each by a share of the maximum, and sends the new values to the player and everyone who sees them. Drops the combat flag a short while after a player's last attack. Reports the connection count to the gateway client. Refreshes creature spells and navigation grids. Checks "reach this point" quest objectives. Ends trades whose players may no longer trade. On a longer timer, reads the list of account names again. |
 | `onServerTick`, every 60 s | Compares each player's connection id with `accounts.session_id` in the database. A player whose account was logged in elsewhere is told so and disconnected. Reads the subscription tables again. |
 | `onSave` (60 s) | Writes stats and location of every online, non guest player to the database, and achievement progress |
 

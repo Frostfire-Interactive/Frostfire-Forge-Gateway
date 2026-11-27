@@ -108,16 +108,84 @@ const guest_listener = async (event?: Event) => {
 
 guestLogin.addEventListener('click', guest_listener);
 
+// A browser that already holds a finished login is offered Play or Logout instead of the form.
+const loginForm = document.getElementById('login-form') as HTMLFormElement;
+const sessionPanel = document.getElementById('session-panel') as HTMLDivElement;
+const sessionUsername = document.getElementById('session-username') as HTMLElement;
+const sessionPlay = document.getElementById('session-play-button') as HTMLButtonElement;
+const sessionLogout = document.getElementById('session-logout-button') as HTMLButtonElement;
+
+const showLoginForm = () => {
+    sessionPanel.classList.add('hidden');
+    sessionUsername.textContent = '';
+    loginForm.classList.remove('hidden');
+};
+
+const showSession = (name: string) => {
+    sessionUsername.textContent = name;
+    loginForm.classList.add('hidden');
+    sessionPanel.classList.remove('hidden');
+    sessionPlay.focus();
+};
+
+const checkSession = async () => {
+    // No token cookie, no session: the page stays as it always was.
+    if (!document.cookie.split(';').some((cookie) => cookie.trim().startsWith('token='))) return;
+    loginForm.classList.add('hidden');
+    try {
+        // The server decides: it answers 200 only for a login that finished every step, 2FA included.
+        const response = await fetch('/login', { method: 'GET', cache: 'no-store' });
+        if (response.status === 200) {
+            const body = await response.json();
+            if (typeof body?.username === 'string' && body.username) {
+                showSession(body.username);
+                return;
+            }
+        }
+    } catch {
+        // Unknown: fall back to the form.
+    }
+    showLoginForm();
+};
+
+sessionPlay.addEventListener('click', () => {
+    window.location.href = '/realm-selection';
+});
+
+sessionLogout.addEventListener('click', async () => {
+    sessionLogout.disabled = true;
+    try {
+        const response = await fetch('/login', { method: 'DELETE' });
+        if (!response.ok) {
+            window.Notify('error', 'Logout failed');
+            return;
+        }
+        showLoginForm();
+        window.Notify('success', 'Logged out');
+        if (!('ontouchstart' in window) && navigator.maxTouchPoints <= 0) {
+            username.focus();
+        }
+    } catch {
+        window.Notify('error', 'Logout failed');
+    } finally {
+        sessionLogout.disabled = false;
+    }
+});
+
 const pageParams = new URLSearchParams(window.location.search);
 if (pageParams.get('guest') === '1') {
     pageParams.delete('guest');
     const query = pageParams.toString();
     history.replaceState(null, '', window.location.pathname + (query ? `?${query}` : '') + window.location.hash);
     guest_listener();
+} else {
+    void checkSession();
 }
 
 document.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
+        // The session panel's buttons take Enter themselves; the hidden form must not submit.
+        if (loginForm.classList.contains('hidden')) return;
         login.click();
     }
 });

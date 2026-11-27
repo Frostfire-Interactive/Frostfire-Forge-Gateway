@@ -40,7 +40,7 @@ After you log in, choose your mount once from the collectables window. If you pr
 | Situation | What happens |
 |-----------|--------------|
 | You are casting a spell | "Cannot mount while casting." |
-| You are in combat | "Cannot mount while in PvP." Wait about 5 seconds after the last hit. |
+| You are in combat | "Cannot mount while in combat." Wait about 5 seconds after the last hit. |
 | You are dead or a ghost | Nothing happens |
 | You are inside a building | "Cannot mount indoors." |
 | You do not own the mount | "You do not have the specified mount." |

@@ -72,6 +72,7 @@ import npceditor_html from "./public/npceditor.html";
 import creatureeditor_html from "./public/creatureeditor.html";
 import itemeditor_html from "./public/itemeditor.html";
 import mounteditor_html from "./public/mounteditor.html";
+import gamesettings_html from "./public/gamesettings.html";
 import cutsceneeditor_html from "./public/cutsceneeditor.html";
 import spelleditor_html from "./public/spelleditor.html";
 import weathereditor_html from "./public/weathereditor.html";
@@ -325,6 +326,7 @@ const routes = {
   "/creature-editor": creatureeditor_html,
   "/item-editor": itemeditor_html,
   "/mount-editor": mounteditor_html,
+  "/game-settings": gamesettings_html,
   "/cutscene-editor": cutsceneeditor_html,
   "/spell-editor": spelleditor_html,
   "/weather-editor": weathereditor_html,
@@ -339,7 +341,9 @@ const routes = {
   "/quest-editor": questeditor_html,
   "/loot-editor": looteditor_html,
   "/animator": animator_html,
-  "/login": (req: Request, server: any) => login(req, server),
+  // GET: the session the login page offers to continue; DELETE: log out of it; POST: log in.
+  "/login": (req: Request, server: any) =>
+    req.method === "GET" ? loginSession(req) : req.method === "DELETE" ? logoutSession(req) : login(req, server),
   "/verify": (req: Request) => authenticate(req),
   "/register": (req: Request, server: any) => register(req, server),
   "/guest-login": async (req: Request) => createGuestAccount(req),
@@ -638,6 +642,7 @@ Bun.serve({
       "/creature-editor": routes["/creature-editor"],
       "/item-editor": routes["/item-editor"],
       "/mount-editor": routes["/mount-editor"],
+      "/game-settings": routes["/game-settings"],
       "/cutscene-editor": routes["/cutscene-editor"],
       "/spell-editor": routes["/spell-editor"],
       "/weather-editor": routes["/weather-editor"],
@@ -966,6 +971,36 @@ async function login(req: Request, server: any) {
     log.error(`Failed to authenticate: ${error}`);
     return new Response(JSON.stringify({ message: "Failed to authenticate" }), { status: 500 });
   }
+}
+
+// A finished login only: a valid token, no open 2FA challenge, and a verified email (guests have none to verify).
+async function loginSession(req: Request): Promise<Response> {
+  const headers = { "Content-Type": "application/json", "Cache-Control": "no-store" };
+  const signedOut = () => new Response(JSON.stringify({ loggedIn: false }), { status: 401, headers });
+  try {
+    const auth = await requireAuth(req);
+    if (auth instanceof Response) return signedOut();
+    const rows = await query("SELECT email_verified, guest_mode FROM accounts WHERE username = ? LIMIT 1", [auth.username]) as any[];
+    const guest = Number(rows?.[0]?.guest_mode) === 1;
+    if (!rows?.length || (!guest && Number(rows[0].email_verified) !== 1)) return signedOut();
+    return new Response(JSON.stringify({ loggedIn: true, username: auth.username, guest }), { status: 200, headers });
+  } catch (error) {
+    log.error(`Failed to read login session: ${error}`);
+    return signedOut();
+  }
+}
+
+// The web logout: the token stops working and the cookie goes. The game's LOGOUT packet clears the same token.
+async function logoutSession(req: Request): Promise<Response> {
+  const token = getTokenFromRequest(req);
+  if (token) {
+    await query("UPDATE accounts SET token = NULL, verification_code = NULL, twofa_pending = 0 WHERE token = ?", [token]);
+  }
+  const secure = process.env.HTTP_USE_SSL === "true" ? "; Secure" : "";
+  return new Response(JSON.stringify({ message: "Logged out" }), {
+    status: 200,
+    headers: { "Content-Type": "application/json", "Set-Cookie": `token=; Path=/; SameSite=Lax; Max-Age=0${secure}` },
+  });
 }
 
 async function resetPassword(req: Request, server: any) {

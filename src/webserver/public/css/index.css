@@ -8,3 +8,26 @@
 #password-form-group {
     margin-bottom: 18px;
 }
+
+/* Shown instead of the form when the browser already holds a finished login. */
+.session-user {
+    margin: 0 0 18px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow-wrap: anywhere;
+}
+
+.session-panel .login-button,
+.session-panel .btn-outline {
+    width: 100%;
+    transition: none;
+}
+
+.session-panel .login-button:hover:not(:disabled) {
+    transform: none;
+}
+
+.session-panel .btn-outline {
+    margin-top: 10px;
+}

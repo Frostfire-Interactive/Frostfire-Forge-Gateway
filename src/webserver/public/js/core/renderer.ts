@@ -1,5 +1,5 @@
 import { getIsLoaded, getMovementAllowed, getHandoffGap, getWalkAtSwitch, getGapReports, gapWalkStarted, noteGapFrame, finishGapWalk, gapFrameMs, handoffPace, cachedPlayerId, sendRequest } from "./socket.js";
-import { advanceSelf, applyEase, atMountSpeed, blockedAt, gapDirection, gapSampleTime, gapStepMs, releaseHeld, stepWalkMs } from "./handoffwalk.js";
+import { advanceSelf, applyEase, speedMultiplierOf, blockedAt, gapDirection, gapSampleTime, gapStepMs, releaseHeld, stepWalkMs } from "./handoffwalk.js";
 import { getIsKeyPressed, getStickDirection, pressedKeys, setIsMoving, getIsMoving } from "./input.js";
 import Cache from "./cache.ts";
 import { getParticleSprite, particleBrightness, particlePool, renderNpcInteractBadge, tickNpcGossip } from "./npc.js";
@@ -112,7 +112,7 @@ function observeTransit(players: any[], now: number): void {
   for (const p of players) {
     const at = p?.position ?? p?.renderPosition, drawn = p?.renderPosition ?? p?.position;
     if (p?.id == null || !at || !drawn) continue;
-    seen.push({ id: String(p.id), x: at.x, y: at.y, dx: drawn.x, dy: drawn.y, ref: p, fast: atMountSpeed(p) });
+    seen.push({ id: String(p.id), x: at.x, y: at.y, dx: drawn.x, dy: drawn.y, ref: p, fast: speedMultiplierOf(p) });
   }
   transit.observe({ map, now, localId: cachedPlayerId ? String(cachedPlayerId) : null, portals: transitPortals.rects, players: seen });
   for (const p of seen) {
@@ -136,10 +136,10 @@ function smoothPlayerRenderPositions(players: any[], now: number) {
     const last = samples[samples.length - 1];
     if (needsPositionSample(last, player.position, now)) {
       if (last && player.id === cachedPlayerId && getHandoffGap()) {
-        pushPredicted(samples, player.position.x, player.position.y, gapSampleTime(now, last.t, getLateness(), stepWalkMs(last, player.position.x, player.position.y, atMountSpeed(player))));
+        pushPredicted(samples, player.position.x, player.position.y, gapSampleTime(now, last.t, getLateness(), stepWalkMs(last, player.position.x, player.position.y, speedMultiplierOf(player))));
       } else if (last?.held && player.id === cachedPlayerId) {
         // A held spot timed out: the real position is behind it, reached at the walking speed, not as a step back.
-        releaseHeld(samples, player.position.x, player.position.y, at, atMountSpeed(player));
+        releaseHeld(samples, player.position.x, player.position.y, at, speedMultiplierOf(player));
       } else {
         pushSample(samples, player.position.x, player.position.y, last ? last.t + 0.01 : now);
       }
@@ -148,7 +148,7 @@ function smoothPlayerRenderPositions(players: any[], now: number) {
     // The local player's difference to the new node's position after a handoff is eased out (handoffwalk.ts).
     const eased = player.handoffEase && player.id === cachedPlayerId ? applyEase(player, smoothed, now) : smoothed;
     // For a second after a handoff in which the client walked the player, the draw is played at the walking pace (handoffwalk.ts HandoffPace).
-    const p = player.id === cachedPlayerId ? handoffPace.stepFor(eased, now, pressedKeys, getStickDirection(), atMountSpeed(player), (x, y) => blockedAt(window.mapData, x, y)) : eased;
+    const p = player.id === cachedPlayerId ? handoffPace.stepFor(eased, now, pressedKeys, getStickDirection(), speedMultiplierOf(player), (x, y) => blockedAt(window.mapData, x, y)) : eased;
     if (!player.renderPosition) {
       player.renderPosition = { x: p.x, y: p.y };
     } else {
