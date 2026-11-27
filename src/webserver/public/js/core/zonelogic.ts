@@ -122,6 +122,12 @@ export function bannerStep(state: BannerState, zone: ClientZone | null, _nowMs: 
 }
 
 /** The gain of zone music: the music slider (0 to 100) squared, as the ear hears it; silent when muted or in a cutscene. */
+/** How much rain shows, 0 to 1, where a blizzard shows `blizzard` (0 to 1): in a snow zone what falls is the blizzard's snow. */
+export function rainUnderBlizzard(rain: number, blizzard: number): number {
+  const shown = Number.isFinite(blizzard) ? Math.min(1, Math.max(0, blizzard)) : 0;
+  return rain * (1 - shown);
+}
+
 export function musicLevel(slider: number, muted: boolean, cutscene: boolean): number {
   if (muted || cutscene) return 0;
   const s = Math.max(0, Math.min(100, Number(slider) || 0)) / 100;

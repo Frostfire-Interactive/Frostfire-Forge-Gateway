@@ -7,6 +7,7 @@ import { windStreaks } from "./windstreaks.ts";
 import { windGust } from "./windgust.ts";
 import { drawSandstorm } from "./sandstorm.ts";
 import { drawBlizzard } from "./blizzard.ts";
+import { rainUnderBlizzard } from "./zonelogic.ts";
 import { drawFog } from "./fog.ts";
 import { setWeatherSound, playEffect, loadEffect, soundLength } from "./audio.js";
 import { worldZoom } from "./worldzoom.js";
@@ -51,6 +52,8 @@ let cameraOffsetY = 0;
 /** Where the player is, in world px: a sandstorm is only drawn when they stand in a desert. */
 let focusX = 0;
 let focusY = 0;
+/** How much of the blizzard showed last frame, 0 to 1: the rain gives way to it (a snow zone's weather falls as its snow). */
+let blizzardShown = 0;
 
 let lastFrameTime = performance.now();
 const TARGET_FPS = 60;
@@ -550,7 +553,7 @@ function weather(type: string, weatherData?: any): void {
 
   if (wet && !freezing) {
 
-    const count = Math.round(rainParticles.length * share);
+    const count = Math.round(rainParticles.length * rainUnderBlizzard(share, blizzardShown));
     for (let i = 0; i < count; i++) {
       const p = rainParticles[i];
       p.update(deltaTime, windSpeed, windDirection);
@@ -602,6 +605,7 @@ function weather(type: string, weatherData?: any): void {
     fall: Math.min(1, Math.max(0, Number(weatherData?.precipitation) || 0) / 100),
     cameraX: viewX, cameraY: viewY, width: viewWidth, height: viewHeight, focusX, focusY,
   });
+  blizzardShown = blizzard;
 
   // The streaks gust on their own slow, uneven curve (windGust), which the wind sound follows too.
   windStreaks(weatherCtx, deltaMs, (Number(baseWindSpeed) || 0) * (1 - Math.max(sandstorm, blizzard)), windGust(currentTime / 1000), windDirection, viewX, viewY, viewWidth, viewHeight, buffer / zoom);
@@ -613,7 +617,9 @@ const RAIN_QUIET = 0.45;
 function rainAmount(type: string | null, weatherData?: any): number {
   if (type !== "rainy" && type !== "thunderstorm") return 0;
   if (Number(weatherData?.temperature ?? NaN) < FREEZING) return 0;
-  return fallShare(weatherData);
+  // (the weather not drawn for a while, in a house or between maps: no blizzard shows either)
+  const blizzard = performance.now() - lastFrameTime > 250 ? 0 : blizzardShown;
+  return rainUnderBlizzard(fallShare(weatherData), blizzard);
 }
 const WIND_FULL = 40, WIND_CURVE = 1, PITCH_LOW = 0.85, PITCH_HIGH = 1.15, WIND_GLIDE = 0.35;
 const WIND_DIRECTIONS = ["left", "right", "up", "down"];

@@ -83,6 +83,8 @@ The client picks what to draw by the weather's name. The row's values shape it.
 
 The server tells a `tornado` world as `thunderstorm`, with `sandstorm` and `blizzard` set to `true` in `weatherData`, so it also blows a sandstorm in desert zones and a blizzard in snow zones. The desert and snow zones come from a world's manifest (see [World maps](#/engine/world-maps)).
 
+Where a blizzard blows, no rain falls and no rain is heard: in a snow zone the weather's rain falls as the blizzard's snow. The rain fades out as the blizzard fades in, and comes back when the player walks out of the zone.
+
 How the values change the picture:
 
 - **Precipitation** sets how many rain drops or snow flakes are drawn: `precipitation / 100` of the full amount, never less than a tenth for a weather that is named for rain or snow.
